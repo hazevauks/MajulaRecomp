@@ -61,8 +61,16 @@ echo "== XenosRecomp (one process per container, so one crash does not stop the 
 translate() {
   local f=$1 b; b=$(basename "$f" .bin)
   local t="$OUT/tmp/$b"; mkdir -p "$t/i"; cp "$f" "$t/i/"
-  # A time limit per container, so one shader that hangs the translator cannot stall the whole build.
-  if timeout 120 "$OUT/bin/xenos_hlsl.exe" "$t/i" "$t/o" "$XENOS/shader_common.h" > "$t/log.txt" 2>&1 && [ -f "$t/o/$b.hlsl" ]; then
+  # A time limit per container, so one shader that hangs the translator cannot stall the whole build. Exit 126 is
+  # "could not run the command" (Windows: "Permission denied" while a virus scanner holds the freshly built exe; 443 of
+  # 1409 runs on the first Dark Souls II build): that says nothing about the shader, so it is tried again.
+  local try
+  for try in 1 2 3 4 5; do
+    timeout 120 "$OUT/bin/xenos_hlsl.exe" "$t/i" "$t/o" "$XENOS/shader_common.h" > "$t/log.txt" 2>&1
+    [ $? -eq 126 ] || break
+    sleep 1
+  done
+  if [ -f "$t/o/$b.hlsl" ]; then
     mv "$t/o/$b.hlsl" "$OUT/hlsl/"; rm -rf "$t"
   else
     echo "$b $(tail -1 "$t/log.txt")" >> "$OUT/translate_failed.txt"
