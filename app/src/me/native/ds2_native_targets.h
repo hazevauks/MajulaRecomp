@@ -63,6 +63,11 @@ class TargetsNative {
   // Resolve and/or clear. false if it could not be done (each cause is logged once).
   virtual bool Copy(const RegistersCopy& registers) = 0;
 
+  // ds2-nx diagnostic (the frame trace with DS2_TRACE_DUMP=1): after a resolve of the traced frame, reads the
+  // whole resolved texture at `base` back and writes it to trace_dump/<sequence>_<base>_<w>x<h>_vk<format>.raw
+  // next to the executable when its submission has finished (tools/trace_dump_png.py makes PNGs of them).
+  virtual void TraceDumpResolved(uint32_t /*base*/, uint32_t /*sequence*/) {}
+
   // Submits pending work and draws the Swap's texture into the presenter's output. false if that Swap has
   // no resolved texture.
   virtual bool Present(rex::ui::Presenter* presenter, const TextureSwap& swap, uint32_t width,

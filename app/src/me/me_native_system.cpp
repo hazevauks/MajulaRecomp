@@ -2018,6 +2018,10 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
           resolve_destinations_.insert(Register(rex::graphics::XE_GPU_REG_RB_COPY_DEST_BASE) & 0x1FFFF000u);
           if (trace_phase_ == 1) TraceCopy();
           Copy();
+          // ds2-nx diagnostic: DS2_TRACE_DUMP=1 also writes every texture the traced frame resolves to a file.
+          if (trace_phase_ == 1 && targets_ && TraceDumpWanted())
+            targets_->TraceDumpResolved(Register(rex::graphics::XE_GPU_REG_RB_COPY_DEST_BASE),
+                                        trace_dump_sequence_++);
         } else {
           ++draws_;
           if (depth > 0) ++draws_indirect_;
@@ -3426,6 +3430,24 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       trace_phase_ = 2;
       REXLOG_INFO("[trace] ---- end at swap {}: {} draws ({} without resolve sampling not listed) ----", swaps_,
                   trace_draws_, trace_quiet_draws_);
+      // ds2-nx diagnostic: DS2_TRACE_PEEK="10CEA000:16,12556000:64" logs those bytes of guest physical memory at
+      // the end of the traced frame (what the game's CPU side sees of a texture it wrote or reads back: a 1x1
+      // exposure texture, a luminance target). Addresses in hex, lengths in bytes (at most 256 each).
+      if (const char* peek = std::getenv("DS2_TRACE_PEEK"); peek && *peek) {
+        for (const char* p = peek; *p;) {
+          char* end = nullptr;
+          const uint32_t address = uint32_t(std::strtoul(p, &end, 16)) & 0x1FFFFFFFu;
+          uint32_t length = 16;
+          if (end && *end == ':') length = uint32_t(std::strtoul(end + 1, &end, 10));
+          length = std::min<uint32_t>(length, 256);
+          std::string hex;
+          const uint8_t* bytes = memory_->TranslatePhysical(address);
+          for (uint32_t i = 0; i < length; ++i) hex += fmt::format("{:02X}{}", bytes[i], (i & 3) == 3 ? " " : "");
+          REXLOG_INFO("[trace] peek {:08X}+{}: {}", address, length, hex);
+          if (!end || *end != ',') break;
+          p = end + 1;
+        }
+      }
     }
   }
 
@@ -4072,6 +4094,14 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
   Clock::time_point start_, last_report_;
   // banjo_trace_frame_s: 0 waiting, 1 tracing the current frame, 2 done.
   int trace_phase_ = 0;
+  uint32_t trace_dump_sequence_ = 0;  // ds2-nx diagnostic (DS2_TRACE_DUMP)
+  static bool TraceDumpWanted() {
+    static const bool wanted = [] {
+      const char* v = std::getenv("DS2_TRACE_DUMP");
+      return v && v[0] == 49;  // "1"
+    }();
+    return wanted;
+  }
   bool renderdoc_triggered_ = false;
   bool renderdoc_capturing_ = false;
   int trace_result_ = -1;  // last draw: -1 not attempted, 0 rejected, 1 drawn

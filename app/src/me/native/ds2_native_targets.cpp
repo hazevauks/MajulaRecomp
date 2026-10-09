@@ -40,6 +40,7 @@
 #include "../ds2_render_mode.h"
 
 #include <rex/cvar.h>
+#include <rex/filesystem.h>
 #include <rex/platform.h>
 #include <rex/graphics/registers.h>
 #include <rex/graphics/xenos.h>
@@ -663,6 +664,11 @@ struct PendingRead {
   uint32_t pitch;         // RB_COPY_DEST_PITCH
   uint32_t target_height;
   uint32_t info;          // RB_COPY_DEST_INFO
+  // ds2-nx diagnostic (TraceDumpResolved): written to a file instead of guest memory.
+  bool dump = false;
+  uint32_t dump_sequence = 0;
+  uint32_t dump_format = 0;       // VkFormat of the image
+  uint32_t dump_texel_bytes = 0;
 };
 
 // Output slots with ds2_native_output_no_wait (without it, only slot 0 is used).
@@ -9976,6 +9982,61 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     }
   }
 
+  // ds2-nx diagnostic, see ds2_native_targets.h. One buffer per dump, kept until the renderer goes away: a traced
+  // frame has a few tens of resolves.
+  void TraceDumpResolved(uint32_t base, uint32_t sequence) override {
+    const auto it = resolved_.find(base & 0x1FFFFFFF);
+    if (it == resolved_.end() || it->second.image.image == VK_NULL_HANDLE) {
+      REXLOG_INFO("[trace] dump {:03}: no resolved texture at {:08X}", sequence, base);
+      return;
+    }
+    const Image& image = it->second.image;
+    uint32_t texel_bytes = 0;
+    switch (image.format) {
+      case VK_FORMAT_R16G16B16A16_SFLOAT: texel_bytes = 8; break;
+      case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SRGB:
+      case VK_FORMAT_B8G8R8A8_UNORM:
+      case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+      case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+      case VK_FORMAT_R32_SFLOAT:
+      case VK_FORMAT_R16G16_SFLOAT: texel_bytes = 4; break;
+      default: break;
+    }
+    if (!texel_bytes || !Record()) {
+      REXLOG_INFO("[trace] dump {:03}: {:08X} {}x{} host format {} not dumped", sequence, base, image.width,
+                  image.height, uint32_t(image.format));
+      return;
+    }
+    trace_dump_reads_.push_back(std::make_unique<Read>());
+    Read& read = *trace_dump_reads_.back();
+    const VkDeviceSize bytes = VkDeviceSize(image.width) * image.height * texel_bytes;
+    uint32_t type = 0;
+    void* mapped = nullptr;
+    if (!rex::ui::vulkan::util::CreateDedicatedAllocationBuffer(
+            vulkan_device_, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            rex::ui::vulkan::util::MemoryPurpose::kReadback, read.buffer, read.memory, &type) ||
+        dfn_.vkMapMemory(device_, read.memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS) {
+      read = Read{};
+      return;
+    }
+    read.data = static_cast<uint8_t*>(mapped);
+    read.bytes = bytes;
+    read.coherent = (vulkan_device_->memory_types().host_coherent >> type) & 0x1;
+    VkBufferImageCopy copy{};
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.imageExtent = {image.width, image.height, 1};
+    dfn_.vkCmdCopyImageToBuffer(commands_work_, image.image, VK_IMAGE_LAYOUT_GENERAL, read.buffer, 1, &copy);
+    PendingRead pending{&read, base, 0, 0, image.width, image.height, 0, 0, 0};
+    pending.dump = true;
+    pending.dump_sequence = sequence;
+    pending.dump_format = uint32_t(image.format);
+    pending.dump_texel_bytes = texel_bytes;
+    pending_reads_.push_back(pending);
+    REXLOG_INFO("[trace] dump {:03}: {:08X} {}x{} host format {} (guest texture format {})", sequence, base,
+                image.width, image.height, uint32_t(image.format), it->second.guest_format);
+  }
+
   // Read-back of a small resolved texture: the copied rectangle goes to a host-visible buffer in the
   // same submission; WriteReads moves it into guest memory.
   void ResolvedRead(const RegistersCopy& reg, const Resolved& resolved, int32_t x0, int32_t y0,
@@ -10099,6 +10160,25 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     for (const PendingRead& p : reads) {
       const Read& read = *p.read;
       if (!read.data) {
+        continue;
+      }
+      if (p.dump) {
+        if (!read.coherent) {
+          VkMappedMemoryRange range{};
+          range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+          range.memory = read.memory;
+          range.size = VK_WHOLE_SIZE;
+          dfn_.vkInvalidateMappedMemoryRanges(device_, 1, &range);
+        }
+        const auto folder = rex::filesystem::GetExecutableFolder() / "trace_dump";
+        std::error_code ec;
+        std::filesystem::create_directories(folder, ec);
+        const auto path = folder / fmt::format("{:03}_{:08X}_{}x{}_vk{}.raw", p.dump_sequence, p.base, p.width,
+                                               p.height, p.dump_format);
+        if (std::FILE* out = std::fopen(path.string().c_str(), "wb")) {
+          std::fwrite(read.data, 1, size_t(p.width) * p.height * p.dump_texel_bytes, out);
+          std::fclose(out);
+        }
         continue;
       }
       if (!read.coherent) {
@@ -10414,6 +10494,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   std::unordered_map<uint64_t, TargetRead> reads_per_target_;  // target report and cadence
   std::chrono::steady_clock::time_point report_reads_{};
   std::vector<PendingRead> pending_reads_;  // recorded in the current submission
+  std::vector<std::unique_ptr<Read>> trace_dump_reads_;  // ds2-nx diagnostic (TraceDumpResolved)
   uint64_t done_reads_ = 0;
   // Copy inventory (NoteCopy).
   uint64_t drawn_last_copy_ = 0;
