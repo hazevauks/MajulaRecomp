@@ -1845,14 +1845,14 @@ int32_t LocationOfUsage(uint8_t usage, uint8_t index) {
       return index == 0 ? 0 : (index == 1 ? 15 : -1);
     case 3:  // normal
       return index == 0 ? 1 : -1;
-    case 6:  // tangent
-      return index == 0 ? 2 : -1;
+    case 6:  // tangent; ds2-nx: TANGENT1 takes BINORMAL0's location (no Dark Souls II shader reads both)
+      return index == 0 ? 2 : (index == 1 ? 3 : -1);
     case 7:  // binormal
       return index == 0 ? 3 : -1;
     case 5:  // texcoord; banjo-nx: 8..15 for register-linked shaders (banjoSlotLocation in XenosRecomp)
       return index < 4 ? 4 + index : index < 8 ? 12 + (index - 4) : index < 12 ? index - 8 : index < 16 ? 8 + (index - 12) : -1;
-    case 10:  // color
-      return index == 0 ? 8 : (index == 1 ? 11 : -1);
+    case 10:  // color; ds2-nx: COLOR2 takes TEXCOORD4's location (no Dark Souls II shader reads both)
+      return index == 0 ? 8 : (index == 1 ? 11 : (index == 2 ? 12 : -1));
     case 2:  // blend indices
       return index == 0 ? 9 : -1;
     case 1:  // blend weights

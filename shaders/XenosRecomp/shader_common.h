@@ -315,6 +315,8 @@ float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float
 // banjo-nx: a 1D texture is a row of the 2D heap (sN_Texture1DDescriptorIndex is the 2D index).
 float4 tfetch1D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float texCoord)
 {
+    // ds2-nx: the index carries the packed signs in its top byte, as for the other dimensions.
+    resourceDescriptorIndex &= 0x00FFFFFF;
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
     return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], float2(texCoord, 0.5));
 }
@@ -324,6 +326,14 @@ float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, f
     resourceDescriptorIndex &= 0x00FFFFFF;
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
     return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) + offset - 0.5));
+}
+
+// ds2-nx: the translator passes 1/size of the slot to every 2D fetch, getWeights included (Dark Souls II's shadow
+// map filter: "no matching function for call to 'getWeights2D'" in 9 pixel shaders). The constant is only valid
+// with SPEC_CONSTANT_INV_TEX_SIZE (see tfetch2D), so this overload queries the texture as the one above does.
+float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float2 invSize)
+{
+    return getWeights2D(resourceDescriptorIndex, samplerDescriptorIndex, texCoord, offset);
 }
 
 float w0(float a)

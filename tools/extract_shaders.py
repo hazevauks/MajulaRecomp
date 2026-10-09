@@ -10,10 +10,15 @@ data, so they do not have to be dumped from a running game:
   font/*.fxo              loose containers
 
 A container starts with 0x102A1100 (pixel shader) or 0x102A1101 (vertex shader). Each one is written once, named by
-kind and by the SHA-1 of its bytes (vs_<16 hex>.bin / ps_<16 hex>.bin: the names tools/build_shader_library.sh
-takes), with a list of where each came from.
+kind and by the XXH3-64 of its bytes (vs_<16 hex>.bin / ps_<16 hex>.bin): the names tools/build_shader_library.sh
+takes, and the same number the native renderer prints for a library entry ("library n502: VS container
+594bac2ce494dd72") and uses for the shaders it dumps, so a log line leads straight to its file. sources.txt lists where
+each one came from.
 
-  python tools/extract_shaders.py [--game assets/game_root] [--out out/shaders_in]
+  python tools/extract_shaders.py [--game assets/game_root] [--out out/shaders_game]
+
+XXH3 comes from a small host tool, tools/xxh3sum.cpp, built on first use with the PC toolchain's clang
+(_tools/llvm, or CXX) into out/tools.
 
 Only reads the game folder. Nothing it writes belongs in the repository (out/ is ignored).
 """
@@ -22,6 +27,8 @@ import glob
 import hashlib
 import os
 import struct
+import subprocess
+import sys
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,10 +53,34 @@ def bnd4_entries(data, path):
         yield i, blob
 
 
+def xxh3_names(blobs, out):
+    """The XXH3-64 (16 hex digits) of each blob, by tools/xxh3sum.cpp (built into out/tools when it is not there)."""
+    tool = os.path.join(ROOT, 'out', 'tools', 'xxh3sum.exe' if os.name == 'nt' else 'xxh3sum')
+    if not os.path.isfile(tool):
+        cxx = os.environ.get('CXX') or os.path.join(ROOT, '_tools', 'llvm', 'bin', 'clang++')
+        os.makedirs(os.path.dirname(tool), exist_ok=True)
+        subprocess.run([cxx, '-std=c++20', '-O2', '-w', '-I' + os.path.join(ROOT, 'sdk', 'thirdparty', 'xxHash'),
+                        os.path.join(ROOT, 'tools', 'xxh3sum.cpp'), '-o', tool], check=True)
+    paths = []
+    for i, blob in enumerate(blobs):
+        path = os.path.join(out, f'extracting_{i}.tmp')
+        with open(path, 'wb') as f:
+            f.write(blob)
+        paths.append(path)
+    listing = os.path.join(out, 'extracting_list.txt')
+    with open(listing, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(paths) + '\n')
+    result = subprocess.run([tool, '@' + listing], check=True, capture_output=True, text=True)
+    hashes = [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
+    if len(hashes) != len(paths):
+        sys.exit(f'xxh3sum returned {len(hashes)} hashes for {len(paths)} files')
+    return hashes, paths
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--game', default=os.path.join(ROOT, 'assets', 'game_root'))
-    ap.add_argument('--out', default=os.path.join(ROOT, 'out', 'shaders_in'))
+    ap.add_argument('--out', default=os.path.join(ROOT, 'out', 'shaders_game'))
     a = ap.parse_args()
 
     sources = []  # (label, bytes)
@@ -62,23 +93,23 @@ def main():
             sources.append((os.path.relpath(path, a.game).replace('\\', '/'), open(path, 'rb').read()))
 
     os.makedirs(a.out, exist_ok=True)
-    seen = {}       # file name -> first source
+    other = [label for label, blob in sources if blob[:4] not in MAGIC]
+    containers = [(label, blob) for label, blob in sources if blob[:4] in MAGIC]
+    # One file per distinct content (SHA-1 only finds the copies here; the names are XXH3).
+    distinct = {}
+    for label, blob in containers:
+        distinct.setdefault(hashlib.sha1(blob).digest(), blob)
+    keys = list(distinct)
+    hashes, temporary = xxh3_names([distinct[k] for k in keys], a.out)
+    name_of = {}
     counts = {'vs': 0, 'ps': 0}
-    other = []
-    lines = []
-    for label, blob in sources:
-        kind = MAGIC.get(blob[:4])
-        if not kind:
-            other.append(label)
-            continue
-        name = f'{kind}_{hashlib.sha1(blob).hexdigest()[:16]}.bin'
-        lines.append(f'{name}\t{len(blob)}\t{label}')
-        if name in seen:
-            continue
-        seen[name] = label
+    for key, xxh3, path in zip(keys, hashes, temporary):
+        kind = MAGIC[distinct[key][:4]]
+        name_of[key] = f'{kind}_{xxh3}.bin'
         counts[kind] += 1
-        with open(os.path.join(a.out, name), 'wb') as f:
-            f.write(blob)
+        os.replace(path, os.path.join(a.out, name_of[key]))
+    lines = [f'{name_of[hashlib.sha1(blob).digest()]}\t{len(blob)}\t{label}' for label, blob in containers]
+    seen = name_of
     with open(os.path.join(a.out, 'sources.txt'), 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     print(f'{len(sources)} entries read; {counts["vs"]} vertex and {counts["ps"]} pixel containers written to {a.out} '

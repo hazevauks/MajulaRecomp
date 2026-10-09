@@ -106,6 +106,11 @@ static constexpr DeclUsageLocation USAGE_LOCATIONS[] =
     { DeclUsage::TexCoord, 6, 14 },
     { DeclUsage::TexCoord, 7, 15 },
     { DeclUsage::Position, 1, 15 },
+    // ds2-nx: Dark Souls II's model shaders read TANGENT1 (6 vertex shaders) and COLOR2 (6); without a location DXC
+    // refused them ("partial explicit stage input location assignment"). None of the twelve reads BINORMAL0 or
+    // TEXCOORD4, so they take those two locations. The renderer's LocationOfUsage (ds2_native_draws.cpp) has the same.
+    { DeclUsage::Tangent, 1, 3 },
+    { DeclUsage::Color, 2, 12 },
 };
 
 static constexpr std::pair<DeclUsage, size_t> INTERPOLATORS[] =
@@ -355,6 +360,22 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         out += ");\n";
     }
 #endif
+
+    // ds2-nx: a fetch whose destination keeps or sets every component to a constant writes no fetched value; it
+    // came out as "r0. = tfetch2D(...).;" ("expected unqualified-id" in 4 Dark Souls II pixel shaders). Only the
+    // constant components are written then.
+    bool writesFetchedComponent = false;
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        const auto swizzle = getDestSwizzle(instr.dstSwizzle, i);
+        writesFetchedComponent |= swizzle >= FetchDestinationSwizzle::X && swizzle <= FetchDestinationSwizzle::W;
+    }
+    if (!writesFetchedComponent)
+    {
+        printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
+        closeIfWritesPredicate(markPredicate);
+        return;
+    }
 
     indent();
     print("r{}.", instr.dstRegister);
@@ -1791,6 +1812,10 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
             println("#define {}_SamplerDescriptorIndex (MASSEFFECT_UBO ? MASSEFFECT_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                 samplerName, std::size(TEXTURE_DIMENSIONS) * 64 + registerIndex * 4, std::size(TEXTURE_DIMENSIONS) * 64 + registerIndex * 4);
+            // ds2-nx: a named sampler fetched as a 1D texture (Dark Souls II's ToneMapTableSampler, 256x1) had no
+            // 1D index (only the unnamed sN set below did): "undeclared identifier ..._Texture1DDescriptorIndex" in
+            // 9 pixel shaders. A 1D texture is a 2D one of height 1 on the host, as for sN.
+            println("#define {0}_Texture1DDescriptorIndex {0}_Texture2DDescriptorIndex", samplerName);
 
             // 1/size of the host image of that slot, which the renderer writes at byte
             // 360 + slot * 8 of the shared constants (right after g_InputRemap).
