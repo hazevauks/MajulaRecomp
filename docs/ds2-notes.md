@@ -17,6 +17,13 @@ Fatos medidos no jogo, cada um com a ferramenta ou o log que o mostrou. O que ai
 | `font/<idioma>/FeFont_Small.fontbnd.dcx`, `regulation.bnd.dcx`, `sfx/`, `param/` | pequenos | Fontes, parâmetros, efeitos |
 | `$SystemUpdate/`, `AvatarAssetPack`, `nxeart` | — | Do sistema do Xbox 360; o porte não usa |
 
+**Shaders.** Os `.fxo` soltos (`shader/Simple/`, `font/`) são contêineres de shader do Xenos sem compressão: começam
+com `102A1100` (pixel) ou `102A1101` (vértice), o formato que o XenosRecomp lê. Os `.bnd` são arquivos `BND4` com
+2.203 (`FlverShader`), 241 (`SfxShader`), 105 (`Filter`), 18 (`Decal`) e 8 (`FeShader`) entradas, **2.575 no total**;
+a assinatura `102A110x` não aparece neles em claro, então as entradas estão comprimidas ou embrulhadas (formato ainda
+não aberto). Para comparação, a biblioteca do sa2-nx tem 35 shaders: aqui a tradução prévia e o prewarm de pipelines
+têm outra escala.
+
 Não há outro `.xex` na lista de arquivos, então o manifesto não tem `[[modules]]`. **Não verificado:** se existe
 código dentro dos `GameData*.bdt` (improvável num jogo de disco, mas só o boot confirma: um `XexLoadImage` apareceria
 no log).
