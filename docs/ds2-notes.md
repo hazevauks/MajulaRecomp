@@ -203,3 +203,30 @@ de 150 s de tela de carregamento, e o processo cai com `0xC0000005` aos 305 s.
 
 Consequência: a GPU emulada não serve para ver o 3D neste PC. O caminho é o renderizador nativo, cujos shaders vêm do
 XenosRecomp + DXC (outro tradutor).
+
+## Renderizador nativo: primeira execução (2026-10-09)
+
+Biblioteca de shaders (`tools/build_shader_library.sh out/shaders_in`, XenosRecomp + DXC 1.9.2607): dos 1.409
+contêineres, 1.409 traduzidos para HLSL e **1.383 compilados para SPIR-V** (`ds2_shaders.mesp`, 61,4 MB, + `.idx`).
+Os 26 que o DXC recusa:
+
+| Quantos | Erro do DXC |
+|---|---|
+| 12 (vértice) | `partial explicit stage input location assignment via vk::location(X) unsupported` |
+| 9 (pixel) | `use of undeclared identifier 'ToneMapTableSampler_TextureNDDescriptorIndex'` e `no matching function for call to 'getWeightsND'` (o mesmo grupo de shaders) |
+| 4 | `expected unqualified-id` |
+
+São defeitos do tradutor para construções que o SA2 não tinha (por exemplo um amostrador de textura 3D para a tabela
+de tone mapping); enquanto não forem corrigidos, os desenhos com esses shaders ficam sem imagem.
+
+Primeira execução com `ds2_renderer_native = true` no lavapipe (`out/pc/logs/ds2_010.log`, 78 s, até o aviso de
+rede):
+
+- Aviso de autosave, logos, tela-título e diálogos saem iguais aos da GPU emulada (comparação visual das folhas de
+  contato, não pixel a pixel).
+- Cerca de 16 quadros/s (911 trocas em 54 s), contra ~8 da GPU emulada em Vulkan no mesmo lavapipe.
+- `[verify] ... differences: 0` em todas as linhas (6.390 autoverificações dos caminhos rápidos do anel).
+- Os shaders do jogo são identificados pelos objetos (por exemplo VS `480B3420` → entrada n874). Ficam sem identificar
+  quatro shaders internos do Direct3D, carregados por `IM_LOAD_IMMEDIATE` (VS de 15, 24 e 27 palavras, PS de 9
+  palavras): são os de clear/cópia, que o guia manda embrulhar com `tools/wrap_discovered.py` a partir do despejo de
+  descoberta. Ainda não feito; não se sabe o que deixa de ser desenhado por causa deles.
