@@ -139,6 +139,11 @@ def scratch_codegen(rexglue, d, candidates):
     with open(log, 'w') as f:
         subprocess.run([rexglue, '--force', 'codegen', 'ds2_manifest.toml'], cwd=d, stdout=f,
                        stderr=subprocess.STDOUT)
+    # A scratch codegen that never read the manifest writes no listing, and every candidate would then be rejected as
+    # "no code": stop instead. (A failed validation still writes the listings the classification needs.)
+    tail = open(log, errors='replace').read()[-600:]
+    if 'Failed to load manifest' in tail or 'Failed to parse config' in tail:
+        sys.exit(f'scratch codegen did not start, see {log}:\n{tail}')
     return os.path.join(d, 'gen'), log
 
 
@@ -297,7 +302,11 @@ def main():
         d = os.path.join(a.scratch, f'pass{n}')
         os.makedirs(d, exist_ok=True)
         gaps = read_gaps(d)
-        candidates = {t: v for t, v in pointer_candidates(image, gaps, lo, hi).items() if t not in examined}
+        # An address overrides.toml already declares is not a candidate: the generated tree may be older than the
+        # entry (its gap is still listed), and declaring it twice makes the scratch codegen stop at the duplicate key.
+        declared = {int(k, 16) for k in re.findall(r'^"(0x[0-9A-Fa-f]+)"\s*=', open(OVERRIDES).read(), re.M)}
+        candidates = {t: v for t, v in pointer_candidates(image, gaps, lo, hi).items()
+                      if t not in examined and t not in declared}
         examined |= set(candidates)
         if not candidates:
             print(f'pass {n}: no new candidates; fixpoint')
