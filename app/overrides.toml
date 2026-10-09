@@ -1,0 +1,11 @@
+# Dark Souls II-specific analysis corrections for the code generator.
+#
+# Every entry needs its evidence (which tool or which log found it). The tools that produce candidates:
+#   tools/find_gaps.py, tools/gap_fixpoint.py   code the automatic discovery left without a function
+#   tools/pointer_scan.py                       code pointers stored in data (vtables, callback tables)
+#   tools/switch_check.py                       truncated jump tables
+#   tools/runtime_gap_resolver.py               "Call to invalid or unregistered function" from a game log
+#
+# Root keys (setjmp_address, longjmp_address, ...) must stay above the first table.
+
+[functions]
