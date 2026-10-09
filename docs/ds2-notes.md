@@ -288,3 +288,30 @@ abertura de Things Betwixt, ~700 desenhos e ~60 cópias de alvo por quadro, 7 de
 - A queda dentro do lavapipe aos ~300 s apareceu em 2 das 4 sessões com o renderizador nativo que chegaram ao mapa
   (logs 011 e 013; não em 012 e 014), sem relação clara com as opções ligadas. Nas duas o endereço termina igual
   (`...1678`, leitura de 0, código JIT): parece o mesmo ponto. Causa não isolada.
+
+## A cena 3D depois do fade-in (2026-10-09)
+
+Sessão `out/pc/logs/ds2_017.log` (renderizador nativo, lavapipe, 675 s, sem queda; `video_300s.rgba`):
+
+- A cena de abertura de Things Betwixt aparece inteira em forma (tronco em primeiro plano, capim, chão, ruínas ao
+  fundo, barras de cinema), a ~0,6 quadro/s: ~700 desenhos e ~56 cópias de alvo por quadro, 7 desenhos sem shader a
+  cada 10 s.
+- **As cores estão erradas**: depois do fade-in a imagem satura em verde e amarelo (verde no máximo em quase tudo,
+  vermelho no máximo em parte, azul zero). A geometria e a profundidade parecem certas; o defeito está na cadeia de
+  cor (alvos HDR, cópias com conversão de formato, tone mapping). Pistas no log, nenhuma confirmada como causa:
+  - alvos em formato 2 (2_10_10_10 em ponto flutuante, "7e3") copiados para textura de formato 7:
+    `resolve conversion: guest RT 2 host 97 -> guest texture 7 host 64`;
+  - texturas de formato 2 lidas pelo jogo (`C3: texture ... format 2 linear ... swizzle 124`);
+  - `signed textures not supported yet: read as unsigned` (formato 29, 64x64, na cadeia de luminância);
+  - a tabela de tone mapping, um alvo 256x1 desenhado a cada quadro e lido como textura 1D.
+- 64 `identity mismatch` no log (pareamento desenho ↔ objeto de shader com tamanhos diferentes).
+
+**A queda no lavapipe.** Sessões com o renderizador nativo que chegaram ao mapa: caíram 011, 013 e 016 (sempre aos
+~295–305 s, na entrada do 3D); não caíram 012, 014 e 017. A 017 rodou com `ds2_native_textures_binding_thread =
+false` (hipótese: um desenho usa o slot de uma textura nova antes de a thread de ligação escrevê-lo, o que numa GPU
+real passa e no lavapipe é leitura de ponteiro nulo). Uma sessão sem queda não prova a hipótese: com metade das
+sessões caindo, seriam precisas várias seguidas.
+
+Sem um depurador de quadro não dá para ir muito além por leitura de log: o próximo passo natural é capturar um quadro
+com o RenderDoc (o renderizador já tem o gancho, `me_renderdoc.cpp`; os portes de referência têm scripts `rdc_*.py`)
+e conferir passe a passe, e usar as camadas de validação do Vulkan para a queda.
