@@ -206,6 +206,10 @@ REXCVAR_DEFINE_INT32(ds2_native_verify_n, 2048, "SA2 renderer",
     .range(0, 2147483647)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
+REXCVAR_DEFINE_BOOL(ds2_native_vs_removed_exports, true, "DS2 renderer",
+                    "Accept a loaded vertex shader whose only difference from its library entry is Direct3D's "
+                    "interpolator relink: exports the bound pixel shader does not read, replaced by no-ops "
+                    "(me_shader_identity.h). false = such draws have no vertex shader, as before");
 REXCVAR_DEFINE_INT32(ds2_native_vs_identity_tolerance, 0, "SA2 renderer",
                      "Experimental: a vertex shader the ring loaded may differ from its library candidate (same size, "
                      "fetches still checked) in up to N ALU/CF words and still be drawn with that candidate. 0 = "
@@ -1125,6 +1129,7 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       }
     }
     if (active_.exchange(true)) return X_STATUS_SUCCESS;
+    g_vs_identity_removed_exports.store(REXCVAR_GET(ds2_native_vs_removed_exports), std::memory_order_relaxed);
     g_vs_identity_alu_tolerance.store(uint32_t(REXCVAR_GET(ds2_native_vs_identity_tolerance)),
                                       std::memory_order_relaxed);
     identity_flat_ = REXCVAR_GET(ds2_native_flat_identity);

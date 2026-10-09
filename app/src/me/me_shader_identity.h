@@ -44,6 +44,53 @@ inline bool VertexFetchSwizzleRepresentable(uint32_t original, uint32_t patched)
 // candidate of the same size and still be accepted. Without it such a draw is dropped (no VS identified).
 inline std::atomic<uint32_t> g_vs_identity_alu_tolerance{0};
 
+// ds2-nx: Direct3D's interpolator relink. When the bound pixel shader does not read an interpolator, the XDK 21256
+// Direct3D replaces the vertex shader's ALU instruction that exports it by a no-op (C8000000 00000000 02000000: no
+// destination, no write mask) and loads the patched copy as immediate microcode. Seen on Dark Souls II's model shaders
+// (library C8038001 00B0C600 A100FF00 -> loaded C8000000 00000000 02000000 at instructions 39 and 40 of a 126-word
+// shader). The unpatched library shader draws the same image: it only writes outputs nobody reads. Without this the
+// draw had no vertex shader ("VS identity mismatch ... reason=non-fetch-word").
+// ds2_native_vs_removed_exports (default true) turns the exception off.
+inline std::atomic<bool> g_vs_identity_removed_exports{true};
+
+// True when the control flow of `w` executes instruction `instruction` as an ALU instruction (in an EXEC clause, its
+// sequence bit says "not a fetch"). False for anything else: a fetch, a control-flow word, an instruction no clause
+// runs.
+inline bool ExecutedAsAlu(std::span<const uint32_t> w, size_t instruction) {
+  size_t end = w.size() / 3;
+  for (size_t pair = 0; pair < end; ++pair) {
+    const uint64_t cf[2]{uint64_t(w[pair * 3]) | uint64_t(w[pair * 3 + 1] & 65535) << 32,
+                         uint64_t(w[pair * 3 + 1] >> 16) | uint64_t(w[pair * 3 + 2]) << 16};
+    for (unsigned half = 0; half < 2; ++half) {
+      const uint64_t c = cf[half];
+      const unsigned op = (c >> 44) & 15;
+      if (!((op >= 1 && op <= 6) || op == 13 || op == 14)) continue;  // the EXEC family
+      const size_t first = c & 4095, count = (c >> 12) & 7;
+      const unsigned sequence = (c >> 16) & 4095;
+      if (first) end = std::min(end, first);
+      if (instruction >= first && instruction < first + count)
+        return !((sequence >> ((instruction - first) * 2)) & 1);
+    }
+  }
+  return false;
+}
+
+// The word at `word` differs between the loaded program and the library's, outside the declared fetches: true when
+// the loaded instruction is Direct3D's no-op and the library's is an ALU instruction that only exports interpolators
+// (export registers 0..15; never the position, 62, or the point size / kill register, 63).
+inline bool RemovedInterpolatorExport(std::span<const uint32_t> loaded, std::span<const uint32_t> selected,
+                                      size_t word) {
+  const size_t instruction = word / 3, start = instruction * 3;
+  if (start + 3 > loaded.size() || start + 3 > selected.size()) return false;
+  if (loaded[start] != 0xC8000000u || loaded[start + 1] != 0u || loaded[start + 2] != 0x02000000u) return false;
+  const uint32_t alu = selected[start];
+  const bool export_data = (alu >> 15) & 1;
+  const uint32_t vector_destination = alu & 0x3F, scalar_destination = (alu >> 8) & 0x3F;
+  const uint32_t scalar_write_mask = (alu >> 20) & 0xF;
+  if (!export_data || vector_destination >= 16 || (scalar_write_mask && scalar_destination >= 16)) return false;
+  return ExecutedAsAlu(selected, instruction);
+}
+
 // selected.words must be the library's normalized VS words. Only the declared
 // fetch triples may differ in the SAME loader-masked fields or in a swizzle
 // proven representable by the existing typed input ABI above.
@@ -79,6 +126,9 @@ inline bool VertexShaderIdentityMatches(ShaderIdentityView loaded, ShaderIdentit
       }
     }
     if (!declared_fetch) {
+      if (g_vs_identity_removed_exports.load(std::memory_order_relaxed) &&
+          RemovedInterpolatorExport(loaded.words, selected.words, word))
+        continue;
       if (tolerance_left == 0) return false;
       --tolerance_left;
     }

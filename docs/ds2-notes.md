@@ -250,3 +250,40 @@ Sessão `out/pc/logs/ds2_011.log` (renderizador nativo, lavapipe; Continue, víd
 O próximo trabalho é o ciclo de shaders do guia (seção 6.2): despejo de descoberta, variantes de vértice que o
 Direct3D reescreve, os 26 shaders que o DXC recusa e os internos do Direct3D, até o log não ter carga sem
 identificar. Para achar o desenho que derruba o lavapipe, as camadas de validação do Vulkan ajudariam.
+
+## Ciclo de shaders e primeiro quadro 3D do motor (2026-10-09)
+
+**Tradutor (XenosRecomp).** Os 26 contêineres que o DXC recusava vinham de quatro defeitos, todos corrigidos em
+`shaders/XenosRecomp` (comentários `ds2-nx` no código):
+
+| Defeito | Shaders | Correção |
+|---|---|---|
+| amostrador com nome lido como textura 1D (`ToneMapTableSampler`, 256x1) sem índice 1D | 9 de pixel | o índice 1D é o 2D do mesmo slot, como já era para os `sN` sem nome |
+| `getWeights2D` chamada com 1/tamanho, que só `tfetch2D` aceitava | 9 de pixel (filtro do mapa de sombras; em parte os mesmos acima) | sobrecarga que ignora a constante e consulta a textura |
+| fetch cujo destino só recebe constantes: `r0. = tfetch2D(...).;` | 4 de pixel | nada é atribuído do fetch; só as constantes |
+| entradas de vértice `TANGENT1` e `COLOR2` sem `vk::location` | 12 de vértice (modelos) | recebem as localizações de `BINORMAL0` (3) e `TEXCOORD4` (12), que nenhum deles usa; `LocationOfUsage` do renderizador igual |
+
+Biblioteca refeita com os 1.409 do disco + 18 contêineres que o renderizador reconstruiu das cargas imediatas do
+Direct3D (`shader_misses/missing`) + 1 shader interno embrulhado (15 palavras): **1.428 contêineres, 0 falhas, 1.417
+shaders** (`ds2_shaders.mesp`, 62,5 MB). Nos menus os desenhos sem shader caíram de milhares para 1 a cada 10 s.
+
+**Religação de interpoladores do Direct3D.** No 3D, o Direct3D do XDK 21256 carrega os vertex shaders dos modelos
+como microcódigo imediato já alterado: além dos fetches reescritos para a declaração de vértices, ele troca por
+instruções vazias (`C8000000 00000000 02000000`) as instruções ALU que exportam interpoladores que o pixel shader em
+uso não lê (visto nas instruções 39 e 40 de um shader de 126 palavras: biblioteca `C8038001 00B0C600 A100FF00`). A
+verificação de identidade recusava esses shaders (`reason=non-fetch-word`) e o desenho ficava sem vertex shader.
+Agora ela aceita exatamente esse caso (`me_shader_identity.h`, chave `ds2_native_vs_removed_exports`): a instrução
+carregada é a vazia, a da biblioteca é uma ALU executada (bit de sequência do fluxo de controle) que só exporta para
+os registradores 0..15. O shader da biblioteca, sem a alteração, desenha a mesma imagem: só escreve saídas que
+ninguém lê. **Não há autoverificação desse caminho** (não existe caminho antigo que desenhe para comparar).
+
+**Resultado** (`out/pc/logs/ds2_014.log`, 435 s, sem queda): depois do carregamento o renderizador desenha a cena de
+abertura de Things Betwixt, ~700 desenhos e ~60 cópias de alvo por quadro, 7 desenhos sem shader a cada 10 s, a
+~0,5 quadro/s no lavapipe. `video_200s.rgba`, quadros 100–109: troncos, capim e o chão dentro das barras de cinema,
+**muito escuros e com as cores erradas**. O que resta no log:
+
+- 58 `identity mismatch`, 25 deles `word-count`: o registro do desenho aponta um objeto de shader de outro tamanho
+  (o pareamento desenho ↔ objeto erra); a maioria é de pixel shaders de 9/15/18 palavras.
+- `signed textures not supported yet: read as unsigned` (formato 29), na cadeia de pós-processamento.
+- A queda dentro do lavapipe aos ~300 s apareceu em 3 de 5 sessões; as duas em que não apareceu tinham o despejo de
+  shaders ligado. Mesmo endereço relativo no código JIT nas duas últimas (`...1678`, leitura de 0). Causa não isolada.
