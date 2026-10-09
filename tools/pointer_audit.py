@@ -38,7 +38,7 @@ import switch_check as sc  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODULES = {
     # name: (image dump, base, code range lo, hi (code only: the DLL's import thunks start at 0x88014470), gen dir)
-    'default': ('out/default_image.bin', 0x82000000, 0x82120000, 0x82970600, 'app/generated/default'),
+    'default': ('out/default_image.bin', 0x82000000, 0x82240000, 0x83402474, 'app/generated/default'),
     'dll': ('out/default_image.Data_DLL.bin', 0x88000000, 0x88010000, 0x88014470, 'app/generated/data_dll'),
 }
 

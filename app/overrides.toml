@@ -9,3 +9,118 @@
 # Root keys (setjmp_address, longjmp_address, ...) must stay above the first table.
 
 [functions]
+# First validation run (rexglue codegen, 2026-10-09, out/codegen.log: "Validation failed: 46 unresolved calls"): a
+# direct unconditional branch (`b`, a tail call) to each address below, which automatic discovery had not assigned to
+# any function ("target not in any function"; the caller is listed). No sizes imposed: the Discover phase determines
+# each boundary from the PPC code.
+"0x82281308" = { }  # from 0x82648E0C
+"0x82391238" = { }  # from 0x8239620C
+"0x82391240" = { }  # from 0x82396214
+"0x82391248" = { }  # from 0x8239621C
+"0x82391250" = { }  # from 0x82396224
+"0x82391280" = { }  # from 0x82396244
+"0x82391288" = { }  # from 0x8239624C
+"0x82391290" = { }  # from 0x82396254
+"0x82391298" = { }  # from 0x8239625C
+"0x82391340" = { }  # from 0x823962FC
+"0x82391690" = { }  # from 0x823963A4
+"0x82391698" = { }  # from 0x823963AC
+"0x823916A0" = { }  # from 0x823963B4
+"0x823916A8" = { }  # from 0x823963BC
+"0x823916B0" = { }  # from 0x823963C4
+"0x823916B8" = { }  # from 0x823963D4
+"0x823916C8" = { }  # from 0x823963E4
+"0x82391810" = { }  # from 0x82396504
+"0x82391868" = { }  # from 0x823965BC
+"0x823962E0" = { }  # from 0x82363044
+"0x823F00D0" = { }  # from 0x823CFBA0
+"0x82464378" = { }  # from 0x8265CA20
+"0x824643A0" = { }  # from 0x8265D31C
+"0x82545F08" = { }  # from 0x82547B58
+"0x82618F80" = { }  # from 0x82619008
+"0x82619360" = { }  # from 0x826193E8
+"0x826BBEB8" = { }  # from 0x826EF3A0
+"0x826BBEE8" = { }  # from 0x826EF3B0
+"0x826BBF30" = { }  # from 0x826EF448
+"0x826BBFF0" = { }  # from 0x826EF4EC
+"0x826E73E8" = { }  # from 0x826BBFCC
+"0x82897878" = { }  # from 0x828B9714
+"0x828978F0" = { }  # from 0x828A4AB4
+"0x828979A0" = { }  # from 0x828250F8
+"0x828979B0" = { }  # from 0x828250F0
+"0x828979C0" = { }  # from 0x828250E8
+"0x828979D0" = { }  # from 0x828250E0
+"0x828A2E30" = { }  # from 0x828A48FC
+"0x82F32D40" = { }  # from 0x82607734
+"0x82F86DA0" = { }  # from 0x83071EA8
+"0x832F8EF8" = { }  # from 0x832F66E4
+
+# Second validation run (2026-10-09): one more of the same class, 0x823916D0 from 0x823963EC. It belongs to a table of
+# 2-instruction adjustor thunks (`lwz r3,8(r3)` or `mr r3,r4`, then `b`) at 0x82391238-0x82391868, each the target of
+# a `b` from a second thunk table at 0x82396200-0x823965C0 (listing of out/default_image.bin with objdump). All the
+# targets of that table not declared above are declared here, so the validation does not find them one run at a time.
+"0x82391258" = { }  # from 0x8239622C
+"0x82391270" = { }  # from 0x82396234
+"0x82391278" = { }  # from 0x8239623C
+"0x823912A0" = { }  # from 0x82396264
+"0x82391320" = { }  # from 0x823962CC
+"0x82391328" = { }  # from 0x823962D4
+"0x82391330" = { }  # from 0x823962DC
+"0x82391338" = { }  # from 0x823962F4
+"0x82391408" = { }  # from 0x82396304
+"0x82391410" = { }  # from 0x8239630C
+"0x82391418" = { }  # from 0x82396314
+"0x82391420" = { }  # from 0x8239631C
+"0x82391470" = { }  # from 0x82396324
+"0x82391528" = { }  # from 0x8239632C
+"0x82391590" = { }  # from 0x82396334
+"0x823915E0" = { }  # from 0x8239634C
+"0x82391648" = { }  # from 0x82396354
+"0x82391650" = { }  # from 0x8239635C
+"0x82391658" = { }  # from 0x82396364
+"0x82391660" = { }  # from 0x8239636C
+"0x82391668" = { }  # from 0x82396374
+"0x82391670" = { }  # from 0x8239637C
+"0x82391678" = { }  # from 0x82396384
+"0x82391680" = { }  # from 0x8239638C
+"0x82391688" = { }  # from 0x8239639C
+"0x823916C0" = { }  # from 0x823963DC
+"0x823916D0" = { }  # from 0x823963EC
+"0x823916D8" = { }  # from 0x823963F4
+"0x823916E0" = { }  # from 0x823963FC
+"0x823916E8" = { }  # from 0x82396404
+"0x823916F0" = { }  # from 0x8239640C
+"0x823916F8" = { }  # from 0x82396414
+"0x82391700" = { }  # from 0x8239641C
+"0x82391708" = { }  # from 0x82396424
+"0x82391710" = { }  # from 0x8239642C
+"0x82391718" = { }  # from 0x82396434
+"0x82391740" = { }  # from 0x8239643C
+"0x82391748" = { }  # from 0x82396444
+"0x82391760" = { }  # from 0x8239644C
+"0x82391778" = { }  # from 0x82396454
+"0x82391788" = { }  # from 0x8239645C
+"0x823917A0" = { }  # from 0x82396464
+"0x823917E0" = { }  # from 0x823964A4
+"0x823917E8" = { }  # from 0x823964AC
+"0x82391818" = { }  # from 0x8239650C
+"0x82391820" = { }  # from 0x823965AC
+"0x82391860" = { }  # from 0x823965B4
+
+# The first validation run also reported five short backward `b` whose target is not a function entry but the shared
+# `li r3,0; blr`-style exit of a frameless leaf function; the branch sits in the function's own tail, after its first
+# blr (0x82617514 from 0x8261752C, 0x8281B4C4 from 0x8281B4D4, 0x828A865C from 0x828A866C, 0x828A8774 from
+# 0x828A8784, 0x82CCF38C from 0x82CCF3BC). Declared by their real bounds instead, read from the listing: each starts
+# right after the unconditional `b`/blr that ends the previous function, and ends where the next one begins (`mflr
+# r12`, or the first instruction after the last blr that no branch of the function reaches).
+"0x82617468" = { end = 0x82617530 }  # holds 0x82617514; next function 0x82617530 (mflr r12)
+"0x8281B450" = { end = 0x8281B4E0 }  # holds 0x8281B4C4; previous ends with b at 0x8281B44C
+"0x828A85F0" = { end = 0x828A8678 }  # holds 0x828A865C; next function 0x828A8678 (mflr r12)
+"0x828A8708" = { end = 0x828A8790 }  # holds 0x828A8774; previous ends with b at 0x828A8704
+"0x82CCF350" = { end = 0x82CCF3C0 }  # holds 0x82CCF38C; next function 0x82CCF3C0 (mflr r12)
+
+# Third run (2026-10-09, the first one that wrote code): "Unresolved conditional branch to 0x828BF38C" from
+# 0x828BF3C0, 0x828BF3DC, 0x828BF3F8 and 0x828BF414, emitted as REX_FATAL in sub_828BF39C. Same class as the five
+# above: one frameless leaf, 0x828BF378 (right after the `b` at 0x828BF374) to 0x828BF41C (the `b` at 0x828BF418,
+# then a zero word and the next function's `mflr r12` at 0x828BF420), which gap-fill cut at its first blr (0x828BF398).
+"0x828BF378" = { end = 0x828BF41C }

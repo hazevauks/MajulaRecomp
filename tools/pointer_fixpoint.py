@@ -37,7 +37,7 @@ GEN = os.path.join(APP, 'generated', 'default')
 MANIFEST = os.path.join(APP, 'ds2_manifest.toml')
 OVERRIDES = os.path.join(APP, 'overrides.toml')
 IMAGE_BASE = 0x82000000
-CODE_LO, CODE_HI = 0x82120000, 0x82970600  # set from the generated tree in main()
+CODE_LO, CODE_HI = 0x82240000, 0x83402474  # set from the generated tree in main()
 
 gc = {'__name__': 'gc'}
 exec(compile(open(os.path.join(TOOLS, 'gap_classify.py')).read(), 'gc', 'exec'), gc)
@@ -60,7 +60,7 @@ def code_range():
     size = re.search(r'code_size\s*=\s*0x([0-9A-Fa-f]+)', text)
     if base and size:
         return int(base.group(1), 16), int(base.group(1), 16) + int(size.group(1), 16)
-    return 0x82120000, 0x82970600  # from the runtime log of the first boot
+    return 0x82240000, 0x83402474  # from the runtime log of the first boot
 
 
 def read_gaps(scratch):

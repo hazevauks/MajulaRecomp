@@ -8,12 +8,12 @@ that tools/find_gaps.py writes (out/gaps/candidates.toml). Scans every 4-byte al
 range; keeps values that are 4-aligned, inside the code range and inside a gap.
 These are candidate function entries (vtables, callback tables, the CRT's static initializer table) that static
 discovery missed. Candidates must still pass gap_classify validation.
-The code range defaults to SA2's (the runtime logs it: "Function table initialized for module: code=...").
+The code range defaults to Dark Souls II's .text (0x82240000-0x83402474, from the image's PE section table) (the runtime logs it: "Function table initialized for module: code=...").
 """
 import re, struct, sys
 IMAGE_BASE = 0x82000000
-CODE_BASE = int(sys.argv[3], 16) if len(sys.argv) > 3 else 0x82120000
-CODE_SIZE = (int(sys.argv[4], 16) if len(sys.argv) > 4 else 0x82970600) - CODE_BASE
+CODE_BASE = int(sys.argv[3], 16) if len(sys.argv) > 3 else 0x82240000
+CODE_SIZE = (int(sys.argv[4], 16) if len(sys.argv) > 4 else 0x83402474) - CODE_BASE
 image = open(sys.argv[1], "rb").read()
 gaps = []
 for l in open(sys.argv[2]):

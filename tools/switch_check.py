@@ -367,7 +367,7 @@ def main():
     ap.add_argument('--image', default=os.path.join(ROOT, 'out', 'default_image.bin'))
     ap.add_argument('--base', default='0x82000000', help='image base (hex)')
     ap.add_argument('--gen', default=os.path.join(ROOT, 'app', 'generated', 'default'))
-    ap.add_argument('--code', default='82120000:82970600', help='code range lo:hi (hex)')
+    ap.add_argument('--code', default='82240000:83402474', help='code range lo:hi (hex)')
     ap.add_argument('--toml', help='write [[switch_tables]] entries for the tables to fix here')
     ap.add_argument('-v', '--verbose', action='store_true', help='also list the tables with extra cases')
     a = ap.parse_args()
