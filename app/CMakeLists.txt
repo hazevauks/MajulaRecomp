@@ -40,6 +40,8 @@ set(DS2_SOURCES
     src/ds2_crash_log.cpp
     # Recordings of the game image for testing (cvar ds2_video_s; tools/frames_to_png.py makes a contact sheet).
     src/ds2_capture.cpp
+    # Scripted pad for unattended test runs (cvar ds2_input_script; tools/win/boot_test.ps1 -Pad).
+    src/ds2_input_script.cpp
 )
 
 if(WIN32)

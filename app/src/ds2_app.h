@@ -14,6 +14,7 @@
 #include <rex/runtime.h>
 
 #include "ds2_capture.h"
+#include "ds2_input_script.h"
 
 class Ds2App : public rex::ReXApp {
  public:
@@ -64,6 +65,8 @@ class Ds2App : public rex::ReXApp {
   // Recording of the game image for testing (ds2_video_s = N seconds after start; 0 = off). Taken from the
   // presenter's guest output, so it works minimized and nothing can cover it.
   void OnPostSetup() override {
+    // Unattended runs: a scripted pad (ds2_input_script) to get through the warnings and menus.
+    ds2::input_script::Install(runtime());
     ds2::capture::Start([this]() -> rex::ui::Presenter* {
       const auto* rt = runtime();
       const auto* graphics = rt ? rt->graphics_system() : nullptr;

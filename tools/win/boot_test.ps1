@@ -3,15 +3,19 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\boot_test.ps1 [-Seconds 45] [-Exe out\pc\ds2.exe]
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\boot_test.ps1 -VideoAt 10 -VideoFrames 600
-# -VideoEvery N keeps one game frame in N (ds2_video_every): minutes of footage at a few hundred MB.
+# -VideoEvery N takes one frame every N sixtieths of a second (ds2_video_every): 60 = one frame a second.
+# -Pad '<script>' presses buttons on a timeline (ds2_input_script), to get past warnings and menus unattended.
 param(
     [int]$Seconds = 45,
     [string]$Exe = 'out\pc\ds2.exe',
     [int]$Tail = 40,
     [int]$VideoAt = 0,
     [int]$VideoFrames = 300,
-    [int]$VideoEvery = 1
+    [int]$VideoEvery = 1,
+    # Scripted pad (ds2_input_script): '12:a,15:start,20-25:lup'. See app/src/ds2_input_script.h.
+    [string]$Pad = ''
 )
+if ($Pad) { $env:REX_DS2_INPUT_SCRIPT = $Pad } else { Remove-Item env:REX_DS2_INPUT_SCRIPT -ErrorAction SilentlyContinue }
 if ($VideoAt -gt 0) {
     $env:REX_DS2_VIDEO_S = "$VideoAt"
     $env:REX_DS2_VIDEO_FRAMES = "$VideoFrames"
