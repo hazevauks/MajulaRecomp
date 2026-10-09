@@ -125,15 +125,19 @@ Com a entrada por script (`ds2_input_script`, `tools/win/boot_test.ps1 -Pad`) e 
 2. Start → "Checking save data" → "Saving content" (o save é criado em `Documents\ds2\<perfil>\465307E4\`) → aviso
    "Ethernet cable is not connected" com OK.
 3. Menu principal (New Game / Continue / Go Offline) → New Game → ajuste de brilho → opções → "Saving content".
-4. Numa segunda sessão, Continue → lista de dados → legendas do prólogo ("Perhaps you've seen it, maybe in a
-   dream.") → tela de carregamento com descrição de item (correta) → cena 3D de abertura, com as barras de cinema.
+4. Numa segunda sessão, Continue → lista de dados → vídeo de abertura (`movie/prologue.wmv`: começa preto, só com
+   narração, legendas e créditos; depois a floresta em CGI, com as barras de cinema) → tela de carregamento com
+   descrição de item (correta).
 
-**O que está errado ou não foi verificado:**
+O vídeo de abertura é decodificado pelo código do próprio jogo e desenhado com `DrawVertices` (tipo 4, 6 vértices por
+quadro). **No backend Vulkan (lavapipe) ele sai certo** (`out/pc/logs/ds2_008.log`, quadros 50–79 de
+`video_100s.rgba`), a ~4 trocas de quadro por segundo. No Direct3D 12 sobre o WARP o mesmo vídeo saía como um
+retângulo azul liso: defeito daquele caminho, não investigado, e sem importância para o porte (o Switch usa Vulkan).
 
-- Durante as legendas do prólogo a imagem fica preta: o vídeo `movie/prologue.wmv` não aparece (6 quadros amostrados,
-  todos pretos com a legenda). Causa não investigada.
-- A cena 3D sai como um quadro azul liso dentro das barras (5 quadros amostrados) e a ~0,15 quadro/s no WARP. Não se
-  sabe ainda se é a cena que não desenha, um efeito de tela cheia errado ou só o começo de um fade.
+**O que ainda não foi visto ou verificado:**
+
+- O jogo em 3D de verdade (Things Betwixt): as sessões acabaram durante o vídeo de abertura. Nenhuma cena 3D do motor
+  foi desenhada ainda.
 - Com 3–8 quadros/s nos menus, um toque de 150 ms do script se perde entre duas leituras do controle: usar faixas
   (`135-135.6:a`).
 - Som: o FMOD decodifica XMA o tempo todo (cerca de 1.300 contextos a cada 10 s nos menus), mas tudo roda mudo.
@@ -149,7 +153,8 @@ Candidatos tirados dos cabeçalhos PM4 que cada função monta (`lis rX,0xC0nn; 
 | `sub_829C2340` | `BeginVertices` (dev, tipo, contagem, stride) | escreve `DRAW_INDX` de 2 palavras; devolve o ponteiro onde `sub_829C2800` copia os vértices |
 | `sub_829C2800` | `DrawVerticesUP` (dev, tipo, contagem, dados, stride) | 0x48 bytes: chama `sub_829C2340`, depois `memcpy(ptr, dados, contagem*stride)`; é o desenho dos menus (32 por quadro, tipo 6, 4 vértices de 24 bytes) |
 | `sub_829C2848`, `sub_829C2D88` | `BeginIndexedVertices` / `DrawIndexedVerticesUP` (suposição pela forma) | `DRAW_INDX` de 4 palavras; não chamadas nos menus |
-| `sub_829C2E28`, `sub_829C3240` | `DrawVertices` / `DrawIndexedVertices` (suposição) | `DRAW_INDX` de 2 e de 4 palavras, 0x418 bytes uma da outra como no sa2-nx; não chamadas nos menus, a conferir na cena 3D |
+| `sub_829C2E28` | `DrawVertices` (dev, tipo, início, contagem) | `DRAW_INDX` de 2 palavras; chamada pelo jogo em `0x830802D0` com tipo 4, início 0, 6 vértices: o retângulo do vídeo de abertura, uma vez por quadro |
+| `sub_829C3240` | `DrawIndexedVertices` (dev, tipo, base, início, contagem) | `DRAW_INDX` de 4 palavras, 0x418 bytes depois de `DrawVertices` como no sa2-nx; chamada pelo jogo em `0x82F0E500` (tipo 6, contagens de 0x66 a 0xA7F índices) |
 | `sub_829BB060` | troca de quadro (Swap) | chamada pelo jogo em `0x82FECE38`, uma vez por quadro (42 em 5 s); dois `WAIT_REG_MEM` |
 | `sub_829CBAE8` | desenho de retângulo interno (clear ou resolve) | `DRAW_INDX_2`, uma vez por quadro, de `0x829CBFBC` |
 | `sub_829A86A8` | envio de buffer de comandos | `INDIRECT_BUFFER`, ~10 por quadro, de `0x829A92A8` |
@@ -172,3 +177,12 @@ $env:REX_DS2_GPU_BACKEND = 'vulkan'     # a GPU emulada em Vulkan em vez de Dire
 Medido nos menus (log `ds2_007.log`): dispositivo `llvmpipe (LLVM 23.1.2, 256 bits)`, Vulkan 1.4; mesmas imagens do
 Direct3D 12/WARP até a tela-título, a ~8,4 quadros/s (42 trocas em 5 s) contra 4–5 no WARP. É o mesmo caminho de
 código (GPU emulada em Vulkan) que o Switch usa nos primeiros quadros.
+
+## Shaders do jogo
+
+`tools/extract_shaders.py` (2026-10-09) lê os contêineres direto do disco extraído: cada entrada dos `shader/*.bnd`
+é um fluxo zlib com um contêiner (`102A1100` pixel, `102A1101` vértice), e os `.fxo` são contêineres soltos. De 2.584
+entradas saem **120 shaders de vértice e 1.289 de pixel distintos** (1.174 são cópias idênticas de outros; a entrada 0
+do `FlverShader.bnd` não é um contêiner). Ficam em `out/shaders_in/` com os nomes que `tools/build_shader_library.sh`
+espera, então a biblioteca pode ser montada sem rodar o jogo. Faltam os shaders internos do Direct3D (clears,
+cópias), que só aparecem com o despejo de descoberta do renderizador nativo.
