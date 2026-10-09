@@ -30,7 +30,7 @@ endereços do jogo ainda precisam dos dados do DS2.
 | 2. Arquivos do jogo extraídos e inspecionados | **feito** (ver [docs/ds2-notes.md](docs/ds2-notes.md)) |
 | 3. Tradução do código (`rexglue codegen`) | **feito**: 83.143 funções, 0 erros de validação; varreduras de ponteiros e de tabelas de salto limpas |
 | 4. Primeiro boot no PC com a GPU emulada | **feito**: menus, criação de save, vídeo de abertura e carregamento do primeiro mapa, sem crash do código do jogo; a GPU emulada não desenha o 3D no lavapipe (SPIR-V rejeitado) |
-| 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado, Direct3D do jogo mapeado, 1.409 shaders extraídos do disco |
+| 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado e rodando no lavapipe (menus, vídeo de abertura e carregamento certos, ~16 quadros/s); biblioteca com 1.383 de 1.409 shaders; ao entrar no primeiro mapa 3D há shaders sem identificar e o lavapipe cai |
 | 7. Build para o Switch (devkitA64 + NVK) | pendente |
 | 8–11. Medição no console e otimizações de CPU/GPU | pendente |
 
