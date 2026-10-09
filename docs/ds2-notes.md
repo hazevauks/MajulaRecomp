@@ -186,3 +186,20 @@ entradas saem **120 shaders de vértice e 1.289 de pixel distintos** (1.174 são
 do `FlverShader.bnd` não é um contêiner). Ficam em `out/shaders_in/` com os nomes que `tools/build_shader_library.sh`
 espera, então a biblioteca pode ser montada sem rodar o jogo. Faltam os shaders internos do Direct3D (clears,
 cópias), que só aparecem com o despejo de descoberta do renderizador nativo.
+
+## Primeiro mapa 3D e o limite da GPU emulada no lavapipe (2026-10-09)
+
+Sessão `out/pc/logs/ds2_009.log` (GPU emulada em Vulkan, lavapipe): Continue, vídeo pulado com Start aos 135 s, cerca
+de 150 s de tela de carregamento, e o processo cai com `0xC0000005` aos 305 s.
+
+- Logo antes da queda o log mostra a GPU emulada criando dezenas de pipelines com shaders novos (por exemplo
+  `VS D24FF649F7459F81, PS A3249875A446A537`): o jogo terminou de carregar o mapa e começou a desenhar em 3D.
+- Vários desses pipelines falham: `SPIR-V parsing FAILED: Source and destination types of SpvOpStore do not match:
+  int (%7) vs. float (%15)` e `vkCreateGraphicsPipelines failed (result=-13)`. É o SPIR-V que o tradutor de shaders
+  da GPU emulada gera, recusado pelo analisador do Mesa.
+- A violação de acesso vem em seguida. **Não foi simbolizada**: o log não registra o endereço (o registrador de
+  exceções do app deixa as violações de acesso para o SDK). A leitura mais provável é o desenho com um pipeline que
+  não existe, no host; não há evidência de erro no código traduzido do jogo, mas isso não está provado.
+
+Consequência: a GPU emulada não serve para ver o 3D neste PC. O caminho é o renderizador nativo, cujos shaders vêm do
+XenosRecomp + DXC (outro tradutor).
