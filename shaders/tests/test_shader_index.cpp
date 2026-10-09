@@ -7,7 +7,7 @@
 //     a damaged index and (with --other) another package's index are rejected.
 //   test_shader_index --time-full <package.mesp> | --time-index <package.mesp> <package.idx>
 //     load time and peak RSS of one load mode alone.
-#include "../../app/src/me/native/sa2_shader_library.h"
+#include "../../app/src/me/native/ds2_shader_library.h"
 
 #include <sys/resource.h>
 
@@ -24,8 +24,8 @@
 #include <xxhash.h>
 
 namespace fs = std::filesystem;
-using sa2::native::LibraryShaders;
-using sa2::native::Shader;
+using ds2::native::LibraryShaders;
+using ds2::native::Shader;
 using Clock = std::chrono::steady_clock;
 
 // True once the lazily read SPIR-V of an indexed entry has been published.
@@ -98,7 +98,7 @@ int main(int argc, char** argv) try {
     Check(a[i].fingerprint == b[i].fingerprint && a[i].vertices == b[i].vertices, "fingerprint/stage", i);
     Check(b[i].words == a[i].spirv.size(), "SPIR-V words", i);
     Check(b[i].spirv_fingerprint == XXH3_64bits(a[i].spirv.data(), a[i].spirv.size() * 4), "SPIR-V hash", i);
-    Check(b[i].kills == sa2::native::CountKillsSpirv(a[i].spirv), "kills", i);
+    Check(b[i].kills == ds2::native::CountKillsSpirv(a[i].spirv), "kills", i);
     // What the start-up code and IdentifyContainer look up: every container finds the same entry.
     Check(full.Search(a[i].original) == &a[i], "full Search", i);
     Check(lazy.Search(a[i].original) == &b[i], "index Search", i);
@@ -116,7 +116,7 @@ int main(int argc, char** argv) try {
   if (!all) sample.resize(std::min<size_t>(2000, sample.size()));
   std::vector<const Shader*> prefetch;
   for (size_t k = 0; k < sample.size(); k += 2) prefetch.push_back(&b[sample[k]]);
-  sa2::native::StatsPreload stats;
+  ds2::native::StatsPreload stats;
   t = Clock::now();
   std::thread thread([&] { stats = lazy.Preload(prefetch, nullptr); });
   size_t bytes = 0;

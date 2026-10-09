@@ -9,14 +9,15 @@
 # whole container each D3DDevice_CreateVertexShader/CreatePixelShader received). In-place shader objects, if SA2 has
 # any, would come as v_*/p_*.bin (banjo-nx's scanner); both are accepted.
 # Output: out/shaders/ds2_shaders.mesp (+ .idx). Copy both next to ds2.exe / the NRO.
-# Needs: MSYS2 clang64 clang++ (CXX), DXC (DXC; default: the one in the UnleashedRecomp-NX tree).
+# Needs: clang++ (CXX; default _tools/llvm, the PC build's LLVM) and DXC (DXC; default _tools/dxc, a release zip of
+# microsoft/DirectXShaderCompiler). Dump folders may also be out/shaders_in, written by tools/extract_shaders.py.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SHADERS="$ROOT/shaders"; XENOS="$SHADERS/XenosRecomp"; SDK="$ROOT/sdk"
 OUT="$ROOT/out/shaders"
-CXX=${CXX:-/c/devkitPro/msys2/clang64/bin/clang++.exe}
-DXC=${DXC:-/c/devkitPro/UnleashedRecomp-NX/tools/XenosRecomp/thirdparty/dxc-bin/bin/x64/dxc.exe}
-JOBS=${JOBS:-8}
+CXX=${CXX:-$ROOT/_tools/llvm/bin/clang++.exe}
+DXC=${DXC:-$ROOT/_tools/dxc/bin/x64/dxc.exe}
+JOBS=${JOBS:-4}
 [ $# -ge 1 ] || { echo "usage: $0 <dump folder> [...]"; exit 1; }
 rm -rf "$OUT"; mkdir -p "$OUT/in" "$OUT/hlsl" "$OUT/spirv" "$OUT/bin" "$OUT/tmp"
 
@@ -35,10 +36,10 @@ parallel() {
 
 echo "== building tools"
 "$CXX" -std=c++20 -O2 -static -w -fms-extensions -include "$XENOS/pch_min.h" -I"$SHADERS" -I"$XENOS" \
-  -I"$SDK/thirdparty/fmt/include" -I"$SDK/thirdparty/xxHash" -DFMT_HEADER_ONLY -DXXH_INLINE_ALL -DMASSEFFECT_RECOMP \
+  -I"$SDK/thirdparty/fmt/include" -I"$SDK/thirdparty/xxHash" -DFMT_HEADER_ONLY -DXXH_INLINE_ALL -DMASSEFFECT_RECOMP -DNOMINMAX \
   "$SHADERS/tools/masseffect_hlsl.cpp" "$XENOS/shader_recompiler.cpp" -o "$OUT/bin/xenos_hlsl.exe" \
   > "$OUT/build_tools.log" 2>&1 || { echo "translator build failed, see $OUT/build_tools.log"; exit 1; }
-"$CXX" -std=c++20 -O2 -static -w -I"$SDK/thirdparty/xxHash" -I"$ROOT/app/src/me/native" \
+"$CXX" -std=c++20 -O2 -static -w -DNOMINMAX -I"$SDK/thirdparty/xxHash" -I"$ROOT/app/src/me/native" \
   "$SHADERS/tools/me_pack_shaders.cpp" "$ROOT/app/src/me/native/ds2_shader_library.cpp" \
   -o "$OUT/bin/me_pack_shaders.exe" >> "$OUT/build_tools.log" 2>&1 || { echo "packer build failed, see $OUT/build_tools.log"; exit 1; }
 

@@ -10,3 +10,11 @@ log_level = "info"
 # take over the desktop or the speakers. Set both to false to play.
 audio_mute = true
 window_start_minimized = true
+
+# Stage 2: the native Vulkan renderer (app/src/me) instead of the emulated Xenos GPU. Needs ds2_shaders.mesp next to
+# the executable (tools/extract_shaders.py, then tools/build_shader_library.sh out/shaders_in).
+ds2_renderer_native = false
+# The emulated GPU's host API: empty = the SDK's choice (Direct3D 12 on Windows), "vulkan" for the path the Switch uses.
+ds2_gpu_backend = ""
+# Stage 2 tracing of the game's Direct3D (app/src/ds2_d3d_trace.cpp): calls, callers and arguments every 5 s.
+ds2_d3d_trace = false

@@ -4,13 +4,13 @@
 //   extract_shader_package package.mesp out_dir
 #define XXH_INLINE_ALL
 #include <xxhash.h>
-#include "../../app/src/me/native/sa2_shader_library.h"
+#include "../../app/src/me/native/ds2_shader_library.h"
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 int main(int argc, char** argv) {
   if (argc != 3) { std::fprintf(stderr, "usage: %s package.mesp out_dir\n", argv[0]); return 2; }
-  sa2::native::LibraryShaders library;
+  ds2::native::LibraryShaders library;
   library.Load(std::filesystem::path(argv[1]));
   if (library.shaders().empty()) { std::fprintf(stderr, "package did not load\n"); return 1; }
   std::filesystem::create_directories(argv[2]);

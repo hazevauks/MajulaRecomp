@@ -2,7 +2,7 @@
 // the whole package (LibraryShaders::LoadIndexed). The package is fully loaded and verified first,
 // and the index is checked by loading it back.
 //   usage: me_index_shaders <package.mesp> [<output .idx>, default <package.mesp>.idx]
-#include "../../app/src/me/native/sa2_shader_library.h"
+#include "../../app/src/me/native/ds2_shader_library.h"
 
 #include <chrono>
 #include <cstdio>
@@ -22,14 +22,14 @@ int main(int argc, char** argv) try {
   std::vector<uint8_t> data(static_cast<size_t>(f.tellg()));
   f.seekg(0);
   if (!f.read(reinterpret_cast<char*>(data.data()), data.size())) throw std::runtime_error("short read");
-  const auto index = sa2::native::IndexShaders(data);
+  const auto index = ds2::native::IndexShaders(data);
   const fs::path temporary = fs::path(output) += ".tmp";
   {
     std::ofstream o(temporary, std::ios::binary | std::ios::trunc);
     if (!o.write(reinterpret_cast<const char*>(index.data()), index.size()) || !o.flush())
       throw std::runtime_error("write failed");
   }
-  sa2::native::LibraryShaders check;
+  ds2::native::LibraryShaders check;
   check.LoadIndexed(package, temporary);
   fs::rename(temporary, output);
   std::printf("%s: %zu entries, %zu bytes (%.1f s)\n", output.string().c_str(), check.shaders().size(), index.size(),

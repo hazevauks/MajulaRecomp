@@ -9,7 +9,7 @@ set -eu
 . "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 need_xxhash
 mkdir -p "$OUT_TOOLS"
-LIB="$ROOT/app/src/me/native/sa2_shader_library.cpp"
+LIB="$ROOT/app/src/me/native/ds2_shader_library.cpp"
 tools=${*:-extract_shader_package find_shader_microcode repair_vertex_variant_declarations ue3_shader_scan}
 for t in $tools; do
   case $t in

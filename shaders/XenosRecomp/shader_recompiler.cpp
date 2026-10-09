@@ -1325,7 +1325,7 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
 }
 
 // MASSEFFECT: the full vertex fetches of a microcode (instruction index, destination register), walking the
-// exec clauses of the control flow. Same walk as app/src/me/native/sa2_native_shaders.cpp
+// exec clauses of the control flow. Same walk as app/src/me/native/ds2_native_shaders.cpp
 // FetchesOfVertices: Direct3D's own vertex shaders are linked by fetch destination register.
 static std::vector<std::pair<uint32_t, uint32_t>> vertexFetchesByRegister(const std::vector<uint32_t>& w)
 {

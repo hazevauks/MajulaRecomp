@@ -8,7 +8,7 @@ need_xxhash
 mkdir -p "$OUT_TOOLS"
 for tool in tools/me_index_shaders tests/test_shader_index; do
   "$CXX" -std=c++20 -O2 -I"$XXHASH_DIR" "$SHADERS/$tool.cpp" \
-    "$ROOT/app/src/me/native/sa2_shader_library.cpp" -o "$OUT_TOOLS/$(basename "$tool")"
+    "$ROOT/app/src/me/native/ds2_shader_library.cpp" -o "$OUT_TOOLS/$(basename "$tool")"
 done
 for package in "$@"; do
   "$OUT_TOOLS/me_index_shaders" "$package"

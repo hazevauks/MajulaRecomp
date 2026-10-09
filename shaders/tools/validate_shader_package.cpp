@@ -5,7 +5,7 @@
 // module through SPIRV-Tools using the Vulkan 1.3 environment used by the host
 // renderer. It intentionally validates the package as shipped rather than the
 // loose intermediate files.
-#include "../../app/src/me/native/sa2_shader_library.h"
+#include "../../app/src/me/native/ds2_shader_library.h"
 
 #include <spirv-tools/libspirv.hpp>
 
@@ -24,7 +24,7 @@ static uint32_t Be32(std::span<const uint8_t> bytes, size_t offset) {
          uint32_t(bytes[offset + 2]) << 8 | bytes[offset + 3];
 }
 
-static uint64_t MicrocodeFingerprint(const sa2::native::Shader& shader) {
+static uint64_t MicrocodeFingerprint(const ds2::native::Shader& shader) {
   const auto& bytes = shader.original;
   const uint32_t virtual_size = Be32(bytes, 4);
   const uint32_t header = Be32(bytes, 24);
@@ -47,7 +47,7 @@ int main(int argc, char** argv) try {
     return 2;
   }
 
-  sa2::native::LibraryShaders library;
+  ds2::native::LibraryShaders library;
   library.Load(std::filesystem::path(argv[1]));
   if (find_microcode) {
     const uint64_t fingerprint = std::stoull(argv[3], nullptr, 16);

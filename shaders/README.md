@@ -119,7 +119,7 @@ are the patches this project always carried; the rest came later:
    microcode fetches from each; upstream only defined the first. Every register now gets its definitions, and
    every fetch register that has no name gets an `sN_*` set.
 2. **2008 containers** whose physical part is not a multiple of 12 bytes (844 and 856 byte ones exist) are
-   accepted (the library checks in `sa2_shader_library.cpp`).
+   accepted (the library checks in `ds2_shader_library.cpp`).
 3. **Relocated literal definitions.** Float definitions whose physical range overlaps the microcode or lies
    outside the physical block are ignored and the real guest registers are read. Valid definitions are
    untouched.

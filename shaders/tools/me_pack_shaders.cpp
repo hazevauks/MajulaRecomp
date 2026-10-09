@@ -1,12 +1,12 @@
 // Pack the collected shader containers and their SPIR-V into a shader library, with
-// the library format of app/src/me/native/sa2_shader_library.cpp (XXH3 of the whole
+// the library format of app/src/me/native/ds2_shader_library.cpp (XXH3 of the whole
 // original container as the key; the format is described in shaders/README.md). The containers are
 // the 2008 layout and are packed as they are.
 //   usage: me_pack_shaders <containers> <validated spirv> <new output file>
 //          me_pack_shaders --replace <base package> <containers> <validated spirv> <new output file>
 // It also writes <new output file>.idx, the index the game loads instead of the whole package (U1;
 // shaders/tools/me_index_shaders makes it for an existing package).
-#include "../../app/src/me/native/sa2_shader_library.h"  // banjo-nx path
+#include "../../app/src/me/native/ds2_shader_library.h"  // banjo-nx path
 
 #include <algorithm>
 #include <cstdio>
@@ -54,7 +54,7 @@ int main(int argc, char** argv) try {
   for (const auto& e : fs::directory_iterator(containers))
     if (e.is_regular_file() && e.path().extension() == ".bin") paths.push_back(e.path());
   std::sort(paths.begin(), paths.end());
-  std::vector<sa2::native::Shader> replacements;
+  std::vector<ds2::native::Shader> replacements;
   std::vector<fs::path> packed;
   size_t missing = 0;
   for (const auto& path : paths) {
@@ -64,7 +64,7 @@ int main(int argc, char** argv) try {
       continue;
     }
     packed.push_back(path);
-    sa2::native::Shader s;
+    ds2::native::Shader s;
     s.original = Read(path);
     auto spv = Read(spv_path);
     if (spv.size() % 4) throw std::runtime_error("misaligned SPIR-V");
@@ -73,10 +73,10 @@ int main(int argc, char** argv) try {
                         uint32_t(spv[i + 3]) << 24);
     replacements.push_back(std::move(s));
   }
-  std::vector<sa2::native::Shader> shaders;
+  std::vector<ds2::native::Shader> shaders;
   size_t removed = 0;
   if (replace) {
-    sa2::native::LibraryShaders old;
+    ds2::native::LibraryShaders old;
     old.Load(base);
     for (const auto& shader : old.shaders()) {
       const auto physical = Physical(shader.original);
@@ -91,15 +91,15 @@ int main(int argc, char** argv) try {
   }
   shaders.insert(shaders.end(), std::make_move_iterator(replacements.begin()),
                  std::make_move_iterator(replacements.end()));
-  auto package = sa2::native::PackShaders(std::move(shaders));
-  sa2::native::LibraryShaders library;
+  auto package = ds2::native::PackShaders(std::move(shaders));
+  ds2::native::LibraryShaders library;
   library.Load(package);
   for (const auto& path : packed)
     if (!library.Search(Read(path))) throw std::runtime_error("a shader is missing after packing");
   std::ofstream f(output, std::ios::binary);
   if (!f.write(reinterpret_cast<const char*>(package.data()), package.size()) || !f.flush())
     throw std::runtime_error("write failed");
-  const auto index = sa2::native::IndexShaders(package);
+  const auto index = ds2::native::IndexShaders(package);
   fs::path index_path = output;
   index_path += ".idx";
   std::ofstream fi(index_path, std::ios::binary | std::ios::trunc);

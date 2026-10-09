@@ -38,7 +38,7 @@ for t in $targets; do
         -sEXPORT_NAME=createHlslModule "${COMMON[@]}";;
     pack)
       # The full library (30k shaders, ~900 MB) needs the whole 4 GB address space of wasm32.
-      em++ -std=c++20 -O2 -I"$XXHASH_DIR" "$SHADERS/tools/me_pack_shaders.cpp" "$APP/sa2_shader_library.cpp" \
+      em++ -std=c++20 -O2 -I"$XXHASH_DIR" "$SHADERS/tools/me_pack_shaders.cpp" "$APP/ds2_shader_library.cpp" \
         -o "$OUT/pack.mjs" -sEXPORT_NAME=createPackModule -sMAXIMUM_MEMORY=4GB "${COMMON[@]}";;
     lzx)
       emcc -O2 -I"$MSPACK" -c "$MSPACK/lzxd.c" -o "$OUT/lzxd.o"

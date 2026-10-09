@@ -21,7 +21,7 @@ translate_bad=$(wc -l < "$OUT/translate_failed.txt" | tr -d ' ')
 echo "containers: $(find "$IN" -name '*.bin' | wc -l | tr -d ' '), translation failures: $translate_bad, SPIR-V failures: $bad"
 # Pack (library format described in shaders/README.md; key = XXH3 of the original container).
 "$CXX" -std=c++20 -O2 -I"$XXHASH_DIR" "$SHADERS/tools/me_pack_shaders.cpp" \
-  "$ROOT/app/src/me/native/sa2_shader_library.cpp" -o "$OUT_TOOLS/me_pack_shaders" || exit 1
+  "$ROOT/app/src/me/native/ds2_shader_library.cpp" -o "$OUT_TOOLS/me_pack_shaders" || exit 1
 if [ "$bad" -ne 0 ] || [ "$translate_bad" -ne 0 ]; then
   [ "${ALLOW_FAILURES:-0}" = 1 ] || { echo "not packing: some shaders failed (ALLOW_FAILURES=1 packs the rest)"; exit 1; }
   echo "ALLOW_FAILURES=1: packing without the failed ones (listed in $OUT/translate_failed.txt and the .err files)"
