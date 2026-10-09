@@ -197,9 +197,8 @@ de 150 s de tela de carregamento, e o processo cai com `0xC0000005` aos 305 s.
 - Vários desses pipelines falham: `SPIR-V parsing FAILED: Source and destination types of SpvOpStore do not match:
   int (%7) vs. float (%15)` e `vkCreateGraphicsPipelines failed (result=-13)`. É o SPIR-V que o tradutor de shaders
   da GPU emulada gera, recusado pelo analisador do Mesa.
-- A violação de acesso vem em seguida. **Não foi simbolizada**: o log não registra o endereço (o registrador de
-  exceções do app deixa as violações de acesso para o SDK). A leitura mais provável é o desenho com um pipeline que
-  não existe, no host; não há evidência de erro no código traduzido do jogo, mas isso não está provado.
+- A violação de acesso vem em seguida. O despejo do Windows (`%LOCALAPPDATA%/CrashDumps/ds2.exe.14192.dmp`) põe o
+  endereço em `vulkan_lvp.dll+0xBFDF2` (uma escrita), dentro do lavapipe.
 
 Consequência: a GPU emulada não serve para ver o 3D neste PC. O caminho é o renderizador nativo, cujos shaders vêm do
 XenosRecomp + DXC (outro tradutor).
@@ -230,3 +229,24 @@ rede):
   quatro shaders internos do Direct3D, carregados por `IM_LOAD_IMMEDIATE` (VS de 15, 24 e 27 palavras, PS de 9
   palavras): são os de clear/cópia, que o guia manda embrulhar com `tools/wrap_discovered.py` a partir do despejo de
   descoberta. Ainda não feito; não se sabe o que deixa de ser desenhado por causa deles.
+
+## Renderizador nativo no primeiro mapa 3D (2026-10-09)
+
+Sessão `out/pc/logs/ds2_011.log` (renderizador nativo, lavapipe; Continue, vídeo pulado, carregamento):
+
+- Vídeo de abertura e tela de carregamento saem certos (`video_100s.rgba`).
+- Aos 305 s o processo cai com `0xC0000005`, o mesmo instante da sessão com a GPU emulada. O despejo
+  (`ds2.exe.6344.dmp`) mostra a falha numa thread do rasterizador do lavapipe: leitura do endereço 0 em código JIT
+  (fora de qualquer módulo), com só `vulkan_lvp.dll` na pilha. Nenhum quadro de `ds2.exe` nessa thread. **É uma queda
+  dentro do driver por software ao desenhar, não do código traduzido do jogo**; o que o renderizador pediu de errado
+  (ou o que o lavapipe não tolera) ainda não foi isolado.
+- Últimas linhas do renderizador antes da queda: a cadeia de pós-processamento do 3D sendo criada (alvos de 640x360,
+  64x64, 16x16 em formato 32, textura 256x1), e três avisos:
+  - `unidentified pixel shader: 78 words, fingerprint 433CF019AE460530` (um shader que não está na biblioteca);
+  - `VS identity mismatch 18 ... loaded_words=126 selected_n=496` (um vertex shader carregado que não bate com a
+    entrada escolhida);
+  - `signed textures not supported yet: read as unsigned` (formato 29).
+
+O próximo trabalho é o ciclo de shaders do guia (seção 6.2): despejo de descoberta, variantes de vértice que o
+Direct3D reescreve, os 26 shaders que o DXC recusa e os internos do Direct3D, até o log não ter carga sem
+identificar. Para achar o desenho que derruba o lavapipe, as camadas de validação do Vulkan ajudariam.
