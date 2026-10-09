@@ -3490,9 +3490,9 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       if ((f[0] & 3) != 2) continue;
       const uint32_t base = f[1] & 0x1FFFF000u;
       any_resolved |= resolve_destinations_.count(base) != 0;
-      textures += fmt::format(" t{}={:08X} {}x{} fmt {} pitch {} tiled {}", slot, base, (f[2] & 0x1FFF) + 1,
+      textures += fmt::format(" t{}={:08X} {}x{} fmt {} pitch {} tiled {} exp {}", slot, base, (f[2] & 0x1FFF) + 1,
                               ((f[2] >> 13) & 0x1FFF) + 1, f[1] & 0x3F, ((f[0] >> 22) & 0x1FF) << 5,
-                              (f[0] >> 31) & 1);
+                              (f[0] >> 31) & 1, int32_t(((f[3] >> 13) & 0x3F) << 26) >> 26);
     }
     // Every draw into the final 1280-wide targets is listed; others only when they sample a resolve destination.
     // sa2-nx: DS2_TRACE_ALL_DRAWS=1 lists every draw of the traced frame (the clears that D3D draws with its
@@ -3517,6 +3517,32 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
                 Register(g::XE_GPU_REG_SHADER_CONSTANT_256_X), Register(g::XE_GPU_REG_SHADER_CONSTANT_256_Y),
                 Register(g::XE_GPU_REG_SHADER_CONSTANT_256_Z), Register(g::XE_GPU_REG_SHADER_CONSTANT_256_W),
                 textures);
+    // ds2-nx diagnostic: DS2_TRACE_PS_CONSTANTS="32,33,68" also lists those pixel shader constants (as floats) of
+    // every traced draw, to check what a shader that outputs nothing was given.
+    static const std::vector<uint32_t> wanted = [] {
+      std::vector<uint32_t> list;
+      const char* v = std::getenv("DS2_TRACE_PS_CONSTANTS");
+      while (v && *v) {
+        char* end = nullptr;
+        const unsigned long n = std::strtoul(v, &end, 10);
+        if (end == v) break;
+        if (n < 256) list.push_back(uint32_t(n));
+        v = *end == ',' ? end + 1 : end;
+      }
+      return list;
+    }();
+    if (!wanted.empty()) {
+      std::string line;
+      for (const uint32_t n : wanted) {
+        float c[4];
+        for (uint32_t i = 0; i < 4; ++i) {
+          const uint32_t word = Register(g::XE_GPU_REG_SHADER_CONSTANT_256_X + n * 4 + i);
+          std::memcpy(&c[i], &word, 4);
+        }
+        line += fmt::format(" c{}=({:g}, {:g}, {:g}, {:g})", n, c[0], c[1], c[2], c[3]);
+      }
+      REXLOG_INFO("[trace] #{} PS constants:{}", draws_, line);
+    }
   }
 
   void Draw() {

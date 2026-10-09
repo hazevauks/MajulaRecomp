@@ -5163,6 +5163,24 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       viewport.height = height;
     }
     scissor = VkRect2D{};
+    // ds2-nx diagnostic: DS2_TRACE_THIN_DRAWS=1 logs the framing of the first draws whose guest scissor is at most
+    // two rows high (Dark Souls II draws its tone map table into a 256x1 target).
+    static const bool trace_thin = [] {
+      const char* v = std::getenv("DS2_TRACE_THIN_DRAWS");
+      return v && v[0] == 49;
+    }();
+    if (trace_thin) [[unlikely]] {
+      const uint32_t tl_raw = r[gr::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL];
+      const uint32_t br_raw = r[gr::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR];
+      static std::atomic<int> logged{0};
+      if (((br_raw >> 16) & 0x3FFF) - ((tl_raw >> 16) & 0x3FFF) <= 2 && logged.fetch_add(1) < 60) {
+        REXLOG_INFO("[thin] vte {:03X} no_clip {} sc_mode {:08X} vtx_cntl {:08X} viewport x {} y {} w {} h {} ndc {} {} "
+                    "{} {} scissor {:08X}-{:08X} window {},{} pass {}x{} scale {} raster_x {} res_q {}",
+                    vte, no_clip, sc_mode, r[gr::XE_GPU_REG_PA_SU_VTX_CNTL], viewport.x, viewport.y, viewport.width,
+                    viewport.height, ndc[0], ndc[1], ndc[2], ndc[3], tl_raw, br_raw, window_x, window_y, pass_width_,
+                    pass_height_, pass_scale_, pass_raster_scale_x_, pass_res_q_);
+      }
+    }
     if (viewport.width < 1.0f || std::abs(viewport.height) < 1.0f) {
       return 1;
     }
