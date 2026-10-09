@@ -315,3 +315,44 @@ sessões caindo, seriam precisas várias seguidas.
 Sem um depurador de quadro não dá para ir muito além por leitura de log: o próximo passo natural é capturar um quadro
 com o RenderDoc (o renderizador já tem o gancho, `me_renderdoc.cpp`; os portes de referência têm scripts `rdc_*.py`)
 e conferir passe a passe, e usar as camadas de validação do Vulkan para a queda.
+
+## A cadeia de cor do 3D, passe a passe (2026-10-09)
+
+**Ferramentas.** O RenderDoc (1.46, em `_tools/renderdoc`) captura, mas não serve com este renderizador sobre o
+lavapipe: sob a camada dele o dispositivo deixa de anunciar `bufferDeviceAddress` e o renderizador não desenha
+(`C6: the Vulkan device does not have bufferDeviceAddress: nothing is drawn`). No lugar entraram dois diagnósticos
+próprios, ligados ao rastro de quadro (`banjo_trace_frame_s`):
+
+- `DS2_TRACE_DUMP=1` grava a textura de destino de cada cópia (resolve) do quadro rastreado em
+  `out/pc/trace_dump/`, e `tools/trace_dump_png.py` faz os PNGs e a tabela de mínimo/média/máximo por canal;
+- `DS2_TRACE_PEEK=<endereço>:<bytes>,...` mostra bytes da memória física do jogo no fim do quadro.
+
+As camadas de validação do Vulkan estão em `_tools/vulkansdk` (SDK 1.4.363.0, instalado só por cópia de arquivos);
+ligam-se com `VK_ADD_LAYER_PATH=_tools\vulkansdk\Bin` e `REX_VULKAN_VALIDATION_ENABLED=true`. Ainda não usadas.
+
+**O que o quadro mostrou** (`out/pc/logs/ds2_024.log`, quadro depois da troca 1658, já em jogo, com o HUD):
+
+- O alvo HDR da cena (`117AC000`, 1280x720) está **certo**: o personagem sobre a plataforma de pedra de Things
+  Betwixt, pilares com hera, capim, a fenda azul no céu. Lido como 7e3, vermelho/verde/azul têm média
+  0,12/0,17/0,23 e máximo 14/25/32.
+- O jogo desenha a cena em 7e3 (formatos de alvo 3 e 12), copia o mesmo alvo declarando-o inteiro de 10 bits
+  (formato 10) para uma textura 2_10_10_10 — os bits crus — e a lê com formato 54. O renderizador faz essa
+  reinterpretação pelos bits (`EDRAM mode4 pair C000/f3 -> C000/f2`), como deve.
+- A tabela de tone mapping (`111BE000`, 256x1, desenhada por um pixel shader a partir da luminância adaptada) saiu
+  **toda zero**, e a composição final (`10220000`) é só o HUD sobre preto.
+- A textura de luminância adaptada (`12556000`) vale (0,045; 0,13; 55,7; 1) na região escrita.
+
+**Causa encontrada: `exp_adjust` das texturas.** O pixel shader final faz `floor()` e `frac()` do valor lido da cena
+e usa a parte inteira como expoente e a fração como mantissa do 7e3. Isso só funciona se o fetch devolver o código
+de 10 bits multiplicado por 8, que no Xbox 360 é o campo `exp_adjust` da constante de textura (a GPU multiplica o
+valor amostrado por 2^exp_adjust). O renderizador não aplicava esse campo a texturas (só registrava um aviso para
+fetches de vértice). Agora o expoente (6 bits) vai nos bits 16..21 da palavra que já levava o índice e os sinais da
+textura, e os fetches do tradutor multiplicam por 2^expoente. **Ainda não verificado em execução**: a biblioteca de
+shaders precisa ser refeita.
+
+Hipótese descartada no caminho: o limite `[FLT_MIN, FLT_MAX]` das instruções log/recíproco "com limite" do tradutor
+parecia errado, mas `FLT_MIN` ali é definido como o maior negativo (`0xff7fffff`); está certo.
+
+A tabela zerada ainda não está explicada por si só: pelo shader que a desenha, ela sai exatamente zero quando a
+coordenada de textura chega zerada (ou a luminância lida é zero). Pode ser consequência da mesma causa (as texturas de
+luminância são lidas com outro formato) ou um segundo defeito; a conferir depois da biblioteca nova.

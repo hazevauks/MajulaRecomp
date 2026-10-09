@@ -283,21 +283,32 @@ float4 masseffectApplyTextureSigns(float4 value, uint packedSigns)
     // changes nothing when packedSigns is 0, so the result is the same.
     [branch] if (packedSigns == 0)
         return value;
+    // ds2-nx: packedSigns is the top 16 bits of the descriptor word now: the signs in its high byte (as before) and,
+    // in its low 6 bits, the fetch constant's exp_adjust (signed): the Xenos multiplies every fetched value by
+    // 2^exp_adjust. Dark Souls II reads its HDR scene, resolved as raw 7e3 words into a 2_10_10_10 texture, with
+    // exp_adjust 3, so that floor() of the value is the 7e3 exponent and frac() its mantissa (its tone mapping and
+    // luminance shaders decode it that way). The renderer sets SPEC_CONSTANT_NO_TEXTURE_SIGNS only when both are 0.
+    uint signs = packedSigns >> 8;
     for (uint i = 0; i < 4; ++i)
     {
-        uint sign = (packedSigns >> (i * 2)) & 3;
+        uint sign = (signs >> (i * 2)) & 3;
         if (sign == 2)
             value[i] = value[i] * 2.0 - 1.0;
         else if (sign == 3)
             value[i] = masseffectGammaToLinear(value[i]);
     }
+    int exponent = int(packedSigns << 26) >> 26;
+    [branch] if (exponent > 0)
+        value *= float(1u << uint(exponent));
+    else [branch] if (exponent < 0)
+        value /= float(1u << uint(-exponent));
     return value;
 }
 
 float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float2 invSize)
 {
-    uint packedSigns = resourceDescriptorIndex >> 24;
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    uint packedSigns = resourceDescriptorIndex >> 16;
+    resourceDescriptorIndex &= 0x0000FFFF;
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
     // With the bit set, the size comes from a constant and the texture does not have to be queried. It
     // is the same computation with the same number: the renderer writes 1/size of the host image. With a
@@ -315,15 +326,17 @@ float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float
 // banjo-nx: a 1D texture is a row of the 2D heap (sN_Texture1DDescriptorIndex is the 2D index).
 float4 tfetch1D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float texCoord)
 {
-    // ds2-nx: the index carries the packed signs in its top byte, as for the other dimensions.
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    // ds2-nx: the index carries the packed signs and the exponent in its top half, as for the other dimensions.
+    uint packedSigns = resourceDescriptorIndex >> 16;
+    resourceDescriptorIndex &= 0x0000FFFF;
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
-    return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], float2(texCoord, 0.5));
+    return masseffectApplyTextureSigns(
+        texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], float2(texCoord, 0.5)), packedSigns);
 }
 
 float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
 {
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    resourceDescriptorIndex &= 0x0000FFFF;
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
     return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) + offset - 0.5));
 }
@@ -378,8 +391,8 @@ float h1(float a)
 
 float4 tfetch2DBicubic(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
 {
-    uint packedSigns = resourceDescriptorIndex >> 24;
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    uint packedSigns = resourceDescriptorIndex >> 16;
+    resourceDescriptorIndex &= 0x0000FFFF;
     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
     SamplerState samplerState = g_SamplerDescriptorHeap[samplerDescriptorIndex];
     uint2 dimensions = getTexture2DDimensions(texture);
@@ -412,8 +425,8 @@ float4 tfetch2DBicubic(uint resourceDescriptorIndex, uint samplerDescriptorIndex
 
 float4 tfetch3D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord)
 {
-    uint packedSigns = resourceDescriptorIndex >> 24;
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    uint packedSigns = resourceDescriptorIndex >> 16;
+    resourceDescriptorIndex &= 0x0000FFFF;
     return masseffectApplyTextureSigns(
         g_Texture3DDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord),
         packedSigns);
@@ -427,8 +440,8 @@ struct CubeMapData
 
 float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData)
 {
-    uint packedSigns = resourceDescriptorIndex >> 24;
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    uint packedSigns = resourceDescriptorIndex >> 16;
+    resourceDescriptorIndex &= 0x0000FFFF;
     return masseffectApplyTextureSigns(
         g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]),
         packedSigns);
@@ -534,7 +547,7 @@ float4 max4(float4 src0)
 
 float2 getPixelCoord(uint resourceDescriptorIndex, float2 texCoord)
 {
-    resourceDescriptorIndex &= 0x00FFFFFF;
+    resourceDescriptorIndex &= 0x0000FFFF;
     return getTexture2DDimensions(g_Texture2DDescriptorHeap[resourceDescriptorIndex]) * texCoord;
 }
 

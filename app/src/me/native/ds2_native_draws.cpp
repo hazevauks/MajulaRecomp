@@ -3299,7 +3299,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // --- Textures and samplers ----------------------------------------------------
     me_resolved_fetch_failed_this_draw_ = false;
     uint32_t shared[kSharedWords] = {};
-    uint32_t draw_signs = 0;  // ds2_gpu_no_texture_signs: packed signs of every texture of the draw, ORed
+    // ds2_gpu_no_texture_signs: packed signs (and, ds2-nx, exponents) of every texture of the draw, ORed
+    uint32_t draw_signs = 0;
     VkDeviceSize bytes_textures = 0;
     textures_to_upload_.clear();
     const auto t_samplers =
@@ -3318,7 +3319,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           cache.generation == generation_textures_ &&
           Equal(cache.fetch.data(), fetch, sizeof(cache.fetch))) {
         shared[cache.heap * 16 + sampler.register_value] = cache.slot;
-        draw_signs |= cache.slot >> 24;
+        draw_signs |= cache.slot >> 16;
         shared[48 + sampler.register_value] = cache.sampler;
         WriteInvSize(shared, sampler.register_value, cache.width, cache.height);
         ++samplers_cache_;
@@ -3361,6 +3362,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           return false;  // No cache entry and no stale-RAM / empty-texture fallback.
         }
         slot_texture |= uint32_t(RemappedSigns(fetch)) << 24;
+        // ds2-nx: the fetch constant's exp_adjust (dword 3, bits 13..18, signed) in bits 16..21 of the word the
+        // shader gets; it multiplies what it fetched by 2^exp_adjust (shader_common.h, masseffectApplyTextureSigns).
+        // The descriptor index itself stays below 4096 (the heaps' size).
+        slot_texture |= ((fetch[3] >> 13) & 0x3Fu) << 16;
         slot_sampler = SlotSampler(fetch, punctual_sampling);
         per_fetch.frame = frame_;
         per_fetch.generation = generation_textures_;
@@ -3373,7 +3378,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         per_fetch.height = host_height;
       }
       shared[heap * 16 + sampler.register_value] = slot_texture;
-      draw_signs |= slot_texture >> 24;
+      draw_signs |= slot_texture >> 16;
       shared[48 + sampler.register_value] = slot_sampler;
       WriteInvSize(shared, sampler.register_value, host_width, host_height);
       cache.frame = frame_;
@@ -4031,9 +4036,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // The slots the shader reads (all three heaps) must have no packed signs.
         ds2::enh::VerifyCheck();
         for (uint32_t i = 0; i < 48; ++i)
-          if (shared[i] >> 24) {
+          if (shared[i] >> 16) {
             ds2::enh::VerifyDifference();
-            REXLOG_ERROR("[native] DIFFERENCE: ds2_gpu_no_texture_signs with signs {:02X} in slot {}", shared[i] >> 24, i);
+            REXLOG_ERROR("[native] DIFFERENCE: ds2_gpu_no_texture_signs with signs/exponent {:04X} in slot {}",
+                         shared[i] >> 16, i);
             break;
           }
       }
