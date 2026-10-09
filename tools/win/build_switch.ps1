@@ -18,7 +18,11 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $nvk = if ($env:NVK_SDK) { $env:NVK_SDK } else {
     'C:/devkitPro/mesa-switch-main-nfsmw-source/mesa-switch-main/mesa-unified-install/opt/devkitpro/portlibs/switch' }
 # devkitPro's installer exports DEVKITPRO as an MSYS path (/opt/devkitpro) that Windows CMake cannot open.
-$devkitpro = if ($env:DEVKITPRO -and (Test-Path $env:DEVKITPRO)) { $env:DEVKITPRO } else { 'C:/devkitPro' }
+# DS2_DEVKITPRO (environment) names an install that is not at C:\devkitPro.
+$devkitpro = @($env:DS2_DEVKITPRO, $env:DEVKITPRO, 'C:/devkitPro', (Join-Path $HOME 'Downloads\devkitPro')) |
+    Where-Object { $_ -and (Test-Path (Join-Path $_ 'devkitA64')) } | Select-Object -First 1
+if (-not $devkitpro) { throw 'devkitPro not found: set DS2_DEVKITPRO to its folder (the one holding devkitA64)' }
+$devkitpro = $devkitpro -replace '\\', '/'
 $build = Join-Path $root 'out\nx'
 $glslang = Join-Path $root 'out\glslang\StandAlone\glslangValidator.exe'  # host tool: SPIR-V is portable
 if ($Reconfigure -or -not (Test-Path (Join-Path $build 'CMakeCache.txt'))) {
