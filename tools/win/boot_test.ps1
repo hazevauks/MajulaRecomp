@@ -59,9 +59,13 @@ if ($VideoAt -gt 0) {
     Remove-Item env:REX_DS2_VIDEO_S, env:REX_DS2_VIDEO_FRAMES, env:REX_DS2_VIDEO_EVERY -ErrorAction SilentlyContinue
     $raw = Join-Path $dir "captures\video_${VideoAt}s.rgba"
     if ((Test-Path $raw) -and (Get-Item $raw).LastWriteTime -ge $started) {
-        $bash = 'C:\devkitPro\msys2\usr\bin\bash.exe'
-        if (-not (Test-Path $bash)) { $bash = 'bash' }
-        & $bash (Join-Path $root 'tools/make_video.sh').Replace('\', '/') $raw.Replace('\', '/')
+        # Always a contact sheet (Python only); the MP4 too when ffmpeg is there (C:\ffmpeg\ffmpeg.exe or $env:FFMPEG).
+        python (Join-Path $root 'tools\frames_to_png.py') $raw
+        $ffmpeg = if ($env:FFMPEG) { $env:FFMPEG } else { 'C:\ffmpeg\ffmpeg.exe' }
+        $bash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+        if ((Test-Path $ffmpeg) -and $bash) {
+            & $bash (Join-Path $root 'tools/make_video.sh').Replace('\', '/') $raw.Replace('\', '/')
+        }
     } else {
         "no video written to $raw (see the log for [capture] lines)"
     }

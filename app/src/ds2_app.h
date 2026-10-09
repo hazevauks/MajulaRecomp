@@ -13,6 +13,8 @@
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
 
+#include "ds2_capture.h"
+
 class Ds2App : public rex::ReXApp {
  public:
   using rex::ReXApp::ReXApp;
@@ -58,6 +60,18 @@ class Ds2App : public rex::ReXApp {
       }
     }
   }
+
+  // Recording of the game image for testing (ds2_video_s = N seconds after start; 0 = off). Taken from the
+  // presenter's guest output, so it works minimized and nothing can cover it.
+  void OnPostSetup() override {
+    ds2::capture::Start([this]() -> rex::ui::Presenter* {
+      const auto* rt = runtime();
+      const auto* graphics = rt ? rt->graphics_system() : nullptr;
+      return graphics ? graphics->presenter() : nullptr;
+    });
+  }
+
+  void OnShutdown() override { ds2::capture::Stop(); }
 
   // Analysis aid: with DS2_DUMP_IMAGE=<file>, write the loaded guest image (image_base..image_base+image_size) so
   // code pointers stored in data can be scanned for (tools/pointer_scan.py). Does nothing unless the variable is set.

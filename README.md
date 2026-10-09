@@ -28,7 +28,7 @@ nomes `sa2` viraram `ds2`; as ferramentas que dependem de endereços do jogo ain
 |---|---|
 | 2. Arquivos do jogo extraídos e inspecionados | **feito** (ver [docs/ds2-notes.md](docs/ds2-notes.md)) |
 | 3. Tradução do código (`rexglue codegen`) | **feito**: 83.143 funções, 0 erros de validação; varreduras de ponteiros e de tabelas de salto limpas |
-| 4. Primeiro boot no PC com a GPU emulada | em andamento: primeiro build de PC |
+| 4. Primeiro boot no PC com a GPU emulada | **dá boot** (2026-10-09): logo de carregamento e aviso de autosave desenhados certos, áudio rodando; falta passar do aviso (entrada) e chegar ao menu e ao jogo |
 | 5–6. Renderizador nativo Vulkan e biblioteca de shaders | pendente |
 | 7. Build para o Switch (devkitA64 + NVK) | pendente |
 | 8–11. Medição no console e otimizações de CPU/GPU | pendente |
@@ -68,11 +68,20 @@ powershell -File tools\codegen.ps1
 #    $env:REXGLUE_DUMP_IMAGE = "$PWD\out\default_image.bin")
 python tools\switch_check.py
 python tools\pointer_audit.py
+
+# 5. Build de PC (39 min na primeira vez em 4 threads; depois só o que mudou) e teste de boot
+powershell -File tools/win/run.ps1 out/pc_configure.log "cmake --preset win-pc -S app"
+powershell -File tools/win/run.ps1 out/pc_build.log "cmake --build out/pc -- -j4"
+powershell -File tools/win/boot_test.ps1 -VideoAt 3 -VideoFrames 50 -VideoEvery 60
 ```
 
-O build de PC e o do Switch seguem
+O teste de boot roda o jogo mudo e minimizado, grava um quadro por segundo e gera
+`out/pc/captures/video_3s_sheet.png`. Num PC cuja GPU não tem Direct3D 12 (o de desenvolvimento, com Intel HD 4000),
+defina antes `$env:REX_D3D12_ADAPTER = '-2'` para usar o rasterizador por software da Microsoft (WARP).
+
+O build do Switch segue
 [docs/building.md do sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/building.md), trocando `sa2`
-por `ds2`; entram aqui conforme forem validados neste jogo.
+por `ds2`; entra aqui quando for validado neste jogo.
 
 ## Licença
 

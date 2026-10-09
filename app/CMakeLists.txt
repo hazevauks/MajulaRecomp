@@ -38,6 +38,8 @@ set(DS2_SOURCES
     src/main.cpp
     # Windows: logs fatal host exceptions the SDK does not report (illegal instruction, ...) with module + offset.
     src/ds2_crash_log.cpp
+    # Recordings of the game image for testing (cvar ds2_video_s; tools/frames_to_png.py makes a contact sheet).
+    src/ds2_capture.cpp
 )
 
 if(WIN32)

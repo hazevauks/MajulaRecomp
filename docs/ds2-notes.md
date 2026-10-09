@@ -89,3 +89,29 @@ desligado nos builds do dia a dia.
 devkitPro em `C:\Users\Usuario\Downloads\devkitPro` (devkitA64 GCC 16.1.0, libnx, `portlibs/switch`). A variável
 `DEVKITPRO` do sistema vale `/opt/devkitpro` (caminho do MSYS2), e o registro do Windows aponta para um caminho antigo
 (`Downloads\trabalho\devkitPro`): os scripts de build do Switch precisam do caminho real.
+
+## Primeiro boot no PC (2026-10-09)
+
+Build `win-pc` (clang 20, RelWithDebInfo, codegen clássico), GPU emulada do SDK em Direct3D 12 sobre o WARP
+(`REX_D3D12_ADAPTER=-2`), 60 s de execução com `tools/win/boot_test.ps1 -VideoAt 3 -VideoFrames 50 -VideoEvery 60`
+(log `out/pc/logs/ds2_003.log`, quadros em `out/pc/captures/video_3s.rgba`):
+
+- O processo fica de pé os 60 s, sem "unregistered function", sem exceção do host e sem `REX_FATAL`.
+- Quadros 0–8 (3 a 11 s): tela preta com o ícone de carregamento (fogueira + "DARK SOULS II") no canto inferior
+  esquerdo. Do quadro 9 em diante: a caixa "This game uses an autosave function. Do not turn off the console or
+  remove the storage device while the save indicator is shown at the top of the screen." com o botão OK. Texto,
+  texturas e transparência corretos a 640x360 (metade de 1280x720).
+- O jogo fica parado nessa caixa: o teste não envia entrada. **Nada além disso foi visto ainda** (menu, criação de
+  personagem, jogo, vídeo de abertura).
+- Áudio: o FMOD abre o dispositivo e o mixer entrega ~1.877 quadros a cada 10 s sem silêncio por falta de dados (rodando
+  mudo; o som em si não foi ouvido).
+- Arquivos que o jogo procura e não acha, sem consequência visível até aqui: `game:\config.properties`,
+  `game:\userconfig.properties`, `game:\param\KeyConfigParam.param`, e os dispositivos `cache:\` e `install:\`
+  (não montados pelo SDK).
+- Aviso repetido da GPU emulada durante o carregamento: `Texture fetch constant (88000000 13FC8852 ...) has "invalid"
+  type`, cerca de 4 por segundo durante 9 s; para quando a caixa aparece.
+
+**GPU do PC de desenvolvimento.** Intel HD Graphics 4000 (driver 10.18.10.4252, de 2015): sem Direct3D 12 e sem driver
+Vulkan. A GPU emulada só abre no WARP, por software, o que basta para conferir imagem mas não serve de medida de
+velocidade. O renderizador nativo (Vulkan) não tem como rodar neste PC com a GPU real: as saídas são um Vulkan por
+software (lavapipe) no PC, outro PC, ou testar direto no Switch.
