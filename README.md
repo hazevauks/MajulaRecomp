@@ -80,6 +80,27 @@ O teste de boot roda o jogo mudo e minimizado, grava um quadro por segundo e ger
 `out/pc/captures/video_3s_sheet.png`. Num PC cuja GPU não tem Direct3D 12 (o de desenvolvimento, com Intel HD 4000),
 defina antes `$env:REX_D3D12_ADAPTER = '-2'` para usar o rasterizador por software da Microsoft (WARP).
 
+### Renderizador nativo no PC (Vulkan por software)
+
+```powershell
+# glslangValidator (uma vez) e a biblioteca de shaders, feita dos arquivos do disco (~35 min em 4 threads)
+powershell -File tools/win/build_glslang.ps1
+python tools/extract_shaders.py                        # out/shaders_game: 1.409 contêineres
+bash tools/build_shader_library.sh out/shaders_game    # out/shaders/ds2_shaders.mesp + .idx
+copy out/shaders/ds2_shaders.mesp* out/pc/
+
+# Rodar com o renderizador nativo sobre o lavapipe (Mesa em _tools/mesa; ver docs/ds2-notes.md)
+$icd = (Resolve-Path _tools/mesa/x64/lvp_icd.x86_64.json).Path
+$env:VK_DRIVER_FILES = $icd; $env:VK_ICD_FILENAMES = $icd
+$env:REX_DS2_RENDERER_NATIVE = 'true'
+powershell -File tools/win/boot_test.ps1 -VideoAt 3 -VideoFrames 60 -VideoEvery 60 -Pad '16-16.6:a,30-30.6:start'
+```
+
+A biblioteca usada nos testes também leva os contêineres que o renderizador reconstrói das cargas imediatas do
+Direct3D (`$env:REX_DS2_SHADER_MISSES = 'shader_misses'` grava em `out/pc/shader_misses/missing`; passe essa pasta
+como segundo argumento do `build_shader_library.sh`). Ferramentas pedidas: DXC em `_tools/dxc` e o clang de
+`_tools/llvm`. Se o processo cair, `python tools/minidump_summary.py` diz em que módulo foi.
+
 O build do Switch segue
 [docs/building.md do sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/building.md), trocando `sa2`
 por `ds2`; entra aqui quando for validado neste jogo.
