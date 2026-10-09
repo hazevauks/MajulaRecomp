@@ -72,6 +72,12 @@ void Record(std::function<rex::ui::Presenter*()> get_presenter, int start_s, int
   auto next = first;
   REXLOG_INFO("[capture] recording {} frames from {} s, one every {} ms", frame_count, start_s,
               period.count() / 1000);
+  const auto write_index = [&] {
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - first).count();
+    const double fps = seconds > 0 ? double(written) / seconds : 60.0;
+    std::ofstream(folder / (name + ".txt"), std::ios::binary | std::ios::trunc)
+        << width / step << ' ' << height / step << ' ' << fps << ' ' << written << '\n';
+  };
   while (written < frame_count) {
     if (WaitUntil(next)) {
       break;
@@ -105,7 +111,10 @@ void Record(std::function<rex::ui::Presenter*()> get_presenter, int start_s, int
       }
     }
     raw.write(reinterpret_cast<const char*>(frame.data()), std::streamsize(frame.size()));
+    raw.flush();
     ++written;
+    // Rewritten after every frame: a test run is stopped by killing the process, often before the last frame.
+    write_index();
   }
   raw.close();
   if (!written) {
@@ -113,9 +122,6 @@ void Record(std::function<rex::ui::Presenter*()> get_presenter, int start_s, int
     return;
   }
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - first).count();
-  const double fps = seconds > 0 ? double(written) / seconds : 60.0;
-  std::ofstream(folder / (name + ".txt"), std::ios::binary)
-      << width / step << ' ' << height / step << ' ' << fps << ' ' << written << '\n';
   REXLOG_INFO("[capture] video {}: {} frames of {}x{} in {:.2f} s ({} periods without an image) -> {}", name, written,
               width / step, height / step, seconds, missed, rex::path_to_utf8(folder / (name + ".rgba")));
 }

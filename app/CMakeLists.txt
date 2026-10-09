@@ -42,6 +42,8 @@ set(DS2_SOURCES
     src/ds2_capture.cpp
     # Scripted pad for unattended test runs (cvar ds2_input_script; tools/win/boot_test.ps1 -Pad).
     src/ds2_input_script.cpp
+    # Stage 2, phase A: wraps the game's Direct3D candidates and logs them (cvar ds2_d3d_trace, off by default).
+    src/ds2_d3d_trace.cpp
 )
 
 if(WIN32)

@@ -115,3 +115,60 @@ Build `win-pc` (clang 20, RelWithDebInfo, codegen clássico), GPU emulada do SDK
 Vulkan. A GPU emulada só abre no WARP, por software, o que basta para conferir imagem mas não serve de medida de
 velocidade. O renderizador nativo (Vulkan) não tem como rodar neste PC com a GPU real: as saídas são um Vulkan por
 software (lavapipe) no PC, outro PC, ou testar direto no Switch.
+
+## Até onde o jogo vai no PC (2026-10-09)
+
+Com a entrada por script (`ds2_input_script`, `tools/win/boot_test.ps1 -Pad`) e a GPU emulada, sem nenhum crash,
+"unregistered function" ou `REX_FATAL` em sessões de até 15 minutos:
+
+1. Aviso de autosave → logos (Bandai Namco, FromSoftware, Havok) → tela-título com "PRESS START BUTTON".
+2. Start → "Checking save data" → "Saving content" (o save é criado em `Documents\ds2\<perfil>\465307E4\`) → aviso
+   "Ethernet cable is not connected" com OK.
+3. Menu principal (New Game / Continue / Go Offline) → New Game → ajuste de brilho → opções → "Saving content".
+4. Numa segunda sessão, Continue → lista de dados → legendas do prólogo ("Perhaps you've seen it, maybe in a
+   dream.") → tela de carregamento com descrição de item (correta) → cena 3D de abertura, com as barras de cinema.
+
+**O que está errado ou não foi verificado:**
+
+- Durante as legendas do prólogo a imagem fica preta: o vídeo `movie/prologue.wmv` não aparece (6 quadros amostrados,
+  todos pretos com a legenda). Causa não investigada.
+- A cena 3D sai como um quadro azul liso dentro das barras (5 quadros amostrados) e a ~0,15 quadro/s no WARP. Não se
+  sabe ainda se é a cena que não desenha, um efeito de tela cheia errado ou só o começo de um fade.
+- Com 3–8 quadros/s nos menus, um toque de 150 ms do script se perde entre duas leituras do controle: usar faixas
+  (`135-135.6:a`).
+- Som: o FMOD decodifica XMA o tempo todo (cerca de 1.300 contextos a cada 10 s nos menus), mas tudo roda mudo.
+
+## Direct3D do jogo (rastreio de 2026-10-09)
+
+Candidatos tirados dos cabeçalhos PM4 que cada função monta (`lis rX,0xC0nn; ori`) e conferidos em execução com
+`ds2_d3d_trace = true` (`app/src/ds2_d3d_trace.cpp`; log `out/pc/logs/ds2_007.log`). Device em `0x40042980`.
+
+| Função | O que é | Evidência |
+|---|---|---|
+| `sub_829BF328` | carga de shaders na hora do desenho | escreve `IM_LOAD`; lê o VS em `device+13072` e o PS em `device+13068` (os mesmos offsets do sa2-nx, XDK "2012"); chamada de dentro de `sub_829C2340` (`0x829C2410`), 4 por quadro nos menus |
+| `sub_829C2340` | `BeginVertices` (dev, tipo, contagem, stride) | escreve `DRAW_INDX` de 2 palavras; devolve o ponteiro onde `sub_829C2800` copia os vértices |
+| `sub_829C2800` | `DrawVerticesUP` (dev, tipo, contagem, dados, stride) | 0x48 bytes: chama `sub_829C2340`, depois `memcpy(ptr, dados, contagem*stride)`; é o desenho dos menus (32 por quadro, tipo 6, 4 vértices de 24 bytes) |
+| `sub_829C2848`, `sub_829C2D88` | `BeginIndexedVertices` / `DrawIndexedVerticesUP` (suposição pela forma) | `DRAW_INDX` de 4 palavras; não chamadas nos menus |
+| `sub_829C2E28`, `sub_829C3240` | `DrawVertices` / `DrawIndexedVertices` (suposição) | `DRAW_INDX` de 2 e de 4 palavras, 0x418 bytes uma da outra como no sa2-nx; não chamadas nos menus, a conferir na cena 3D |
+| `sub_829BB060` | troca de quadro (Swap) | chamada pelo jogo em `0x82FECE38`, uma vez por quadro (42 em 5 s); dois `WAIT_REG_MEM` |
+| `sub_829CBAE8` | desenho de retângulo interno (clear ou resolve) | `DRAW_INDX_2`, uma vez por quadro, de `0x829CBFBC` |
+| `sub_829A86A8` | envio de buffer de comandos | `INDIRECT_BUFFER`, ~10 por quadro, de `0x829A92A8` |
+| `sub_829A7F70` | tratador de interrupção da GPU | registrado pelo jogo em `SetInterruptCallback` |
+
+`CreateVertexShader` / `CreatePixelShader` ainda não foram localizadas; o renderizador nativo lê os contêineres direto
+dos objetos de shader na carga, então elas só fazem falta para o despejo de shaders.
+
+## Vulkan por software no PC (lavapipe)
+
+O Mesa 26.2.4 para Windows (`mesa3d-26.2.4-release-msvc.7z` de pal1000/mesa-dist-win, SHA-256 `351fc8c8...`) fica
+extraído em `_tools\mesa`, sem instalação no sistema. Para usar:
+
+```powershell
+$icd = (Resolve-Path _tools\mesa\x64\lvp_icd.x86_64.json).Path
+$env:VK_DRIVER_FILES = $icd; $env:VK_ICD_FILENAMES = $icd
+$env:REX_DS2_GPU_BACKEND = 'vulkan'     # a GPU emulada em Vulkan em vez de Direct3D 12
+```
+
+Medido nos menus (log `ds2_007.log`): dispositivo `llvmpipe (LLVM 23.1.2, 256 bits)`, Vulkan 1.4; mesmas imagens do
+Direct3D 12/WARP até a tela-título, a ~8,4 quadros/s (42 trocas em 5 s) contra 4–5 no WARP. É o mesmo caminho de
+código (GPU emulada em Vulkan) que o Switch usa nos primeiros quadros.

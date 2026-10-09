@@ -12,9 +12,15 @@
 #include <rex/logging.h>
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
+#include <rex/system/gpu_plugin.h>
 
 #include "ds2_capture.h"
 #include "ds2_input_script.h"
+
+// Which host API the emulated Xenos GPU draws with. The SDK takes Direct3D 12 on Windows when both are built in; the
+// Switch build has Vulkan only, so "vulkan" on the PC is the same code path the console's first frames use.
+REXCVAR_DEFINE_STRING(ds2_gpu_backend, "", "DS2",
+                      "Host API of the emulated GPU (gpu_plugin = xenos): empty = the SDK's choice, d3d12 or vulkan");
 
 class Ds2App : public rex::ReXApp {
  public:
@@ -59,6 +65,16 @@ class Ds2App : public rex::ReXApp {
       if (candidate == candidate.parent_path()) {
         break;
       }
+    }
+  }
+
+  // An explicit backend for the emulated GPU (ds2_gpu_backend); otherwise ReXApp loads the plugin with its default.
+  void OnPreSetup(rex::RuntimeConfig& config) override {
+    const std::string backend = REXCVAR_GET(ds2_gpu_backend);
+    if (!backend.empty() && !config.graphics && !config.gpu_plugin.empty()) {
+      config.graphics = rex::system::LoadGpuPlugin(config.gpu_plugin, backend);
+      REXLOG_INFO("graphics: emulated GPU '{}' on {}{}", config.gpu_plugin, backend,
+                  config.graphics ? "" : " (not available: the SDK's default is used)");
     }
   }
 
