@@ -27,8 +27,8 @@ nomes `sa2` viraram `ds2`; as ferramentas que dependem de endereços do jogo ain
 | Etapa (guia do sa2-nx) | Estado |
 |---|---|
 | 2. Arquivos do jogo extraídos e inspecionados | **feito** (ver [docs/ds2-notes.md](docs/ds2-notes.md)) |
-| 3. Tradução do código (`rexglue codegen`) | pendente: falta o toolchain de PC (clang 20, VS Build Tools, CMake, Ninja, Python) |
-| 4. Primeiro boot no PC com a GPU emulada | pendente |
+| 3. Tradução do código (`rexglue codegen`) | **feito**: 83.143 funções, 0 erros de validação; varreduras de ponteiros e de tabelas de salto limpas |
+| 4. Primeiro boot no PC com a GPU emulada | em andamento: primeiro build de PC |
 | 5–6. Renderizador nativo Vulkan e biblioteca de shaders | pendente |
 | 7. Build para o Switch (devkitA64 + NVK) | pendente |
 | 8–11. Medição no console e otimizações de CPU/GPU | pendente |
@@ -49,14 +49,30 @@ Fora do git (ver `.gitignore`): `assets/` (jogo extraído), `app/generated/` (C+
 
 ## Como reproduzir o que já existe
 
+Pré-requisitos no Windows: VS 2022 Build Tools (workload C++; traz CMake e Ninja), LLVM clang 20 em `_tools\llvm`
+(ou `DS2_LLVM`), Python 3.12 e Git. Tudo roda do PowerShell, nunca do shell do MSYS2 do devkitPro.
+
 ```powershell
 # 1. Extrair a ISO (só leitura) para assets\game_root e mostrar o cabeçalho do XEX
 python tools\extract_iso.py "<caminho>\Dark Souls II.iso"
+
+# 2. Fontes de terceiros do SDK e o gerador de código
+python tools\fetch_thirdparty.py
+powershell -File tools\win\run.ps1 out\host_configure.log "cmake -S sdk -B out/host -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2"
+powershell -File tools\win\run.ps1 out\host_build.log "cmake --build out/host --target rexglue"
+
+# 3. Traduzir o Default.xex para C++ (app\generated, ~350 MB; cerca de 7 min numa máquina de 4 threads)
+powershell -File tools\codegen.ps1
+
+# 4. Conferências depois de cada codegen (precisam de out\default_image.bin: rode o passo 3 uma vez com
+#    $env:REXGLUE_DUMP_IMAGE = "$PWD\out\default_image.bin")
+python tools\switch_check.py
+python tools\pointer_audit.py
 ```
 
-Os passos seguintes (gerador de código, build de PC, build do Switch) são os de
+O build de PC e o do Switch seguem
 [docs/building.md do sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/building.md), trocando `sa2`
-por `ds2`; serão documentados aqui conforme forem validados neste jogo.
+por `ds2`; entram aqui conforme forem validados neste jogo.
 
 ## Licença
 
