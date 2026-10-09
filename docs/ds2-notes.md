@@ -285,5 +285,6 @@ abertura de Things Betwixt, ~700 desenhos e ~60 cópias de alvo por quadro, 7 de
 - 58 `identity mismatch`, 25 deles `word-count`: o registro do desenho aponta um objeto de shader de outro tamanho
   (o pareamento desenho ↔ objeto erra); a maioria é de pixel shaders de 9/15/18 palavras.
 - `signed textures not supported yet: read as unsigned` (formato 29), na cadeia de pós-processamento.
-- A queda dentro do lavapipe aos ~300 s apareceu em 3 de 5 sessões; as duas em que não apareceu tinham o despejo de
-  shaders ligado. Mesmo endereço relativo no código JIT nas duas últimas (`...1678`, leitura de 0). Causa não isolada.
+- A queda dentro do lavapipe aos ~300 s apareceu em 2 das 4 sessões com o renderizador nativo que chegaram ao mapa
+  (logs 011 e 013; não em 012 e 014), sem relação clara com as opções ligadas. Nas duas o endereço termina igual
+  (`...1678`, leitura de 0, código JIT): parece o mesmo ponto. Causa não isolada.
