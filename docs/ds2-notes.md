@@ -536,8 +536,7 @@ um MSYS2 em `C:\msys64`; o que foi instalado e ajustado aqui:
 - execução, num shell MINGW64: `PATH=$PATH:/clang64/bin DEVKITPRO=C:/msys64/opt/devkitpro ALLOW_DIRTY=1
   ./build-unified.sh` (com `NINJA` apontando para um wrapper `ninja -j2`, para dividir a máquina com o build do jogo).
 
-**Primeiro NRO (2026-10-10).** `out
-x\ds2.nro`, 105 MB, codegen clássico, sem LTO nem PGO. Tempos neste PC: ~2 h 15 min
+**Primeiro NRO (2026-10-10).** `out\nx\ds2.nro`, 105 MB, codegen clássico, sem LTO nem PGO. Tempos neste PC: ~2 h 15 min
 para os 938 passos do jogo (4 threads, dividindo a máquina), ~35 min para o Mesa com 4 threads. `tools/check_switch_build.py`
 (adaptado ao DS2) passa:
 
@@ -555,5 +554,4 @@ O link sem o driver acusava também `posix_memalign` (usado pelo FFmpeg): quem o
 
 **Cartão SD.** O cartão do usuário é FAT32: o jogo vai como pasta `game_root/` solta (121 arquivos, 5,71 GB, o maior
 com 2,64 GB), sem pacote único. `tools\win\package_switch.ps1 -IncludeGame -LooseGame` monta
-`out
-x\sdcard\switch\ds2-nx` (129 arquivos, 5,87 GB); instruções em `docs/switch-testing.md`.
+`out\nx\sdcard\switch\ds2-nx` (129 arquivos, 5,87 GB); instruções em `docs/switch-testing.md`.
