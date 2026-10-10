@@ -779,6 +779,9 @@ DS2_ENHANCEMENT(g_entry_hash, ds2_cpu_ring_entry_hash, ds2::enh::kCpu, true,
 // resolve. The 8x8 centre of the title card's mission box is loaded where a 512x512 character shadow map had been
 // resolved during the Knuckles event; it was taken for the shadow map and dropped (the box lost its red fill for
 // 2.3 s). It now takes the ordinary texture path (guest memory), as the 8 pieces around it always did.
+REXCVAR_DEFINE_BOOL(ds2_native_compressed_fetch_not_resolved, true, "DS2",
+                    "A block-compressed (DXT) texture fetch is read from guest memory even when a resolve once wrote "
+                    "to its address: a resolve cannot produce compressed data, so the memory was reused");
 DS2_ENHANCEMENT(g_linear_not_resolved, ds2_native_linear_fetch_not_resolved, ds2::enh::kNonCpu, true,
                 "Renderer: a linear (untiled) texture fetch is never taken for a resolved texture (resolves write tiled "
                 "layouts only): CPU data at a freed resolve's address is read from guest memory instead of being "
@@ -8803,8 +8806,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const uint32_t swizzle = (f[3] >> 1) & 0xFFF;
     const uint32_t base = (f[1] >> 12) << 12;
     // ds2_native_linear_fetch_not_resolved: only a tiled fetch (fetch word 0, bit 31) can be a resolve's output.
-    const bool may_be_resolved = ((f[0] >> 31) & 1) || !g_linear_not_resolved.active;
+    bool may_be_resolved = ((f[0] >> 31) & 1) || !g_linear_not_resolved.active;
     if (!may_be_resolved) g_linear_not_resolved.UseSampled();  // (every linear 2D fetch: the use report only)
+    // ds2-nx: a block-compressed fetch is never a resolve's output (a resolve cannot write DXT). Dark Souls II
+    // resolves small targets while loading (256x152 at 14AE9000, 128x76 at 14B11000), frees them and loads the map's
+    // DXT1 textures at the same addresses: those fetches found the stale resolved entries, failed the size contract
+    // and their draws were rejected (cause 109, two draws a frame in Things Betwixt). They are read from memory.
+    if (may_be_resolved && REXCVAR_GET(ds2_native_compressed_fetch_not_resolved)) {
+      TextureFormat fetched;
+      if (TextureFormatFor(f[1] & 0x3F, fetched) && fetched.block > 1) may_be_resolved = false;
+    }
     if (!cube && !volume && may_be_resolved) {
       if (const ImageNative* resolved = context_->ResolvedTexture(base & 0x1FFFFFFF)) {
         AuditFetchResolved(base & 0x1FFFFFFF, f, *resolved);

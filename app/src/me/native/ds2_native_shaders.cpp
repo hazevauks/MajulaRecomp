@@ -12,6 +12,7 @@
 #include <rex/logging.h>
 
 #include <algorithm>
+#include <atomic>
 #include <unordered_set>
 #include <chrono>
 #include <exception>
@@ -739,6 +740,12 @@ const ShaderEntry* ShadersNative::IdentifyReordered(std::span<const uint32_t> mi
       const auto proof = me::native::ProveVertexFetchReorder(
           microcode, e.microcode, e.elements, [](const ElementVertex& element) { return element.instruction; });
       if (!proof) {
+        // ds2-nx diagnostic: why each candidate of the same size was not proven (first 24 lines of the session).
+        static std::atomic<int> logged{0};
+        if (logged.fetch_add(1) < 24) {
+          REXLOG_INFO("[native] ds2_gpu_vs_fetch_reorder: loaded VS {:016X} ({} words) is not VS n{} reordered: {}",
+                      key.fingerprint, microcode.size(), e.number, proof.failure ? proof.failure : "?");
+        }
         continue;
       }
       ++proven;

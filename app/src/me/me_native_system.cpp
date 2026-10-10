@@ -206,6 +206,9 @@ REXCVAR_DEFINE_INT32(ds2_native_verify_n, 2048, "SA2 renderer",
     .range(0, 2147483647)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
+REXCVAR_DEFINE_BOOL(ds2_gpu_vs_fetch_reorder_streams, true, "DS2 renderer",
+                    "A vertex shader whose fetches Direct3D reordered is also identified when a fetch moved to another "
+                    "vertex stream's group (me_vertex_fetch_reorder.h). false = only within one stream, as sa2-nx");
 REXCVAR_DEFINE_BOOL(ds2_native_vs_removed_exports, true, "DS2 renderer",
                     "Accept a loaded vertex shader whose only difference from its library entry is Direct3D's "
                     "interpolator relink: exports the bound pixel shader does not read, replaced by no-ops "
@@ -1130,6 +1133,8 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
     }
     if (active_.exchange(true)) return X_STATUS_SUCCESS;
     g_vs_identity_removed_exports.store(REXCVAR_GET(ds2_native_vs_removed_exports), std::memory_order_relaxed);
+    me::native::g_reorder_across_streams.store(REXCVAR_GET(ds2_gpu_vs_fetch_reorder_streams),
+                                               std::memory_order_relaxed);
     g_vs_identity_alu_tolerance.store(uint32_t(REXCVAR_GET(ds2_native_vs_identity_tolerance)),
                                       std::memory_order_relaxed);
     identity_flat_ = REXCVAR_GET(ds2_native_flat_identity);

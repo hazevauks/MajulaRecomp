@@ -404,10 +404,40 @@ acusaram nenhum erro; só avisos de saída de fragment shader sem anexo de cor.
 **Como fica o 3D no lavapipe** (i5-3210M, sem GPU): ~0,5 quadro/s em jogo, ~670 desenhos e ~28 cópias por quadro, 136
 pipelines, 212 texturas. Serve para conferir imagem, não para jogar.
 
-**Pendências que o log ainda mostra, por quadro:** 3 desenhos sem shader identificado; 2 desenhos rejeitados (causa
+**Pendências que o log ainda mostrava, por quadro (as duas primeiras resolvidas na seção seguinte):** 3 desenhos sem shader identificado; 2 desenhos rejeitados (causa
 109: textura copiada de 128x128 lida com outro tamanho lógico, `resolved logical crop rejected 14B11000 128x128`);
 divergências de identidade no pareamento desenho ↔ objeto de shader (VS n505/n882, PS n838/n904); texturas com sinal
 lidas sem sinal (formato 29).
 
 Diagnósticos acrescentados: `DS2_TRACE_VERTICES=<bytes>` (os buffers de vértice pequenos de cada desenho rastreado),
 `DS2_TRACE_VS_ATTRIBUTES=<n>`, `DS2_TRACE_PS_CONSTANTS`, `DS2_TRACE_THIN_DRAWS=1`, `DS2_CHECK_SLOTS=1`.
+
+## Quadro completo no primeiro mapa: nenhum desenho rejeitado ou sem shader (2026-10-09)
+
+Sessão `out/pc/logs/ds2_037.log` (560 s, sem queda, `DS2_CHECK_SLOTS=1` sem nenhum erro): no quadro rastreado, 673
+desenhos, **0 rejeitados e 0 sem shader** (antes 2 e 3 por quadro); o céu ganhou as estrelas que faltavam. Duas
+correções, as duas pendências da seção anterior:
+
+**Texturas comprimidas em endereços que já foram destino de cópia.** Durante o carregamento o jogo copia alvos
+pequenos para texturas (256x152 em `14AE9000`, 128x76 em `14B11000`), libera essa memória e carrega nela texturas DXT1
+do mapa (128x128 em `14B09000` e `14B11000`). O renderizador ainda tinha o registro da cópia antiga, tratava o fetch
+como leitura de textura copiada, o tamanho não batia e o desenho era rejeitado (causa 109). Uma cópia (resolve) nunca
+produz dados comprimidos em blocos, então um fetch de formato DXT agora é sempre lido da memória do jogo
+(`ds2_native_compressed_fetch_not_resolved`, padrão `true`).
+
+**Vertex shaders com os fetches reordenados entre dois streams.** O Direct3D do jogo reescreve os fetches de vértice do
+shader para a declaração de vértices em uso e os agrupa por stream. A prova de reordenação herdada do sa2-nx
+(`me_vertex_fetch_reorder.h`) só aceitava um fetch que se movesse entre bases equivalentes (mesmo stream); a geometria
+do mapa usa dois streams (passos de 20 e 28 bytes) e o fetch de r2 sai do fim da ordem da biblioteca para o grupo do
+primeiro stream: `DECL permutation crosses inequivalent actual full/mini bases`, e o desenho ficava sem vertex shader.
+A condição existia porque a ferramenta offline que a prova copia conserta um contêiner que depois é lido na própria
+ordem; em execução o caminho de desenho tira buffer, passo, deslocamento e formato de cada elemento do slot em que o
+programa **carregado** o tem, e a base de um mini fetch do fetch completo anterior no programa carregado. Agora só se
+exige o que a ordem poderia mudar: a mesma fonte de índice nas duas bases e nenhum fetch entre elas escrevendo essa
+fonte (`ds2_gpu_vs_fetch_reorder_streams`, padrão `true`). A mesma prova passou a aceitar, junto com a reordenação,
+os exports removidos pelo relink de interpoladores. Identificados assim: VS n33 (261 palavras, 10 fetches) e VS n939
+(138 palavras, 7 fetches). O teste de host `shaders/tests/test_vertex_fetch_reorder.cpp` (do sa2-nx, contra o pacote
+do SA2) não foi refeito para a condição nova.
+
+O log ainda registra divergências de identidade no pareamento por endereço do buffer de comandos (um objeto de shader
+errado é escolhido primeiro e descartado pela conferência do microcódigo); todos os desenhos acabam identificados.

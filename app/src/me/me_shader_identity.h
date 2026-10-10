@@ -52,6 +52,8 @@ inline std::atomic<uint32_t> g_vs_identity_alu_tolerance{0};
 // draw had no vertex shader ("VS identity mismatch ... reason=non-fetch-word").
 // ds2_native_vs_removed_exports (default true) turns the exception off.
 inline std::atomic<bool> g_vs_identity_removed_exports{true};
+// ds2_gpu_vs_fetch_reorder_streams: see me_vertex_fetch_reorder.h (EquivalentFullBases).
+inline std::atomic<bool> g_reorder_across_streams{true};
 
 // True when the control flow of `w` executes instruction `instruction` as an ALU instruction (in an EXEC clause, its
 // sequence bit says "not a fetch"). False for anything else: a fetch, a control-flow word, an instruction no clause

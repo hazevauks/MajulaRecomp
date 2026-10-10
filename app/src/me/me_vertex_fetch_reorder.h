@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -112,6 +113,16 @@ inline bool UnconditionalFetchOnlyInterval(unsigned low, unsigned high, const Lo
   return true;
 }
 
+// ds2-nx (ds2_gpu_vs_fetch_reorder_streams, default true): a fetch may also move between full-fetch bases of different
+// vertex streams (other fetch constant, stride or index rounding). Dark Souls II draws its map geometry with two
+// streams, and Direct3D groups the fetches by stream: the fetch into r2 goes from the end of the library order to the
+// first stream's group (library r11 r5 r9 r6 r7 r4 r2 r1, loaded r11 r5 r2 | r9 r6 r7 r4 r1). The offline tool this
+// proof copies needed equal bases because a repaired container is read in its own order; here the draw path takes
+// each element's buffer, stride, offset and format from the slot the LOADED program has it in, and a mini fetch's
+// base from the full fetch before it in the loaded program (ComputeEntry), so only what the order could change is
+// held: the same index source for both bases and no fetch in between writing it.
+// (g_reorder_across_streams is declared in me_shader_identity.h, next to the other identity switches.)
+
 // SDK ParseVertexFetchInstruction inherits only index source, fetch constant, stride and index rounding. Format and
 // offset belong to EACH operation. No ALU, serialization or source-index writes may occur between the two actual
 // address computations.
@@ -120,10 +131,14 @@ inline bool EquivalentFullBases(unsigned a, unsigned b, const Locations& locatio
   const unsigned low = std::min(a, b), high = std::max(a, b);
   if (!UnconditionalFetchOnlyInterval(low, high, locations, words)) return false;
   const unsigned p = a * 3, q = b * 3;
-  constexpr uint32_t inherited0 = 0xC7F00FE0u;  // src/relative, constant selector, src swizzle
+  const bool streams = g_reorder_across_streams.load(std::memory_order_relaxed);
+  // src/relative, src swizzle and (not across streams) the constant selector; then index rounding and stride.
+  const uint32_t inherited0 = streams ? 0xC0000FE0u : 0xC7F00FE0u;
+  const uint32_t inherited1 = streams ? 0x80000000u : 0x80008000u;
+  const uint32_t inherited2 = streams ? 0x80000000u : 0x800000FFu;
   if ((words[p] & inherited0) != (words[q] & inherited0) ||
-      (words[p + 1] & 0x80008000u) != (words[q + 1] & 0x80008000u) ||
-      (words[p + 2] & 0x800000FFu) != (words[q + 2] & 0x800000FFu)) return false;
+      (words[p + 1] & inherited1) != (words[q + 1] & inherited1) ||
+      (words[p + 2] & inherited2) != (words[q + 2] & inherited2)) return false;
   // Relative TEMP addressing needs a broader loop/aL proof; likewise a relative fetch destination could overwrite
   // the source.
   if (words[p] & 0x800u) return false;
@@ -193,8 +208,14 @@ inline VertexFetchReorder ProveVertexFetchReorder(std::span<const uint32_t> load
       if (r.from[k] == instruction) return true;
     return false;
   };
-  for (size_t i = 0; i < loaded.size(); ++i)
-    if (loaded[i] != selected[i] && !declared(i / 3)) return fail("NON-fetch ALU/CF differs");
+  for (size_t i = 0; i < loaded.size(); ++i) {
+    if (loaded[i] == selected[i] || declared(i / 3)) continue;
+    // ds2-nx: Direct3D's interpolator relink on top of the reorder (me_shader_identity.h): an export the bound pixel
+    // shader does not read, replaced by a no-op.
+    if (g_vs_identity_removed_exports.load(std::memory_order_relaxed) &&
+        RemovedInterpolatorExport(loaded, selected, i)) continue;
+    return fail("NON-fetch ALU/CF differs");
+  }
   Locations locations;
   if (const char* why = FetchLocations(loaded, locations)) return fail(why);
   if (locations.count != r.count) return fail("undeclared or missing executed vertex fetch");
