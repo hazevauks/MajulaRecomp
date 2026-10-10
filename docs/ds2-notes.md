@@ -878,3 +878,44 @@ mesmo código.
 Mudança (`sdk/src/ui/switch_perf.cpp`, marcada `ds2-nx`): o processo não mantém mais nenhuma sessão `clkrst`; os
 clocks são lidos no primeiro relatório e uma vez por minuto, abrindo e fechando as sessões na hora. Se a queda
 voltar com esse build, o próximo passo é testar sem o overlay e sem o sysmodule de clocks para isolar.
+
+## Décimo primeiro build no console: sombras certas, sem queda, e a CPU como limite (2026-10-10)
+
+`out/switch_logs/011/ds2_017.log` (7 min, 540p, sem overclock): alguns minutos na fogueira, volta à casa das
+firekeepers, primeira fogwall, inimigos, até o ninho de troca. Quem jogou comparou as sombras lado a lado com um
+vídeo do jogo original e não achou diferença. Sem queda do sistema, nenhum desenho ou cópia rejeitado, 386 pipelines.
+O save do console (`logs/ds2`) foi copiado para o PC (o anterior está em `out/pc_save_backup2`).
+
+| trecho | quadros/s | GPU por quadro (com `gap`) | `gap` | thread do anel | desenhos |
+|---|---|---|---|---|---|
+| fogueira, parado | 18,6–19,2 | 52–54 ms | 5,7 | 36,5 ms | 625 |
+| tutorial (fogwall, inimigos) | 12,3–16,5 | 61–81 ms | 13–34 | 32–50 ms | 600–960 |
+
+`edram_alias` continua fixo em 17,2 ms por quadro e `edram_import` em 0,1–0,2.
+
+**O limite agora é a CPU inteira, não uma thread.** No tutorial a GPU fica de 20 a 34 ms por quadro parada (`gap`)
+com a thread do anel a 32–50 ms: nem a GPU nem o anel fecham a conta sozinhos. O `rex_profile.log` do mesmo trecho:
+CPU total de 266–287 % com o processo limitado a 3 núcleos (máscara 0x7), ou seja, quase tudo ocupado:
+
+| thread | CPU |
+|---|---|
+| GPU ring native (o renderizador) | 66 % |
+| Main XThread (o jogo) | 62 % |
+| XThread648EB540 (jogo) | 48 % |
+| thread sem nome no núcleo 0, prioridade 0x2C | 20 % |
+| MtTaskWorkerThread x3 (jogo) | 18 + 13 + 10 % |
+| DrawCommandThread (jogo) | 15 % |
+| XMA Decoder | 13 % |
+
+As pilhas não foram amostradas nessa sessão (`switch_profile_stacks` desligado), então ainda não se sabe em que
+funções esse tempo vai (código recompilado útil, esperas ativas do jogo, ou o renderizador).
+
+**Próximos passos de CPU, na ordem:**
+
+1. perfil com pilhas no console (só o `ds2.toml` muda; o ELF do build em uso está em `out/switch_elf/b08b0f7/`);
+2. o que o perfil mostrar no renderizador (60 µs por desenho) e nas threads do jogo;
+3. LTO e PGO, que o build do Switch deste projeto ainda não tem (`DS2_SWITCH_LTO_JOBS` é passado pelo script e
+   ignorado pelo CMake). No sa2-nx o PGO rendeu ~15 % sobre o LTO. Custo nesta máquina: a compilação completa do
+   código recompilado levou ~100 minutos; um link com LTO do programa inteiro refaz esse trabalho a cada mudança no
+   renderizador, o que não cabe no ciclo de rodadas. Caminho previsto: otimizar o código recompilado uma vez (ele não
+   muda entre rodadas) e manter o renderizador fora do LTO.

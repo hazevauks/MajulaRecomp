@@ -24,6 +24,11 @@ ds2_gpu_marks_categories = true
 # quadro na primeira fogueira.
 ds2_native_zcull_1x_depth = true
 
+# Rodada de perfil de CPU (2026-10-10): amostra as pilhas das threads para o rex_profile.log. Custa um pouco de
+# desempenho; sai daqui depois da medicao.
+switch_profile_stacks = true
+switch_profile_report = true
+
 # Log completo em arquivo durante os testes.
 log_level = "info"
 log_to_file = true

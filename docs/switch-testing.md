@@ -4,6 +4,24 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Rodada de perfil de CPU (2026-10-10): só o `ds2.toml` muda
+
+Copie por cima **só o `ds2.toml`** (o `ds2.nro` é o mesmo do décimo primeiro build; não troque).
+
+Depois das últimas rodadas o limite passou a ser o processador: o jogo usa quase os 3 núcleos disponíveis. Este
+`ds2.toml` liga a amostragem das pilhas de CPU, que diz em quais funções o tempo vai. O jogo fica um pouco mais
+lento enquanto ela está ligada.
+
+Uma sessão de ~3 minutos, sem overclock:
+
+1. ~1 minuto parado na fogueira;
+2. ~2 minutos na área do tutorial em que você esteve (andando e lutando normalmente).
+
+Depois a pasta `logs/` (o arquivo que importa é `logs/rex/rex_profile.log`).
+
+Para jogar sem a amostragem: apague o `ds2.toml`, copie `configs/ds2_sem_perfil.toml` para a pasta do jogo e renomeie
+para `ds2.toml`.
+
 ## Décimo primeiro build (2026-10-10): depois da queda do sistema
 
 Copie por cima: `ds2.nro`.
