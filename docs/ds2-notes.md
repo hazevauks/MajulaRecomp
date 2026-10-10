@@ -677,3 +677,47 @@ PS n723 num desenho de tela cheia (o efeito de calor da fogueira). Feita agora p
 (`ds2_resolve_copy.frag` ganhou um fator; 1,0 para a cópia de sempre). Verificado no PC **com o save do console**
 (`logs/ds2` copiado para `Documents\ds2`; o save anterior do PC está em `out/pc_save_backup`): a área da fogueira
 abre pelo Continue, o log registra a cópia e a textura sai com a cena.
+
+## Rodada 2: as limpezas por superfície 4x apelidada (2026-10-10)
+
+Console, build da rodada 1 (`out/switch_logs/005/ds2_009.log`): 7,4 quadros/s, 136,4 ms de GPU por quadro na fogueira,
+nenhuma cópia rejeitada (a cópia com viés agora roda; o passe que a lê custa ~9 ms).
+
+**De onde vêm as importações.** Rastro de um bloco de EDRAM no PC (`ds2_diag_trace_tile`), na mesma cena, com o save
+do console. Em todo quadro o jogo usa o Clear do Direct3D por uma superfície 4x de metade do passo, que apelida os
+mesmos blocos do alvo de 1 amostra:
+
+1. profundidade do mapa de sombras (base 0, 800 de passo), só profundidade;
+2. cor em formato 3 (7e3, o alvo HDR de 640x360) + profundidade em 0xB8;
+3. cor em formato 0 (o alvo de 1280x720) + profundidade em 0x2D0;
+4. outras profundidades de meia resolução (0x658, 0x710).
+
+O renderizador tem o atalho do sa2-nx ("redirected clear": limpar direto no dono de 1 amostra), mas ele recusava
+esses casos, desenhava a limpeza na vista apelidada e depois convertia o alvo inteiro para a vista de 1 amostra:
+uma importação de profundidade (com ZCULL, em 9 passes quando o dono anterior era cor) e uma conversão de cor por
+limpeza. Motivos da recusa, pelo relatório `depth clear redirect declined by`:
+
+- `also writes color (color 0 not redirectable)`: a metade de cor só aceitava formato 0 com dono RGBA8. No DS2 o
+  começo do EDRAM é reutilizado por alvos de 8 bits e de ponto flutuante, então o dono dos blocos quase nunca serve;
+- `target C.../f0 ... (clear of ... stencil -1)`: limpeza só de profundidade sobre blocos de um dono de cor, sem a
+  vista de 1 amostra conhecida. Ela só era aprendida pelo ponteiro da vista de origem da importação, e no DS2 essa
+  origem é uma vista com grade de raster (`msaaXY=0,1 gridX=1`), outro objeto que não o da vista 4x simples que o
+  atalho consulta.
+
+**O que mudou** (`ds2_native_edram4_clear_color0_alias`, padrão `true`):
+
+- a vista de 1 amostra de uma vista 4x de cor é aprendida onde os blocos são transferidos, e a metade de cor da
+  limpeza vai direto para ela, que passa a ser a dona dos blocos, quando o dono atual não pode recebê-la;
+- o formato 3 é aceito com qualquer cor: o valor gravado é o que o próprio desenho da limpeza deixaria na imagem
+  RGBA16F (saída limitada como em todo desenho num alvo 7e3: RGB em [0; 31,875], alfa em [0; 1]), arredondado para o
+  half mais próximo. A cor de limpeza do alvo HDR do jogo não é zero;
+- um retângulo que termina no meio de um bloco (os alvos de 640x360: 22,5 fileiras) é aceito quando o dono do bloco
+  parcial é do mesmo formato;
+- a vista de 1 amostra de uma profundidade é lembrada também pela geometria da superfície (base, formato,
+  codificação, passo em blocos).
+
+**Medido no PC** (lavapipe, 4 quadros desenhados por janela): conversões de profundidade do alvo inteiro, de 6 para 2
+por quadro (1.924 → 352 blocos); a importação em 9 passes dos 720 blocos da profundidade principal sumiu; 896 blocos
+de cor por quadro limpos direto (676 entregues à vista de 1 amostra). Imagem igual (captura na fogueira). Ainda
+recusados por quadro: 1 limpeza de cor e 2 de profundidade em que o bloco parcial da última fileira pertence a uma
+vista de outro formato (os alvos de 640x360); o caminho seria sincronizar só esses blocos antes de limpar.

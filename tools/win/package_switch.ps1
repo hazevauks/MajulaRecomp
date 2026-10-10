@@ -43,6 +43,9 @@ $noBom = New-Object System.Text.UTF8Encoding($false)
     "`n# Teste A/B: ZCULL tambem nos alvos de profundidade de 1 amostra (o principal do jogo). As importacoes de`n" +
     "# stencil passam a usar passes mascarados em vez do motor de copia.`n" +
     "ds2_native_zcull_1x_depth = true`n"), $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_sem_atalho_clear.toml'), ($base +
+    "`n# Teste A/B: sem o atalho novo das limpezas por superficie 4x (rodada 2): como no build anterior.`n" +
+    "ds2_native_edram4_clear_color0_alias = false`n"), $noBom)
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null

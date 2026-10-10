@@ -185,6 +185,11 @@ REXCVAR_DEFINE_BOOL(ds2_native_resolver_no_copy, false, "SA2 renderer",
 REXCVAR_DEFINE_BOOL(ds2_native_edram4_cache_sync, true, "SA2 renderer",
                     "EDRAM mode 4: do not transfer a physical tile again to a view that already received its "
                     "current version (read-only rebinds). false = transfer on every bind, as before");
+REXCVAR_DEFINE_BOOL(ds2_native_edram4_clear_color0_alias, true, "DS2",
+                    "EDRAM mode 4: the color half of a Direct3D Clear drawn through a 4x alias also goes straight "
+                    "into the alias's known 1x view (which takes the tiles) when a tile's current owner cannot take "
+                    "it, and a k_2_10_10_10_FLOAT target cleared to zero is accepted. false = only RGBA8 owners, as "
+                    "sa2-nx");
 REXCVAR_DEFINE_BOOL(ds2_native_resolve_shrink, false, "DS2",
                     "A resolve whose source window is 1.25 times its destination texture or more is shrunk into it "
                     "with a linear blit (Mass Effect drawn above its render target size). false = copied 1 to 1 and "
@@ -3770,7 +3775,15 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       for (auto& f : sources) if (f.image == &view) f = {};
     for (auto it = edram4_alias_1x_.begin(); it != edram4_alias_1x_.end();)
       it = it->second == &view ? edram4_alias_1x_.erase(it) : std::next(it);
+    for (auto it = edram4_alias_1x_geometry_.begin(); it != edram4_alias_1x_geometry_.end();)
+      it = it->second == &view ? edram4_alias_1x_geometry_.erase(it) : std::next(it);
   }
+  // ds2-nx: a depth surface's geometry (EDRAM base, format, float24 "half" encoding, tile pitch) -> its 1x view.
+  static uint64_t AliasGeometryEDRAM4(uint32_t base, uint32_t format, bool half, uint32_t pitch_tiles) {
+    return uint64_t(base & 0xFFFu) | (uint64_t(format & 0xFu) << 12) | (uint64_t(half) << 16) |
+           (uint64_t(pitch_tiles) << 20);
+  }
+  std::unordered_map<uint64_t, Image*> edram4_alias_1x_geometry_;
   // A 4x MSAA depth view -> the 1x depth view with the same EDRAM base and tile pitch that last took its
   // tiles (the same bytes seen per sample: Eden Prime's 440x720 4x clear alias of the 880x880 shadow map).
   std::unordered_map<const Image*, Image*> edram4_alias_1x_;
@@ -4570,6 +4583,23 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
           PitchTilesEDRAM(source) == PitchTilesEDRAM(target) && source.edram_format == target.edram_format &&
           source.depth_float24_half == target.depth_float24_half)
         edram4_alias_1x_[&source] = &target;
+      // ds2-nx: Dark Souls II's depth aliases are drawn through raster-grid views (2x in Y, the X samples as host
+      // columns), a different object from the plain 4x view RedirectClearDepthEDRAM4 gets for the same surface, so
+      // the pointer above never matched there. The 1x view is also remembered by the surface's geometry.
+      if (target.edram_depth && source.edram_depth && source.edram_msaa_y &&
+          (source.edram_msaa_x || source.raster_grid_x) && !target.edram_msaa_x && !target.edram_msaa_y &&
+          !target.raster_grid_x && source.edram_base == target.edram_base &&
+          source.edram_format == target.edram_format && source.depth_float24_half == target.depth_float24_half &&
+          REXCVAR_GET(ds2_native_edram4_clear_color0_alias))
+        edram4_alias_1x_geometry_[AliasGeometryEDRAM4(target.edram_base, target.edram_format,
+                                                       target.depth_float24_half, PitchTilesEDRAM(target))] = &target;
+      // ds2-nx: the same for a 4x color alias and the 1x color view of the same tiles and format
+      // (PlanClearColor0EDRAM4).
+      if (!target.edram_depth && !source.edram_depth && source.edram_msaa_x && source.edram_msaa_y &&
+          !target.edram_msaa_x && !target.edram_msaa_y && source.edram_base == target.edram_base &&
+          PitchTilesEDRAM(source) == PitchTilesEDRAM(target) && source.edram_format == target.edram_format &&
+          !source.edram_64bpp && !target.edram_64bpp && source.format == target.format)
+        edram4_alias_1x_[&source] = &target;
       bool success = false;
       if (target.edram_depth) {
         if (native_msaa_import || !source.edram_depth) {
@@ -4856,7 +4886,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     // side effect, and committed after the depth half: both or neither.
     ColorClearEDRAM4 color_clear;
     if (p.edram_overwrite_slots == 3) {
-      if (!PlanClearColor0EDRAM4(p, color_clear)) return no("also writes color (color 0 not redirectable)");
+      if (!PlanClearColor0EDRAM4(p, color_clear)) return no(color0_decline_);
     } else if (p.edram_overwrite_slots != 1) {
       return no("also writes color");
     }
@@ -4956,8 +4986,15 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     // Target of a tile: its current owner if that is another depth view; if the drawn view itself owns it
     // (or nobody does), the drawn view's known 1x alias, which then becomes the owner.
     const auto alias_it = edram4_alias_1x_.find(drawn);
-    Image* const alias = alias_it != edram4_alias_1x_.end() && REXCVAR_GET(ds2_native_edram4_clear_alias)
-                              ? alias_it->second : nullptr;
+    Image* alias = alias_it != edram4_alias_1x_.end() && REXCVAR_GET(ds2_native_edram4_clear_alias)
+                       ? alias_it->second : nullptr;
+    if (!alias && REXCVAR_GET(ds2_native_edram4_clear_alias) && drawn->edram_msaa_x && drawn->edram_msaa_y) {
+      // ds2-nx: by geometry (see where it is learned); the 1x view has the same tile pitch as the 4x alias.
+      const auto g = edram4_alias_1x_geometry_.find(AliasGeometryEDRAM4(
+          drawn->edram_base, drawn->edram_format, drawn->depth_float24_half, pitch_tiles));
+      if (g != edram4_alias_1x_geometry_.end() && g->second != drawn && g->second->image != drawn->image)
+        alias = g->second;
+    }
     struct Goal { Image* w; uint32_t local; bool reassign; };
     const auto goal = [&](uint32_t local) -> Goal {
       const auto owner = owners_tiles_edram4_[(drawn->edram_base + local) & 2047u];
@@ -5188,50 +5225,136 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       Image* owner;
       uint32_t first_local, count;
       VkRect2D area;
+      bool reassign = false;  // ds2-nx: `owner` is the alias's 1x view and takes the tiles
     };
     std::vector<Run> runs;
     VkClearColorValue value{};
     Image* drawn = nullptr;
   };
   bool PlanClearColor0EDRAM4(const SubmissionDraw& p, ColorClearEDRAM4& plan) {
-    if (!REXCVAR_GET(ds2_native_edram4_clear_color0) || !p.edram_overwrite_color0 || !p.edram_overwrite_rect)
+    color0_decline_ = "also writes color (color 0 not redirectable)";
+    const auto no = [&](const char* why) {  // ds2-nx diagnostic: which condition declined the color half
+      color0_decline_ = why;
       return false;
+    };
+    if (!REXCVAR_GET(ds2_native_edram4_clear_color0)) return false;
+    if (!p.edram_overwrite_color0 || !p.edram_overwrite_rect)
+      return no("also writes color (color 0 value or rect not proven)");
     const uint32_t* r = p.registers;
     const uint32_t info = r[gr::XE_GPU_REG_RB_COLOR_INFO];
-    if (((info >> 16) & 0xF) != 0) return false;  // k_8_8_8_8 only (no gamma, no float formats)
+    // ds2-nx (ds2_native_edram4_clear_color0_alias): Dark Souls II clears its HDR scene target (format 3,
+    // k_2_10_10_10_FLOAT, kept as RGBA16F here) the same way, with a colour that is not zero. The value stored is the
+    // one the clear's own draw would leave in the RGBA16F image: its pixel shader output limited as every draw into a
+    // 7e3 target is (LimitOutputs7e3: red, green and blue to [0, 31.875], alpha to [0, 1]), rounded to the nearest
+    // half float here so that the clear and a draw cannot round it differently.
+    const bool alias_extension = REXCVAR_GET(ds2_native_edram4_clear_color0_alias);
+    const uint32_t guest_format = (info >> 16) & 0xF;
+    if (guest_format != 0 && !(guest_format == 3 && alias_extension))  // no gamma, no other floats
+      return no("also writes color (color 0 format not 0 or 3)");
+    const VkFormat host_format = guest_format == 0 ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R16G16B16A16_SFLOAT;
     // The bytes the ROP stores: round to nearest of the clamped value. A value within float rounding of a tie
     // could round either way on the GPU: declined.
     for (uint32_t c = 0; c < 4; ++c) {
       const float v = (*p.edram_overwrite_color0)[c];
       if (std::isnan(v)) return false;
+      if (guest_format == 3) {
+        const float limited = std::clamp(v, 0.0f, c < 3 ? 31.875f : 1.0f);
+        int exponent = 0;
+        std::frexp(limited, &exponent);  // limited = m * 2^exponent, m in [0.5, 1)
+        // Half floats: 11 significant bits from 2^-14 up, steps of 2^-24 below.
+        const float step = limited >= 6.103515625e-05f ? std::ldexp(1.0f, exponent - 11) : std::ldexp(1.0f, -24);
+        plan.value.float32[c] = float(std::nearbyint(double(limited) / double(step)) * double(step));
+        continue;
+      }
       const double f = double(std::clamp(v, 0.0f, 1.0f)) * 255.0;
       if (std::abs(f - std::floor(f) - 0.5) < 1.0 / 1024.0) return false;
       plan.value.float32[c] = float(std::lround(f)) / 255.0f;
     }
     if (!Record()) return false;
-    Image* drawn = GetTarget(info & 0xFFF, 0, r[gr::XE_GPU_REG_RB_SURFACE_INFO] & 0x3FFF);
+    Image* drawn = GetTarget(info & 0xFFF, guest_format, r[gr::XE_GPU_REG_RB_SURFACE_INFO] & 0x3FFF);
     if (!drawn || drawn->edram_depth || drawn->edram_64bpp || drawn->guest_width || drawn->guest_height ||
-        drawn->raster_grid_x || drawn->format != VK_FORMAT_R8G8B8A8_UNORM) return false;
+        drawn->raster_grid_x || drawn->format != host_format)
+      return no("also writes color (color 0 drawn view unsupported)");
     const auto& o = *p.edram_overwrite_rect;
     const uint32_t tw = 80u >> drawn->edram_msaa_x, th = 16u >> drawn->edram_msaa_y;
-    if (o[0] < 0 || o[1] < 0 || o[0] % tw || o[1] % th || o[2] % tw || o[3] % th || o[2] <= o[0] ||
-        o[3] <= o[1] || uint32_t(o[2]) > drawn->width || uint32_t(o[3]) > drawn->height) return false;
+    // ds2-nx: a rectangle that ends inside a tile (Dark Souls II's 640x360 targets: 22.5 tile rows) is taken with
+    // the extension; the partly covered tiles are cleared in their owner, which keeps the rest of them.
+    const bool aligned = !(o[0] % tw || o[1] % th || o[2] % tw || o[3] % th);
+    if (o[0] < 0 || o[1] < 0 || (!aligned && !alias_extension) || o[2] <= o[0] ||
+        o[3] <= o[1] || uint32_t(o[2]) > drawn->width || uint32_t(o[3]) > drawn->height)
+      return no("also writes color (color 0 rect not tile-aligned)");
     const uint32_t pitch_tiles = PitchTilesEDRAM(*drawn);
     if (!pitch_tiles) return false;
-    for (uint32_t ty = uint32_t(o[1]) / th; ty < uint32_t(o[3]) / th; ++ty) {
-      for (uint32_t tx = uint32_t(o[0]) / tw; tx < uint32_t(o[2]) / tw;) {
+    // ds2-nx: the 1x view of the same tiles and format this alias's tiles last moved to (learned where they are
+    // transferred). A tile whose owner cannot take the clear (another format: the game reuses the start of the EDRAM
+    // for its 8-bit and its floating-point targets; a depth view; nobody; the alias itself) is cleared there, and the
+    // 1x view becomes its owner: what the alias transfer would have left, without drawing into the alias and moving
+    // every tile 4x -> 1x afterwards.
+    Image* alias = nullptr;
+    if (alias_extension) {
+      const auto it = edram4_alias_1x_.find(drawn);
+      Image* a = it != edram4_alias_1x_.end() ? it->second : nullptr;
+      if (a && a != drawn && a->image != drawn->image && !a->edram_depth && !a->edram_64bpp &&
+          a->format == host_format && a->edram_format == guest_format && a->edram_base == drawn->edram_base &&
+          !a->edram_msaa_x && !a->edram_msaa_y && PitchTilesEDRAM(*a) == pitch_tiles && !a->guest_width &&
+          !a->guest_height && !a->raster_grid_x && SamplesSupported(*a) && !(a->width % 80u))
+        alias = a;
+    }
+    const auto owner_takes = [&](const Image* w) {
+      return w && w != drawn && w->image != drawn->image && !w->edram_depth && !w->edram_64bpp &&
+             w->format == host_format && w->edram_format == guest_format && w->prepared && !w->invalid_content &&
+             !w->guest_width && !w->guest_height && !w->raster_grid_x && SamplesSupported(*w);
+    };
+    const uint32_t tx_end = (uint32_t(o[2]) + tw - 1) / tw, ty_end = (uint32_t(o[3]) + th - 1) / th;
+    const auto whole = [&](uint32_t tx, uint32_t ty) {
+      return int32_t(tx * tw) >= o[0] && int32_t((tx + 1) * tw) <= o[2] && int32_t(ty * th) >= o[1] &&
+             int32_t((ty + 1) * th) <= o[3];
+    };
+    for (uint32_t ty = uint32_t(o[1]) / th; ty < ty_end; ++ty) {
+      for (uint32_t tx = uint32_t(o[0]) / tw; tx < tx_end;) {
         const uint32_t local = ty * pitch_tiles + tx;
         const auto owner = owners_tiles_edram4_[(drawn->edram_base + local) & 2047u];
         Image* w = owner.image;
-        if (!w || w == drawn || w->image == drawn->image || w->edram_depth || w->edram_64bpp ||
-            w->format != VK_FORMAT_R8G8B8A8_UNORM || w->edram_format != 0 || !w->prepared || w->invalid_content ||
-            w->guest_width || w->guest_height || w->raster_grid_x ||
-            !SamplesSupported(*w)) return false;
+        if (!whole(tx, ty)) {
+          // The covered part of the tile, in the owner's pixels: only an owner of the same format can take it (the
+          // tile keeps its owner, and with it the part the clear does not touch).
+          if (!owner_takes(w)) return no("also writes color (color 0 partial tile: owner cannot take it)");
+          const uint32_t wp = PitchTilesEDRAM(*w);
+          const uint32_t ww = 80u >> w->edram_msaa_x, wh = 16u >> w->edram_msaa_y;
+          if (!wp || w->width % ww) return false;
+          const uint32_t px0 = uint32_t(std::max<int32_t>(o[0], int32_t(tx * tw))) - tx * tw;
+          const uint32_t px1 = uint32_t(std::min<int32_t>(o[2], int32_t((tx + 1) * tw))) - tx * tw;
+          const uint32_t py0 = uint32_t(std::max<int32_t>(o[1], int32_t(ty * th))) - ty * th;
+          const uint32_t py1 = uint32_t(std::min<int32_t>(o[3], int32_t((ty + 1) * th))) - ty * th;
+          if ((px0 * ww) % tw || (px1 * ww) % tw || (py0 * wh) % th || (py1 * wh) % th)
+            return no("also writes color (color 0 partial tile: not on the owner's pixels)");
+          const uint32_t x = (owner.tile_local % wp) * ww + px0 * ww / tw, width = (px1 - px0) * ww / tw;
+          const uint32_t y = (owner.tile_local / wp) * wh + py0 * wh / th, height = (py1 - py0) * wh / th;
+          if (!width || !height || x >= w->width || y >= w->height || width > w->width - x ||
+              height > w->height - y) return false;
+          plan.runs.push_back({w, local, 1, {{int32_t(x), int32_t(y)}, {width, height}}});
+          ++tx;
+          continue;
+        }
+        if (!owner_takes(w)) {
+          if (!alias) return no("also writes color (color 0 owner unsupported, no 1x alias known)");
+          // Same base and tile pitch: the tile has the same index in the 1x view.
+          uint32_t count = 1;
+          while (tx + count < tx_end && whole(tx + count, ty) &&
+                 !owner_takes(owners_tiles_edram4_[(drawn->edram_base + local + count) & 2047u].image))
+            ++count;
+          const uint32_t x = (local % pitch_tiles) * 80u, y = (local / pitch_tiles) * 16u, width = 80u * count;
+          if (x >= alias->width || y >= alias->height || width > alias->width - x || 16u > alias->height - y)
+            return false;
+          plan.runs.push_back({alias, local, count, {{int32_t(x), int32_t(y)}, {width, 16u}}, true});
+          tx += count;
+          continue;
+        }
         const uint32_t wp = PitchTilesEDRAM(*w);
         const uint32_t ww = 80u >> w->edram_msaa_x, wh = 16u >> w->edram_msaa_y;
         if (!wp || w->width % ww) return false;
         uint32_t count = 1;
-        while (tx + count < uint32_t(o[2]) / tw && (owner.tile_local % wp) + count < wp) {
+        while (tx + count < tx_end && whole(tx + count, ty) && (owner.tile_local % wp) + count < wp) {
           const auto next = owners_tiles_edram4_[(drawn->edram_base + local + count) & 2047u];
           if (next.image != w || next.tile_local != owner.tile_local + count) break;
           ++count;
@@ -5273,14 +5396,23 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       if (!draws_->ClearColorInPass(commands_work_, *a.w, plan.value, a.rect)) return false;
     BarrierClearEDRAM4();
     for (const auto& run : plan.runs) {
-      for (uint32_t i = 0; i < run.count; ++i)
-        owners_tiles_edram4_[(plan.drawn->edram_base + run.first_local + i) & 2047u].version = ++edram4_version_;
+      for (uint32_t i = 0; i < run.count; ++i) {
+        auto& d = owners_tiles_edram4_[(plan.drawn->edram_base + run.first_local + i) & 2047u];
+        if (run.reassign) {  // ds2-nx: the alias's 1x view takes the tile (same index: same base and tile pitch)
+          d = {run.owner, uint16_t((run.first_local + i) & 2047u), 0};
+          ++edram4_epoch_;
+          ++edram4_redirected_color0_alias_tiles_;
+        }
+        d.version = ++edram4_version_;
+      }
       edram4_redirected_color0_tiles_ += run.count;
     }
     edram4_redirected_color0_areas_ += areas.size();
     return true;
   }
   uint64_t edram4_redirected_color0_tiles_ = 0, edram4_redirected_color0_areas_ = 0;
+  uint64_t edram4_redirected_color0_alias_tiles_ = 0;  // ds2-nx: of those, tiles handed to the alias's 1x view
+  const char* color0_decline_ = "";  // ds2-nx diagnostic: why PlanClearColor0EDRAM4 declined last
   uint64_t edram4_redirected_merged_ = 0;  // clears the redirected depth clears issued after merging their regions
 
   // Mass Effect (every frame, main scene depth D000): a full-screen stencil-only D3D Clear (stencil ALWAYS /
@@ -9669,9 +9801,11 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     // sa2-nx: printed whether or not any EDRAM transfer happened (with the aliased clears redirected there are none).
     if (edram4_redirected_color0_tiles_ || edram4_redirected_)
       REXLOG_INFO("[native] EDRAM mode4 redirected clears: {} depth clears issued as {} merged clears; color 0 alias "
-                  "clears into their 1x owners: {} tiles in {} clears", edram4_redirected_, edram4_redirected_merged_,
-                  edram4_redirected_color0_tiles_, edram4_redirected_color0_areas_);
+                  "clears into their 1x owners: {} tiles in {} clears ({} tiles handed to the alias's 1x view)",
+                  edram4_redirected_, edram4_redirected_merged_, edram4_redirected_color0_tiles_,
+                  edram4_redirected_color0_areas_, edram4_redirected_color0_alias_tiles_);
     edram4_redirected_color0_tiles_ = edram4_redirected_color0_areas_ = edram4_redirected_merged_ = 0;
+    edram4_redirected_color0_alias_tiles_ = 0;
     if (const uint64_t memo_total = edram4_memo_hits_ + edram4_memo_misses_ + edram4_memo_ineligible_) {
       REXLOG_INFO("[native] EDRAM draw memo (ds2_cpu_ring_edram_memo {}): {} draws prepared from the memo, {} by the "
                   "full path, {} not eligible ({:.1f} % from the memo); {} checked against the full path",

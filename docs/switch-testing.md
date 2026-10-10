@@ -4,6 +4,22 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Sexto build (2026-10-10): rodada 2 de desempenho
+
+Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+
+O que muda: as limpezas de tela que o jogo faz por superfícies 4x "apelidadas" passam a ser feitas direto nos alvos
+normais, sem converter o alvo inteiro depois. No PC as conversões de profundidade do alvo inteiro caíram de ~6 para 2
+por quadro e a imagem ficou igual; o ganho em milissegundos só o console diz.
+
+Duas sessões na fogueira, ~1 minuto parado cada, sem overclock:
+
+1. **Sessão A:** com o `ds2.toml` do pacote. Repare na imagem: céu/fundo, sombras e neblina iguais a antes?
+2. **Sessão B:** apague o `ds2.toml`, copie `configs/ds2_teste_sem_atalho_clear.toml` para a pasta do jogo e renomeie
+   para `ds2.toml` (é o comportamento do build anterior, para comparar).
+
+Depois a pasta `logs/`, como sempre.
+
 ## Quinto build (2026-10-10)
 
 Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
