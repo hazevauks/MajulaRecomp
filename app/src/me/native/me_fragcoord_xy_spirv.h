@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstring>
 #include <initializer_list>
 #include <map>
 #include <string>
@@ -12,16 +13,20 @@ namespace me::native {
 // Enum value MUST participate in the final module cache key, along with full
 // source code. Compose ONCE, on the selected material, BEFORE depth transforms:
 // those transforms inject raw FragCoord loads that must remain unmodified.
-enum class GuestFragCoordXYMode : uint32_t { GridX2 = 1, Phase1 = 2, Phase2 = 3 };
+// ds2-nx: Scale multiplies X and Y by scale_x / scale_y (the render resolution: host pixels back to the guest's, and
+// with the X raster grid on top, both factors in one). Dark Souls II's deferred passes turn the pixel position into
+// texture coordinates with the guest's 1 / size constants; SA2 never read it, so the render scale did not cover it.
+enum class GuestFragCoordXYMode : uint32_t { GridX2 = 1, Phase1 = 2, Phase2 = 3, Scale = 4 };
 
 inline bool TransformGuestFragCoordXY(const std::vector<uint32_t>& input,
                                      std::vector<uint32_t>& output,
-                                     std::string& reason, GuestFragCoordXYMode mode) {
+                                     std::string& reason, GuestFragCoordXYMode mode,
+                                     float scale_x = 1.0f, float scale_y = 1.0f) {
   if (&input == &output) { reason = "input/output alias"; return false; }
   output.clear(); reason.clear();
   const auto fail = [&](const char* why) { output.clear(); reason = why; return false; };
   if (mode != GuestFragCoordXYMode::GridX2 && mode != GuestFragCoordXYMode::Phase1 &&
-      mode != GuestFragCoordXYMode::Phase2) return fail("unsupported XY mode");
+      mode != GuestFragCoordXYMode::Phase2 && mode != GuestFragCoordXYMode::Scale) return fail("unsupported XY mode");
   if (input.size() < 5 || input[0] != 0x07230203 || !input[3] || input[4])
     return fail("invalid SPIR-V header");
   struct Ins { size_t at; uint32_t count, op; };
@@ -96,7 +101,10 @@ inline bool TransformGuestFragCoordXY(const std::vector<uint32_t>& input,
   const auto emit=[](std::vector<uint32_t>& dst,uint32_t op,std::initializer_list<uint32_t> a) {
     dst.push_back((uint32_t(a.size()+1)<<16)|op); dst.insert(dst.end(),a);
   };
-  const bool grid=mode==GuestFragCoordXYMode::GridX2;
+  const bool grid=mode==GuestFragCoordXYMode::GridX2;  // X only
+  const bool scale=mode==GuestFragCoordXYMode::Scale;
+  const uint32_t op=grid||scale?133u:131u;  // OpFMul / OpFAdd
+  const auto bits=[](float f) { uint32_t u; std::memcpy(&u,&f,sizeof(u)); return u; };
   std::vector<uint32_t> arithmetic;
   size_t annotation_at=0;
   output.assign(input.begin(),input.begin()+5);
@@ -104,8 +112,8 @@ inline bool TransformGuestFragCoordXY(const std::vector<uint32_t>& input,
     const auto* w=input.data()+ins.at;
     if(!annotation_at && ins.op>=19 && ins.op<=39) annotation_at=output.size();
     if(ins.at==first_function) {
-      emit(output,43,{scalar,cx,grid?0x3F000000u:0x3E800000u});
-      emit(output,43,{scalar,cy,mode==GuestFragCoordXYMode::Phase2?0xBE800000u:0x3E800000u});
+      emit(output,43,{scalar,cx,scale?bits(scale_x):grid?0x3F000000u:0x3E800000u});
+      emit(output,43,{scalar,cy,scale?bits(scale_y):mode==GuestFragCoordXYMode::Phase2?0xBE800000u:0x3E800000u});
     }
     if(ins.op==61 && ins.count>=4 && pointers.count(w[3]) &&
        (pointers[w[3]]==-1 || pointers[w[3]]==0 || (!grid && pointers[w[3]]==1))) {
@@ -113,12 +121,12 @@ inline bool TransformGuestFragCoordXY(const std::vector<uint32_t>& input,
       size_t at=output.size();output.insert(output.end(),w,w+ins.count);output[at+2]=raw;
       if(kind==-1) {
         const uint32_t x=next++,gx=next++,vx=grid?w[2]:next++;
-        emit(output,81,{scalar,x,raw,0});emit(output,grid?133:131,{scalar,gx,x,cx});arithmetic.push_back(gx);
+        emit(output,81,{scalar,x,raw,0});emit(output,op,{scalar,gx,x,cx});arithmetic.push_back(gx);
         emit(output,82,{vec4,vx,gx,raw,0});
         if(!grid) { const uint32_t y=next++,gy=next++;
-          emit(output,81,{scalar,y,raw,1});emit(output,131,{scalar,gy,y,cy});arithmetic.push_back(gy);
+          emit(output,81,{scalar,y,raw,1});emit(output,op,{scalar,gy,y,cy});arithmetic.push_back(gy);
           emit(output,82,{vec4,w[2],gy,vx,1}); }
-      } else { emit(output,grid?133:131,{scalar,w[2],raw,kind==0?cx:cy});arithmetic.push_back(w[2]); }
+      } else { emit(output,op,{scalar,w[2],raw,kind==0?cx:cy});arithmetic.push_back(w[2]); }
     } else output.insert(output.end(),w,w+ins.count);
   }
   if(!annotation_at) return fail("missing type section");

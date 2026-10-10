@@ -4,6 +4,24 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Nono build (2026-10-10): correção dos "fantasmas" a 540p
+
+Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` continuam os mesmos).
+
+No oitavo build as cores voltaram, mas apareceu uma segunda silhueta do personagem deslocada e a cena com aspecto
+duplicado. Causa: a 540p os efeitos de tela cheia do jogo (sombras e luz) liam a posição do pixel na escala errada e
+saíam ampliados em 4/3. Corrigido; no PC a imagem a 540p agora bate com a de 720p.
+
+Na primeira vez o jogo pode engasgar um pouco mais nos primeiros minutos (os shaders são preparados de novo para
+540p; depois ficam guardados).
+
+O que observar, a 540p e sem overclock:
+
+- o fantasma sumiu? As sombras do personagem e do cenário estão no lugar?
+- gire a câmera para os dois lados (casa das firekeepers e direção oposta) e fique uns 30 s parado em cada um.
+
+Depois a pasta `logs/`.
+
 ## Oitavo build (2026-10-10): correção da tela amarela a 540p
 
 Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` são os mesmos do sétimo build).

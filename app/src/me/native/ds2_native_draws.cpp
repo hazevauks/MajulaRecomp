@@ -779,6 +779,10 @@ DS2_ENHANCEMENT(g_entry_hash, ds2_cpu_ring_entry_hash, ds2::enh::kCpu, true,
 // resolve. The 8x8 centre of the title card's mission box is loaded where a 512x512 character shadow map had been
 // resolved during the Knuckles event; it was taken for the shadow map and dropped (the box lost its red fill for
 // 2.3 s). It now takes the ordinary texture path (guest memory), as the 8 pieces around it always did.
+REXCVAR_DEFINE_BOOL(ds2_native_position_scale, true, "DS2",
+                    "At a render resolution other than the game's, the pixel position a pixel shader reads is given "
+                    "in the game's pixels (host position * 4 / q). false = host pixels, as sa2-nx (Dark Souls II's "
+                    "full-screen passes then sample their inputs magnified)");
 REXCVAR_DEFINE_BOOL(ds2_native_viewport_whole_pixels, true, "DS2",
                     "At a render resolution other than the game's, a viewport whose edges fall inside a host pixel is "
                     "set as the whole host pixels it covers, with the difference in the vertex shader's NDC scale and "
@@ -4164,9 +4168,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // PipelineKey::fill (0 for every pipeline at the game's resolution without MSAA, as before): bits 0-7 the ds2_msaa
     // rasterization samples (0 = 1), bits 8-15 the render scale of a line pipeline (lines keep their width relative
     // to the image: lineWidth = q / 4).
+    // ds2-nx: bits 16-23 the render scale of a pipeline with a pixel shader (its pixel position is scaled back to
+    // the game's pixels: ModuleGuestFragCoordXY).
     key.fill = (pass_samples_ > 1 ? pass_samples_ : 0) |
                (ClassTopology(key.topology) == 1 && pass_res_q_ != kScaleQuartersNative && max_line_width_ > 1.0f
-                    ? (pass_res_q_ << 8) : 0u);
+                    ? (pass_res_q_ << 8) : 0u) |
+               (key.ps && pass_res_q_ != kScaleQuartersNative && REXCVAR_GET(ds2_native_position_scale)
+                    ? (pass_res_q_ << 16) : 0u);
     static constexpr uint32_t kBlend[4] = {
         gr::XE_GPU_REG_RB_BLENDCONTROL0, gr::XE_GPU_REG_RB_BLENDCONTROL1,
         gr::XE_GPU_REG_RB_BLENDCONTROL2, gr::XE_GPU_REG_RB_BLENDCONTROL3};
@@ -10936,10 +10944,17 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const bool grid = bool(key.specialization & kSpecRasterGridX);
     const bool phase = bool(key.rasterization & me::native::kNativeMsaa2PhaseProbe);
     const bool phase2 = bool(key.rasterization & me::native::kNativeMsaa2PhaseMode2);
-    const auto mode = grid ? me::native::GuestFragCoordXYMode::GridX2 :
+    // ds2-nx: the render scale of the pipeline (PipelineKey::fill bits 16-23), alone or with the X grid.
+    const uint32_t position_q = (key.fill >> 16) & 0xFFu;
+    const float position_scale = position_q ? 4.0f / float(position_q) : 1.0f;
+    const uint32_t scale_identity = position_q | (grid ? 0x100u : 0u);
+    const auto mode = position_q ? me::native::GuestFragCoordXYMode::Scale :
+                      grid ? me::native::GuestFragCoordXYMode::GridX2 :
                       phase2 ? me::native::GuestFragCoordXYMode::Phase2 :
                                me::native::GuestFragCoordXYMode::Phase1;
-    if (grid == phase || (phase2 && !phase)) {
+    // The render scale alone never rejects a draw: a shader the rewrite does not cover keeps reading host pixels.
+    const bool scale_only = position_q && !grid && !phase;
+    if (position_q ? phase : (grid == phase || (phase2 && !phase))) {
       reason = "unsupported combined or absent guest XY raster mode";
     } else if (source == codes_modules_depth_.end()) {
       reason = "final PS has no tracked CPU SPIR-V";
@@ -10949,11 +10964,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       code_hash = XXH3_64bits(code.data(), code.size() * sizeof(uint32_t));
       auto& bucket = modules_fragcoord_xy_[code_hash];
       for (const auto& entry : bucket) {
-        if (entry.mode == mode && entry.original == code) return entry.module;
+        if (entry.mode == mode && entry.scale == scale_identity && entry.original == code)
+          return entry.module || !scale_only ? entry.module : selected;
       }
       std::vector<uint32_t> mapped;
       VkShaderModule module = VK_NULL_HANDLE;
-      if (me::native::TransformGuestFragCoordXY(code, mapped, reason, mode)) {
+      if (me::native::TransformGuestFragCoordXY(code, mapped, reason, mode,
+                                                 grid ? 0.5f * position_scale : position_scale, position_scale)) {
         if (mapped == code) return selected; // No FragCoord; do not own/destroy the base twice.
         VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
         info.codeSize = mapped.size() * sizeof(uint32_t);
@@ -10963,16 +10980,23 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           module = VK_NULL_HANDLE;
         }
       }
-      bucket.push_back({code, mode, module}); // Cache failure, never an unchecked base fallback.
+      bucket.push_back({code, mode, module, scale_identity}); // Cache failure, never an unchecked base fallback.
       if (module) {
         ModuleCodeDepth tracked;
         tracked.owned = std::move(mapped);
         codes_modules_depth_.insert_or_assign(module, std::move(tracked));
-        REXLOG_INFO("[native] final material FragCoord XY remapped mode={}: PS n{} container {:016X}, "
-                    "source SPIR-V {:016X}/{} words", uint32_t(mode),
-                    ps ? int(ps->number) : -1, ps ? ps->fingerprint : 0, code_hash, code_words);
+        if (!position_q || ++modules_position_scale_ <= 8)
+          REXLOG_INFO("[native] final material FragCoord XY remapped mode={}: PS n{} container {:016X}, "
+                      "source SPIR-V {:016X}/{} words", uint32_t(mode),
+                      ps ? int(ps->number) : -1, ps ? ps->fingerprint : 0, code_hash, code_words);
         return module;
       }
+    }
+    if (scale_only) {
+      if (++position_scale_declined_ <= 16)
+        REXLOG_WARN("[native] pixel position not scaled to the game's pixels in PS n{} container {:016X} (render "
+                    "scale {}/4): {}", ps ? int(ps->number) : -1, ps ? ps->fingerprint : 0, position_q, reason);
+      return selected;
     }
     const uint64_t n = ++raster_grid_ps_rejected_;
     if (n <= 16 || (n & 255) == 0)
@@ -12081,7 +12105,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     } else if (key.ps) {
       ps = ModuleFor(*p.ps);
     }
-    if (key.ps && ((key.specialization & kSpecRasterGridX) ||
+    if (key.ps && ((key.specialization & kSpecRasterGridX) || ((key.fill >> 16) & 0xFFu) ||
                     (key.rasterization & me::native::kNativeMsaa2PhaseProbe))) {
       ps = ModuleGuestFragCoordXY(ps, key, p.vs, p.ps);
       if (!ps) {
@@ -12290,6 +12314,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       };
       const uint32_t line_handheld = line_code(ds2::render::ScaleQuartersOf(false));
       const uint32_t line_docked = line_code(ds2::render::ScaleQuartersOf(true));
+      // ds2-nx: bits 16-23 = the render scale of a pipeline with a pixel shader (0 at the game's scale).
+      const auto position_code = [&](uint32_t q) {
+        return q != kScaleQuartersNative && REXCVAR_GET(ds2_native_position_scale) ? q : 0u;
+      };
+      const uint32_t position_handheld = position_code(ds2::render::ScaleQuartersOf(false));
+      const uint32_t position_docked = position_code(ds2::render::ScaleQuartersOf(true));
       const bool unswapped = g_texcoords_unswapped.active;
       file_list_.reserve(header[3]);
       for (uint32_t i = 0; i < header[3]; ++i) {
@@ -12304,7 +12334,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           // With MSAA on, the passes it does not apply to (other formats, Direct3D's 4x Clear aliases) stay
           // single-sample: fill 0 is producible in every session.
           const bool producible =
-              ((r.key.fill & 0xFFu) == samples_code || (r.key.fill & 0xFFu) == 0) && (r.key.fill >> 16) == 0 &&
+              ((r.key.fill & 0xFFu) == samples_code || (r.key.fill & 0xFFu) == 0) &&
+              ((r.key.fill >> 16) == 0 || (r.key.fill >> 16) == position_handheld ||
+               (r.key.fill >> 16) == position_docked) &&
               (ClassTopology(r.key.topology) == 1 ? (line == line_handheld || line == line_docked) : line == 0) &&
               ((r.key.specialization & kSpecTexcoordsUnswapped) != 0) == unswapped;
           other = !producible;
@@ -12596,7 +12628,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     };
     const auto pixel = [&](const PipelineKey& key, const ShaderEntry& e) {
       auto selected = pixel_no_half(key, e);
-      if ((key.specialization & kSpecRasterGridX) ||
+      if ((key.specialization & kSpecRasterGridX) || ((key.fill >> 16) & 0xFFu) ||
           (key.rasterization & me::native::kNativeMsaa2PhaseProbe)) {
         selected = ModuleGuestFragCoordXY(selected, key, nullptr, &e);
         if (!selected) return VkShaderModule(VK_NULL_HANDLE);
@@ -12949,7 +12981,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     std::vector<uint32_t> original;
     me::native::GuestFragCoordXYMode mode;
     VkShaderModule module = VK_NULL_HANDLE;
+    uint32_t scale = 0;  // ds2-nx: Scale mode: the render scale q, bit 8 = with the X grid
   };
+  uint64_t modules_position_scale_ = 0;  // ds2-nx: pixel shaders rewritten for the render scale (log limit)
+  uint64_t position_scale_declined_ = 0;  // ds2-nx: lookups of a pixel shader the rewrite does not cover
   std::mutex modules_depth_mutex_;
   std::unordered_map<VkShaderModule, ModuleCodeDepth> codes_modules_depth_;
   std::unordered_map<uint64_t, std::vector<ModuleDepthHalfEntry>> modules_depth_half_;

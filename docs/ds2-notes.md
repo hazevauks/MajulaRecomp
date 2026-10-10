@@ -777,3 +777,29 @@ overclock) as janelas de 10 s deram 13,3 / 13,7 / 13,8 / 12,2 / 15,7 / 17,2 / 17
 82,5 / 63,4 / 58,1 / 58,6 ms de GPU por quadro: não estabilizou como a 720p (127 quadros por janela, 78,8 ms, em 17
 janelas seguidas). Nas duas últimas: cena 22,4 ms (quase igual a 720p), edram_alias 17,1 (era 30,0), 640: 4,7,
 cópias 2,9, edram_import 3,3, edram_import9 2,2. A comparação válida fica para a sessão com a imagem certa.
+
+**Oitavo build no console** (`out/switch_logs/008/ds2_013.log`): cores certas, ou seja, o viewport de pixels inteiros
+resolveu a tabela no NVK. Mas quem jogou viu "fantasmas": uma segunda silhueta do personagem deslocada para baixo e
+à direita, e a cena com aspecto duplicado.
+
+**Causa: a posição do pixel lida pelos pixel shaders.** O tradutor inicia o registrador de posição com
+`iPos.xy - 0.5`, em pixels do host. Os passes de tela cheia do jogo (a máscara de sombra/luz `11EDE000`, entre
+outros) multiplicam essa posição pelo `1/tamanho` do jogo para obter a coordenada de textura; a 540p a posição vai
+só até 960x540, a coordenada até 0,75, e a entrada sai ampliada em 4/3 a partir do canto superior esquerdo. O sa2-nx
+não cobre isso na escala de render (o SA2 não lê a posição). Estava errado também no PC: a comparação etapa a etapa
+dos despejos de 540p e 720p (`out/view/s540_a.png` / `s720_a.png`) mostra a etapa 015 deslocada, e a imagem final
+de 540p era mais escura e sem os degraus do canto. Eu tinha dado a imagem de 540p como certa olhando só a captura
+reduzida; não estava.
+
+**Correção** (`ds2_native_position_scale`, padrão `true`): o renderizador já tinha uma reescrita de SPIR-V da
+posição do pixel para a grade de raster (`me_fragcoord_xy_spirv.h`); ela ganhou o modo `Scale`, que multiplica X e Y
+por `4/q` (e por 0,5 em X junto com a grade). A escala entra na chave do pipeline (`PipelineKey::fill`, bits 16–23,
+só com pixel shader e fora de 720p), no pré-aquecimento e no cache de módulos. Um shader que a reescrita não cobre
+continua com pixels do host e gera aviso, sem rejeitar o desenho. No PC a 540p: 8 módulos reescritos no primeiro
+mapa, nenhum aviso, etapa 015 alinhada e imagem final equivalente à de 720p.
+
+**Desempenho a 540p no console** (mesma sessão; janelas de 10 s): de 9,6 a 17,9 quadros/s conforme a direção da
+câmera, GPU de 55,8 a 104,5 ms por quadro. Olhando para a casa das firekeepers: cena 34,9 ms, alvos de 640: 13,7,
+**edram_import 29,8** (contra ~4 na direção oposta), edram_alias 17,3. O relatório dessa janela:
+`draw/depth-repr-switch=3919ops/297744tiles`, `whole-target runs: depth-repr-switch=844` em ~96 quadros, ou seja,
+~9 conversões de profundidade de alvo inteiro por quadro por troca de representação. É o próximo alvo.
