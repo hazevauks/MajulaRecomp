@@ -4,6 +4,16 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Quinto build (2026-10-10)
+
+Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+
+- **ZCULL ligado por padrão** no alvo de profundidade da cena (o teste B da rodada anterior: 137,9 → 127,2 ms de GPU
+  por quadro, 7,3 → 7,9 quadros/s). Se na sessão B você viu algo errado na imagem, me diga.
+- **Corrigida a cópia rejeitada da área da fogueira:** a cópia da cena para uma textura de 8 bits (usada pelo efeito
+  de calor do fogo) não era feita. Repare se o ar em volta da fogueira agora ondula.
+- Teste: uma sessão na fogueira, ~1 minuto parado, sem overclock, e a pasta `logs/`.
+
 ## Quarto build (2026-10-10): primeira rodada de desempenho
 
 Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.

@@ -646,3 +646,34 @@ preparado: `configs/ds2_teste_zcull.toml` (`ds2_native_zcull_1x_depth = true`).
 **Cópia rejeitada nova:** `resolve exponent bias / format not supported (cause 14)`, a partir da área da fogueira
 (1.226 cópias rejeitadas de 112.297 na sessão). O caminho com viés de expoente só cobre FP16 → FP16; o log agora diz
 os formatos. Sem relato de defeito visível, mas é conteúdo que não chega à textura.
+
+## Rodada 1 no console: ZCULL na profundidade de 1 amostra e a cópia com viés (2026-10-10)
+
+Logs em `out/switch_logs/004` (`ds2_007` = A, `ds2_008` = B), mesma cena (primeira fogueira, parado), sem overclock.
+
+| | A: padrão | B: `ds2_native_zcull_1x_depth = true` |
+|---|---|---|
+| quadros/s | 7,3 | 7,9 |
+| GPU por quadro | 137,9 ms | 127,2 ms |
+| `edram_import` | 35,0 | 20,0 |
+| `edram_import9` | 15,1 | 19,0 |
+| `edram_alias` (inclui os desenhos da cena que vêm depois) | 50,0 | 50,1 |
+| cena | 23,4 | 23,6 |
+
+O ganho veio das importações de profundidade, não da cena: os passes da cena não mudaram, ou seja, o custo deles é de
+preenchimento/shader, não de pixels escondidos. Com ZCULL as importações de stencil deixam o motor de cópia e voltam
+aos 9 passes (+3,9 ms), e ainda assim o saldo é −10,7 ms. Adotado no `ds2.toml` de teste.
+
+Leitura da lista de passes (pesos relativos dentro de cada categoria; os valores absolutos dessa lista não fecham com
+os das categorias, que são os calibrados): em `edram_alias`, ~70 % é o PS n720 em dois passes (~35 ms por quadro: é o
+material principal da cena, não uma transferência); `edram_import` (20 ms) e `edram_import9` (19 ms) são só
+transferência: **~39 ms por quadro, 31 % do tempo de GPU, em conversões que o jogo original não faz.** No PC, o
+relatório de pares mostra o que são as de 9 passes: importações de cor para profundidade de poucos blocos (8 a 48)
+quando o mapa de sombras e outros alvos reutilizam o início do EDRAM onde a cena desenhou cor.
+
+**Cópia com viés de expoente.** O log do console deu os formatos: viés −2, do alvo 7e3 (formato 12, FP16 no host,
+1280x1280) para a textura `10951000` RGBA8 1280x720, comando 1. É a cópia da cena para 8 bits com fator 1/4, lida pelo
+PS n723 num desenho de tela cheia (o efeito de calor da fogueira). Feita agora pelo passe de fragmento das cópias
+(`ds2_resolve_copy.frag` ganhou um fator; 1,0 para a cópia de sempre). Verificado no PC **com o save do console**
+(`logs/ds2` copiado para `Documents\ds2`; o save anterior do PC está em `out/pc_save_backup`): a área da fogueira
+abre pelo Continue, o log registra a cópia e a textura sai com a cena.

@@ -19,6 +19,10 @@ asset_pack_build = false
 # Tempo de GPU por categoria de passe no log (linha "GPU per Swap"), enquanto se mede onde o tempo vai.
 ds2_gpu_marks_categories = true
 
+# ZCULL tambem na profundidade de 1 amostra (a da cena deste jogo): medido no console, 137,9 -> 127,2 ms de GPU por
+# quadro na primeira fogueira.
+ds2_native_zcull_1x_depth = true
+
 # Log completo em arquivo durante os testes.
 log_level = "info"
 log_to_file = true

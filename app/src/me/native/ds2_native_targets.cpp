@@ -1735,7 +1735,8 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
           BeforeResolvedWrite(base_resolved);  // ds2_gpu_resolve_alias
           ResolverPreviousFront(base_resolved, false);
           if (!ResolverWithBias(*target_render, resolved->image, x0, y0, dx, dy,
-                                width, height, exp_bias)) {
+                                width, height, exp_bias) &&
+              !ResolveColorFrag(*target_render, resolved->image, x0, y0, dx, dy, width, height, exp_bias)) {
             // ds2-nx diagnostic: which resolve it was (the first 12), to implement its formats.
             static std::atomic<int> logged{0};
             if (logged.fetch_add(1) < 12) {
@@ -7328,10 +7329,14 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   // destination texel (x, y); UNORM8 values round-trip exactly, as in the EDRAM color conversions. The render pass's
   // own dependencies order it like BarrierBeforeCopyResolve / BarrierAfterCopyResolve did. Returns false WITHOUT
   // recording anything when it does not apply: the caller records the copy as before.
+  // ds2-nx: with `bias` (a resolve's exponent bias, not 0) the source is the RGBA16F image of a floating-point render
+  // target and each value is multiplied by 2^bias on its way to the RGBA8 texture; that path does not depend on the
+  // ds2_gpu_resolve_draw key (there is no copy "as before" for it: such a resolve used to be rejected).
   bool ResolveColorFrag(Image& source, Image& target, int32_t sx, int32_t sy, uint32_t dx, uint32_t dy,
-                        uint32_t width, uint32_t height) {
-    if (!g_resolve_draw.active || conv_color_frag_failed_ || !sampler_depth_edram_) return false;
-    if (source.format != VK_FORMAT_R8G8B8A8_UNORM || target.format != VK_FORMAT_R8G8B8A8_UNORM ||
+                        uint32_t width, uint32_t height, int32_t bias = 0) {
+    if ((!g_resolve_draw.active && !bias) || conv_color_frag_failed_ || !sampler_depth_edram_) return false;
+    if (source.format != (bias ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM) ||
+        target.format != VK_FORMAT_R8G8B8A8_UNORM ||
         source.image == target.image || !source.view || !target.view || !width || !height ||
         source.guest_width || source.guest_height || target.guest_width || target.guest_height ||
         source.raster_grid_x || target.raster_grid_x || source.scale_q != target.scale_q ||
@@ -7396,7 +7401,12 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     VkRect2D area = HostRect(target, VkRect2D{{int32_t(dx), int32_t(dy)}, {width, height}});
     area.extent.width = std::min(area.extent.width, source_area.extent.width);
     area.extent.height = std::min(area.extent.height, source_area.extent.height);
-    const int32_t delta[2] = {source_area.offset.x - area.offset.x, source_area.offset.y - area.offset.y};
+    const struct {
+      int32_t delta[2];
+      float scale;
+    } constants = {{source_area.offset.x - area.offset.x, source_area.offset.y - area.offset.y},
+                   std::ldexp(1.0f, bias)};
+    static_assert(sizeof(constants) == 12);
     VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     begin.renderPass = pass->render_pass;
     begin.framebuffer = framebuffer_copy;
@@ -7410,10 +7420,17 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     dfn_.vkCmdBindDescriptorSets(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                  layout_pipeline_conv_color_frag_, 0, 1, &set, 0, nullptr);
     dfn_.vkCmdPushConstants(commands_work_, layout_pipeline_conv_color_frag_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                            sizeof(delta), delta);
+                            sizeof(constants), &constants);
     dfn_.vkCmdDraw(commands_work_, 3, 1, 0, 0);
     dfn_.vkCmdEndRenderPass(commands_work_);
     if (draws_) draws_->NotifyGraphicsExternalState();
+    if (bias) {
+      if (++resolve_bias_draws_ == 1)
+        REXLOG_INFO("[native] targets: resolve with exponent bias {} from a floating-point target into an RGBA8 "
+                    "texture, drawn on the 3D engine: first one {}x{} at {},{} -> {},{}", bias, width, height, sx,
+                    sy, dx, dy);
+      return true;
+    }
     if (++resolve_draws_ == 1)
       REXLOG_INFO("[native] targets: resolves drawn on the 3D engine (ds2_gpu_resolve_draw): first one {}x{} at "
                   "{},{} -> {},{}", width, height, sx, sy, dx, dy);
@@ -10540,6 +10557,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   VkShaderModule fs_conv_r64_frag_ = VK_NULL_HANDLE;
   VkShaderModule fs_resolve_copy_ = VK_NULL_HANDLE;  // ds2_gpu_resolve_draw
   uint64_t resolve_draws_ = 0, resolve_draws_declined_ = 0, resolve_draws_report_ = 0, resolve_draws_declined_report_ = 0;
+  uint64_t resolve_bias_draws_ = 0;  // ds2-nx: biased resolves into RGBA8 (ResolveColorFrag with a bias)
   // ds2_gpu_resolve_alias (the types are declared with MakeAlias).
   std::unordered_map<uint32_t, AliasResolve> aliases_;  // by the alias's address
   LastResolve last_resolve_;
