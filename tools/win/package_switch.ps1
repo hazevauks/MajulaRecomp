@@ -1,42 +1,38 @@
-# Lays out the Switch SD card folder in out\nx\sdcard\switch\sa2-nx: the NRO, its settings (app\ds2_switch.toml as
-# ds2.toml), the testing notes and the shader package. The game files are yours and stay out of the repository:
+# Lays out the Switch SD card folder in out\nx\sdcard\switch\ds2-nx: the NRO, its settings (app\ds2_switch.toml as
+# ds2.toml), the testing notes, the shader package and two fallback configurations. The game files are yours and stay
+# out of the repository:
 #   -IncludeGame              adds them as the asset cache (assets\game_root.nxpack + .nxidx, built here with
-#                             tools\build_asset_pack.py when missing or older than the folder) plus out\pc\dlc
-#                             (the Battle DLC);
+#                             tools\build_asset_pack.py when missing or older than the folder);
 #   -IncludeGame -LooseGame   copies the game_root folder instead: the console builds the pack on its first boot.
 # By hand:
-#   sdmc:/switch/sa2-nx/game_root.nxpack + game_root.nxidx   <- python tools\build_asset_pack.py assets\game_root
-#   sdmc:/switch/sa2-nx/dlc/                                 <- out\pc\dlc (optional: SA2 Battle)
+#   sdmc:/switch/ds2-nx/game_root.nxpack + game_root.nxidx   <- python tools\build_asset_pack.py assets\game_root
 #
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\package_switch.ps1 [-IncludeGame [-LooseGame]] [-AbPair]
-param([switch]$IncludeGame, [switch]$LooseGame, [switch]$AbPair)
+#   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\package_switch.ps1 [-IncludeGame [-LooseGame]]
+param([switch]$IncludeGame, [switch]$LooseGame)
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$dest = Join-Path $root 'out\nx\sdcard\switch\sa2-nx'
+$dest = Join-Path $root 'out\nx\sdcard\switch\ds2-nx'
 New-Item -ItemType Directory -Force $dest | Out-Null
 $nro = Join-Path $root 'out\nx\ds2.nro'
 if (-not (Test-Path $nro)) { throw "no NRO at ${nro}: run tools\win\build_switch.ps1 first" }
 Copy-Item -Force $nro (Join-Path $dest 'ds2.nro')
 Copy-Item -Force (Join-Path $root 'app\ds2_switch.toml') (Join-Path $dest 'ds2.toml')
-Copy-Item -Force (Join-Path $root 'docs\switch-testing.md') (Join-Path $dest 'README.md')
+Copy-Item -Force (Join-Path $root 'docs\switch-testing.md') (Join-Path $dest 'LEIA-ME.md')
+# The shader package the PC build was verified with (out\pc), not a stale build output.
 foreach ($f in 'ds2_shaders.mesp', 'ds2_shaders.mesp.idx') {
-    Copy-Item -Force (Join-Path $root "out\shaders\$f") (Join-Path $dest $f)
+    Copy-Item -Force (Join-Path $root "out\pc\$f") (Join-Path $dest $f)
 }
-# Since 2026-10-06 only the optimised-codegen NRO is delivered (the user's choice): build it from the optimised working
-# tree and package WITHOUT -AbPair. The old codegen A/B pair, kept for reference: with -AbPair, ds2.nro is
-# out\nx\ab\classic\ds2.nro and ds2_optimised.nro is out\nx\ab\optimised\ds2.nro.
-if ($AbPair) {
-    Copy-Item -Force (Join-Path $root 'out\nx\ab\classic\ds2.nro') (Join-Path $dest 'ds2.nro')
-    Copy-Item -Force (Join-Path $root 'out\nx\ab\optimised\ds2.nro') (Join-Path $dest 'ds2_optimised.nro')
-} else {
-    Remove-Item -Force (Join-Path $dest 'ds2_optimised.nro') -ErrorAction SilentlyContinue
-}
-# Premade enhancement configurations (all off, CPU off, verify, ...): docs/enhancements.md. The folder is emptied first:
-# a config that no longer exists (e.g. round 2's ds2_test_new_natives_on.toml) must not stay behind with stale keys.
-Remove-Item -Force (Join-Path $dest 'configs\*.toml') -ErrorAction SilentlyContinue
-python (Join-Path $root 'tools\make_enhancement_configs.py') --out (Join-Path $dest 'configs') | Out-Null
-# The CPU sampler is switched by the configuration now (switch_profile_stacks in the A/B and profile configs): no
-# logs/rex/stacks_profile.flag, which made every run pay for sampling.
-Remove-Item -Force (Join-Path $dest 'logs\rex\stacks_profile.flag') -ErrorAction SilentlyContinue
+# Fallback configurations for the first hardware tests: copy one over ds2.toml to use it.
+$configs = Join-Path $dest 'configs'
+New-Item -ItemType Directory -Force $configs | Out-Null
+$base = Get-Content (Join-Path $root 'app\ds2_switch.toml') -Raw
+Set-Content -Path (Join-Path $configs 'ds2_padrao.toml') -Value $base -Encoding utf8
+Set-Content -Path (Join-Path $configs 'ds2_melhorias_desligadas.toml') -Encoding utf8 -Value ($base +
+    "`n# Todos os atalhos de CPU e GPU herdados do sa2-nx desligados: os caminhos originais em tudo.`n" +
+    "ds2_cpu_enhancements = false`nds2_noncpu_enhancements = false`n")
+Set-Content -Path (Join-Path $configs 'ds2_gpu_emulada.toml') -Encoding utf8 -Value (
+    ($base -replace 'ds2_renderer_native = true', 'ds2_renderer_native = false') +
+    "`n# A GPU emulada do SDK no lugar do renderizador nativo (muito lenta no console; só para comparar a imagem).`n" +
+    "ds2_gpu_backend = `"vulkan`"`n")
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null
@@ -51,9 +47,6 @@ if ($IncludeGame) {
         }
         # A loose folder from an earlier package is no longer read (the pack wins): drop it from the staging copy.
         if (Test-Path (Join-Path $dest 'game_root')) { Remove-Item -Recurse -Force (Join-Path $dest 'game_root') }
-    }
-    if (Test-Path (Join-Path $root 'out\pc\dlc')) {
-        robocopy (Join-Path $root 'out\pc\dlc') (Join-Path $dest 'dlc') /E /NFL /NDL /NJH /NJS | Out-Null
     }
 }
 Get-ChildItem $dest | Select-Object Name, Length

@@ -1,0 +1,21 @@
+# Dark Souls II no Switch: configuração dos primeiros testes em hardware (vai para o cartão como ds2.toml, ao lado do
+# ds2.nro). Qualquer cvar do ReXGlue ou do port pode ser posto aqui. Enquanto o port estiver em teste o log fica ligado:
+# é ele que diz o que aconteceu (logs/rex/ no cartão).
+
+gpu_plugin = "xenos"
+license_mask = 1
+
+# Renderizador nativo (app/src/me) com a biblioteca de shaders ds2_shaders.mesp ao lado do .nro.
+ds2_renderer_native = true
+# Primeiros testes na resolução do próprio jogo nos dois modos (720p). 1080p na TV fica para depois de medir.
+ds2_render_height_handheld = 720
+ds2_render_height_docked = 720
+
+# Os arquivos do jogo num arquivo só (game_root.nxpack + .nxidx). Se só houver a pasta game_root/, o console monta o
+# pacote no primeiro boot (demora alguns minutos; aparece no log como "[pack] packing N %").
+asset_pack = true
+asset_pack_build = true
+
+# Log completo em arquivo durante os testes.
+log_level = "info"
+log_to_file = true

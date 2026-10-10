@@ -23,6 +23,10 @@ $devkitpro = @($env:DS2_DEVKITPRO, $env:DEVKITPRO, 'C:/devkitPro', (Join-Path $H
     Where-Object { $_ -and (Test-Path (Join-Path $_ 'devkitA64')) } | Select-Object -First 1
 if (-not $devkitpro) { throw 'devkitPro not found: set DS2_DEVKITPRO to its folder (the one holding devkitA64)' }
 $devkitpro = $devkitpro -replace '\\', '/'
+# The toolchain file is read again inside CMake's compiler checks (try_compile), where -DDEVKITPRO is not passed on and
+# it falls back to the environment: the MSYS path there made the configure fail ("libnx linker specs not found:
+# /opt/devkitpro/libnx/switch.specs"). The whole build gets the Windows path.
+$env:DEVKITPRO = $devkitpro
 $build = Join-Path $root 'out\nx'
 $glslang = Join-Path $root 'out\glslang\StandAlone\glslangValidator.exe'  # host tool: SPIR-V is portable
 if ($Reconfigure -or -not (Test-Path (Join-Path $build 'CMakeCache.txt'))) {
