@@ -8793,7 +8793,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     for (uint32_t i = 0; i < 4; ++i) {
       signed_value |= ((signs >> (i * 2)) & 0x3) == uint32_t(xenos::TextureSign::kSigned);
     }
-    if (signed_value) {
+    // ds2-nx: a floating-point texture (16F / 32F, and the EXPAND formats, which the host reads as 16F) is signed
+    // by nature and is sampled as it is: nothing is lost. Dark Souls II reads its luminance targets (format 29, all
+    // four components signed) this way; the warning is for the integer formats, where the sign changes the value.
+    const uint32_t format_signed = f[1] & 0x3F;
+    const bool float_format = (format_signed >= 27 && format_signed <= 32) ||
+                              (format_signed >= 36 && format_signed <= 38);
+    if (signed_value && !float_format) {
       Warn(31, "signed textures not supported yet: read as unsigned");
       // Mass Effect diagnostic: which formats and sign sets are read unsigned (normal maps?).
       const uint32_t sign_key = (f[1] & 0x3F) | (uint32_t(signs) << 8);

@@ -441,3 +441,26 @@ do SA2) não foi refeito para a condição nova.
 
 O log ainda registra divergências de identidade no pareamento por endereço do buffer de comandos (um objeto de shader
 errado é escolhido primeiro e descartado pela conferência do microcódigo); todos os desenhos acabam identificados.
+
+## Lapidação no PC: o que mais o log e a validação mostraram (2026-10-09)
+
+- **Resolução de render abaixo de 720p não funciona neste jogo (bloqueada).** Com `ds2_render_height_handheld = 360`
+  (tentativa de acelerar os testes no lavapipe) o processo caiu com corrupção de heap no primeiro quadro 3D. A camada
+  de validação mostrou a causa: `vkCreateImage(): extent.height is zero`. A escala do sa2-nx converte a borda de um
+  pixel do jogo para o host pela regra do centro do pixel; a q/4 = 1/2 a borda da linha 1 é 0, e os alvos de uma linha
+  do jogo (a tabela de tone mapping de 256x1) e os de 1x1 ficam com altura 0. As alturas de render agora vão de 720 a
+  2160. Para renderizar abaixo de 720p (pode vir a interessar no modo portátil) esses alvos auxiliares terão de ficar
+  no tamanho do jogo; não foi feito.
+- **`signed textures not supported yet` era alarme falso** no caso do jogo: são os alvos de luminância em ponto
+  flutuante (formato 29, lido pelo host como 16F), que já têm sinal. O aviso ficou só para formatos inteiros.
+- **A "diferença" que a linha `[verify]` conta (1)** é o `C6 prewarm: MISMATCH`: no lavapipe criar um pipeline que já
+  foi pré-aquecido leva tanto quanto compilar (não há cache de binários), e a thread de pré-aquecimento se desliga.
+  É do driver por software, não do jogo; a conferir de novo no Switch.
+- **Pareamento desenho ↔ registro de `Draw*`:** `draws paired with a Draw* record 0`. Todos os desenhos chegam dentro
+  de buffers indiretos e nenhum casa com os registros dos três ganchos de `Draw*`; o pareamento cai no endereço do
+  buffer de comandos (que às vezes aponta um objeto de shader antigo, daí os `identity mismatch`) e a identificação
+  final é pelo microcódigo. A imagem não depende disso; é custo de CPU na thread do anel, a tratar junto com as
+  otimizações de CPU.
+- **Validação do Vulkan** numa sessão inteira até o 3D em 720p (`ds2_032.log`): nenhum erro.
+- O jogo guarda o progresso em `Documents\ds2\<perfil>\465307E4\00000001\-GAME_0000` (23 arquivos, 7,2 MB), aberto a
+  cada sessão: as sessões de teste continuam de onde a anterior salvou.
