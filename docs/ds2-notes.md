@@ -448,9 +448,8 @@ errado é escolhido primeiro e descartado pela conferência do microcódigo); to
   (tentativa de acelerar os testes no lavapipe) o processo caiu com corrupção de heap no primeiro quadro 3D. A camada
   de validação mostrou a causa: `vkCreateImage(): extent.height is zero`. A escala do sa2-nx converte a borda de um
   pixel do jogo para o host pela regra do centro do pixel; a q/4 = 1/2 a borda da linha 1 é 0, e os alvos de uma linha
-  do jogo (a tabela de tone mapping de 256x1) e os de 1x1 ficam com altura 0. As alturas de render agora vão de 720 a
-  2160. Para renderizar abaixo de 720p (pode vir a interessar no modo portátil) esses alvos auxiliares terão de ficar
-  no tamanho do jogo; não foi feito.
+  do jogo (a tabela de tone mapping de 256x1) e os de 1x1 ficam com altura 0. As alturas de render foram então limitadas a
+  720–2160. Depois (2026-10-10) o mínimo passou a 540, onde a mesma conta dá altura 1: ver "Rodada 3" no fim.
 - **`signed textures not supported yet` era alarme falso** no caso do jogo: são os alvos de luminância em ponto
   flutuante (formato 29, lido pelo host como 16F), que já têm sinal. O aviso ficou só para formatos inteiros.
 - **A "diferença" que a linha `[verify]` conta (1)** é o `C6 prewarm: MISMATCH`: no lavapipe criar um pipeline que já
@@ -721,3 +720,42 @@ por quadro (1.924 → 352 blocos); a importação em 9 passes dos 720 blocos da 
 de cor por quadro limpos direto (676 entregues à vista de 1 amostra). Imagem igual (captura na fogueira). Ainda
 recusados por quadro: 1 limpeza de cor e 2 de profundidade em que o bloco parcial da última fileira pertence a uma
 vista de outro formato (os alvos de 640x360); o caminho seria sincronizar só esses blocos antes de limpar.
+
+**Medido no console** (`out/switch_logs/006`, fogueira, parado, sem overclock; as duas sessões no mesmo build):
+
+| sessão | atalho | quadros/s | GPU por quadro | edram_alias | edram_import | edram_import9 |
+|---|---|---|---|---|---|---|
+| `ds2_010` | ligado (padrão) | 12,7 | 78,8 ms | 30,0 | 5,8 | 3,9 |
+| `ds2_011` | `ds2_native_edram4_clear_color0_alias = false` | 7,9 | 127,9 ms | — | — | — |
+
+Na sessão com o atalho: cena 23,7 ms, alvos de 640: 5,0, cópias 4,8, cena sem Z 2,6. Nenhum desenho ou cópia
+rejeitado, nenhum defeito de imagem relatado. Sobram por quadro no console: a limpeza de cor com bloco parcial de outro
+dono e duas importações em 9 passes de 8 blocos cada (`C000:1280x1280 → 000:800x800` e `→ 0B8:640x720`).
+
+Curiosidade relatada: o menu New Game/Continue fica a 55–56 quadros/s na primeira vez e a 60 depois de carregar o
+jogo e voltar. O perfil mostra a thread principal do jogo perto de 97 % de um núcleo nos dois casos (o menu é
+limitado pela CPU do jogo, não pela GPU) e o pré-aquecimento de pipelines termina em 0,9 s; a causa da diferença não
+foi determinada.
+
+## Rodada 3: 540p no modo portátil (2026-10-10)
+
+A escala de render do sa2-nx (`ds2_render_height_handheld`, q/4 do tamanho do jogo) estava bloqueada abaixo de 720p
+porque a 360p (q = 2) os alvos de uma linha ficam com altura 0. A 540p (q = 3) a borda da linha 1 é
+`ceil(3/4 − 1/2) = 1`, então o mínimo passou a 540 (`QuartersOf` em `app/src/me/ds2_render_mode.cpp`).
+
+**Primeira tentativa no PC: cena inteira em ruído amarelo/verde, interface certa.** Sem queda e sem erro novo de
+validação. O despejo das texturas do quadro (`DS2_TRACE_DUMP`, agora em pixels do host: antes lia o tamanho do jogo
+de uma imagem menor) comparado ao de 720p mostrou uma única etapa diferente: a tabela de tone mapping
+(`111BE000`, 256x1 → 192x1) tinha conteúdo velho do EDRAM em vez da rampa de cinza. Causa: `ViewportAndScissor`
+(`ds2_native_draws.cpp`) descarta desenhos com viewport de menos de 1 pixel de altura, e o viewport de 256x1 do jogo
+vira 192x0,75 no host. Um viewport assim ainda cobre o centro do pixel da linha 0; o limite agora é
+`min(1, q/4)` pixels do host (um pixel do jogo abaixo de 720p; igual a antes em 720p ou mais). O descarte não
+aparecia em contador nenhum ("0 rejected").
+
+**Depois da correção:** imagem certa a 960x540 no PC (cena, HUD, texto, tabela de tone mapping idêntica à de 720p),
+mesmas três mensagens de validação de antes, `DS2_CHECK_SLOTS` limpo. O recorte da mesma região escura a 540p e a 720p
+não mostra padrão novo (as camadas de neblina de meia resolução aparecem nos dois).
+
+O `ds2.toml` do pacote da rodada 3 vai com `ds2_render_height_handheld = 540` para medir no console;
+`configs/ds2_teste_720p.toml` volta à resolução do jogo. A interface também é desenhada a 540p e ampliada (texto
+menos nítido): se vale a troca é decisão de quem joga.

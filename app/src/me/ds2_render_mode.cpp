@@ -22,12 +22,12 @@
 
 REXCVAR_DEFINE_INT32(ds2_render_height_handheld, 720, "DS2",
                      "Render height in handheld mode (the PC's starting mode unless ds2_render_docked): 720 = the "
-                     "game's own 1280x720. Any multiple of 180 from 720 to 2160 (others are rounded to the nearest); "
+                     "game's own 1280x720. Any multiple of 180 from 540 to 2160 (others are rounded to the nearest); "
                      "the width follows at 16:9")
     .range(180, 4320)
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 REXCVAR_DEFINE_INT32(ds2_render_height_docked, 1080, "DS2",
-                     "Render height in docked mode (the TV): 1080 = 1920x1080. Any multiple of 180 from 720 to "
+                     "Render height in docked mode (the TV): 1080 = 1920x1080. Any multiple of 180 from 540 to "
                      "2160; switching between docked and handheld changes it at the next frame")
     .range(180, 4320)
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
@@ -65,14 +65,14 @@ std::atomic<bool> g_docked_pc{false};
 std::atomic<bool> g_docked_pc_set{false};
 std::atomic<uint32_t> g_last_logged_q{0};
 
-// q = height / 180, from 4 (720p) to 12 (2160p); other heights go to the nearest multiple of 180.
-// ds2-nx: nothing below the game's own 720p. Dark Souls II draws into targets one row high (its 256x1 tone map table)
-// and 1x1; at q < 4 the host edge of guest row 1 is 0 (me_resolution_scale.h), so those images were created with
-// height 0 (VUID-VkImageCreateInfo-extent-00945, then a heap corruption in lavapipe at the first 3D frame with
-// ds2_render_height_handheld = 360). Rendering below 720p needs those targets kept at the game's size first.
+// q = height / 180, from 3 (540p) to 12 (2160p); other heights go to the nearest multiple of 180.
+// ds2-nx: nothing below 540p. Dark Souls II draws into targets one row high (its 256x1 tone map table) and 1x1; the
+// host edge of guest row 1 is ceil(q / 4 - 1 / 2) (me_resolution_scale.h): 1 at q = 3, but 0 at q = 2, where those
+// images were created with height 0 (VUID-VkImageCreateInfo-extent-00945, then a heap corruption in lavapipe at the
+// first 3D frame with ds2_render_height_handheld = 360).
 uint32_t QuartersOf(int32_t height) {
-  const int32_t q = (std::clamp(height, 720, 2160) + 90) / 180;
-  return uint32_t(std::clamp(q, 4, 12));
+  const int32_t q = (std::clamp(height, 540, 2160) + 90) / 180;
+  return uint32_t(std::clamp(q, 3, 12));
 }
 
 bool DockedPc() {

@@ -5198,7 +5198,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                     pass_height_, pass_scale_, pass_raster_scale_x_, pass_res_q_);
       }
     }
-    if (viewport.width < 1.0f || std::abs(viewport.height) < 1.0f) {
+    // ds2-nx: below the game's resolution a viewport of one guest pixel is less than one host pixel and still covers
+    // a pixel centre (Dark Souls II draws its tone map table into a 256x1 target: 192x0.75 at 540p, and the draw was
+    // dropped here, leaving the table with whatever the EDRAM held).
+    const float min_extent = std::min(1.0f, float(pass_res_q_) * 0.25f);
+    if (viewport.width < min_extent || std::abs(viewport.height) < min_extent) {
       return 1;
     }
     const uint32_t tl = r[gr::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL];

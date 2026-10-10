@@ -10183,7 +10183,9 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     }
     trace_dump_reads_.push_back(std::make_unique<Read>());
     Read& read = *trace_dump_reads_.back();
-    const VkDeviceSize bytes = VkDeviceSize(image.width) * image.height * texel_bytes;
+    // In host pixels: the file is what the image holds at the render resolution in use.
+    const uint32_t host_width = HostWidth(image), host_height = HostHeight(image);
+    const VkDeviceSize bytes = VkDeviceSize(host_width) * host_height * texel_bytes;
     uint32_t type = 0;
     void* mapped = nullptr;
     if (!rex::ui::vulkan::util::CreateDedicatedAllocationBuffer(
@@ -10198,16 +10200,17 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     read.coherent = (vulkan_device_->memory_types().host_coherent >> type) & 0x1;
     VkBufferImageCopy copy{};
     copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    copy.imageExtent = {image.width, image.height, 1};
+    copy.imageExtent = {host_width, host_height, 1};
     dfn_.vkCmdCopyImageToBuffer(commands_work_, image.image, VK_IMAGE_LAYOUT_GENERAL, read.buffer, 1, &copy);
-    PendingRead pending{&read, base, 0, 0, image.width, image.height, 0, 0, 0};
+    PendingRead pending{&read, base, 0, 0, host_width, host_height, 0, 0, 0};
     pending.dump = true;
     pending.dump_sequence = sequence;
     pending.dump_format = uint32_t(image.format);
     pending.dump_texel_bytes = texel_bytes;
     pending_reads_.push_back(pending);
-    REXLOG_INFO("[trace] dump {:03}: {:08X} {}x{} host format {} (guest texture format {})", sequence, base,
-                image.width, image.height, uint32_t(image.format), it->second.guest_format);
+    REXLOG_INFO("[trace] dump {:03}: {:08X} {}x{} ({}x{} host pixels) host format {} (guest texture format {})",
+                sequence, base, image.width, image.height, host_width, host_height, uint32_t(image.format),
+                it->second.guest_format);
   }
 
   // Read-back of a small resolved texture: the copied rectangle goes to a host-visible buffer in the

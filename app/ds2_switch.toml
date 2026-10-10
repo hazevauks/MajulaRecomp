@@ -7,8 +7,9 @@ license_mask = 1
 
 # Renderizador nativo (app/src/me) com a biblioteca de shaders ds2_shaders.mesp ao lado do .nro.
 ds2_renderer_native = true
-# Primeiros testes na resolução do próprio jogo nos dois modos (720p). 1080p na TV fica para depois de medir.
-ds2_render_height_handheld = 720
+# Em teste (rodada 3): 960x540 no modo portátil, ampliado para a tela de 720p; 56 % dos pixels de 720p. Para voltar à
+# resolução do jogo, 720 (configs/ds2_teste_720p.toml). Na TV, a resolução do próprio jogo; 1080p fica para depois.
+ds2_render_height_handheld = 540
 ds2_render_height_docked = 720
 
 # Os arquivos do jogo vão soltos na pasta game_root/ (121 arquivos, o maior com 2,8 GB): o conjunto tem 5,8 GB e um

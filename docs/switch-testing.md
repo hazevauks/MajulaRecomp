@@ -4,6 +4,25 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Sétimo build (2026-10-10): rodada 3, 540p no modo portátil
+
+Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+
+O que muda: o `ds2.toml` deste pacote renderiza a **960x540** no modo portátil (56 % dos pixels de 720p) e amplia para
+a tela. No PC a imagem ficou certa depois de uma correção (a tabela de tone mapping não era desenhada a 540p); o
+ganho em quadros por segundo só o console diz. A interface também sai a 540p, então o texto fica um pouco menos
+nítido.
+
+Uma sessão basta: com o `ds2.toml` do pacote, vá até a fogueira e fique ~1 minuto parado, sem overclock. Repare:
+
+- as cores da cena estão normais (nada de tela amarela/verde ou escura demais)?
+- o texto e o HUD continuam legíveis? A perda de nitidez incomoda?
+
+Para voltar a 720p: apague o `ds2.toml`, copie `configs/ds2_teste_720p.toml` para a pasta do jogo e renomeie para
+`ds2.toml`.
+
+Depois a pasta `logs/`, como sempre.
+
 ## Sexto build (2026-10-10): rodada 2 de desempenho
 
 Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
@@ -113,6 +132,7 @@ o arquivo `logs/rex/rex_crash.log` diz onde. Se ele gerar relatório de erro do 
 Na pasta `configs/`; para usar uma, copie por cima do `ds2.toml`:
 
 - `ds2_padrao.toml`: a configuração normal (igual ao `ds2.toml` enviado).
+- `ds2_teste_720p.toml`: modo portátil a 1280x720, a resolução do próprio jogo (como nos builds até o sexto).
 - `ds2_melhorias_desligadas.toml`: desliga todos os atalhos de CPU e GPU herdados dos outros portes. Se o jogo travar
   ou a imagem sair errada com a normal, tente esta e me diga se mudou.
 - `ds2_gpu_emulada.toml`: usa a GPU emulada no lugar do renderizador nativo. É lentíssima no console; só serve para
