@@ -185,6 +185,11 @@ REXCVAR_DEFINE_BOOL(ds2_native_resolver_no_copy, false, "SA2 renderer",
 REXCVAR_DEFINE_BOOL(ds2_native_edram4_cache_sync, true, "SA2 renderer",
                     "EDRAM mode 4: do not transfer a physical tile again to a view that already received its "
                     "current version (read-only rebinds). false = transfer on every bind, as before");
+REXCVAR_DEFINE_BOOL(ds2_native_resolve_shrink, false, "DS2",
+                    "A resolve whose source window is 1.25 times its destination texture or more is shrunk into it "
+                    "with a linear blit (Mass Effect drawn above its render target size). false = copied 1 to 1 and "
+                    "cropped, as the console does: Dark Souls II resolves a 256x8 window into its 256x1 tone map "
+                    "table, of which only row 0 is drawn");
 REXCVAR_DEFINE_BOOL(ds2_native_edram4_area_rect, true, "SA2 renderer",
                     "EDRAM mode 4: a draw with a proven rectangle synchronizes and publishes only the tiles of "
                     "that rectangle, not of its whole scissor. false = whole scissor, as before");
@@ -1680,7 +1685,11 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       // are color: vkCmdBlitImage with a linear filter on a depth target is not valid and brings the process
       // down. Mismatches of a few pixels (320x184 -> 320x180) are still cropped as always.
       const bool multisampled = !me::native::IsSingleSample(uint32_t(target_render->sample_count));  // ds2_msaa
-      const bool shrink = blit_ != nullptr && fits_width && fits_height && !multisampled &&
+      // ds2-nx: off by default (ds2_native_resolve_shrink). The console never scales a resolve: the rows and columns
+      // beyond the texture land in the padding of its storage. Shrinking Dark Souls II's 256x8 window into the 256x1
+      // tone map table averaged row 0 (the only one drawn) away, and the scene came out black.
+      const bool shrink = REXCVAR_GET(ds2_native_resolve_shrink) &&
+                           blit_ != nullptr && fits_width && fits_height && !multisampled &&
                            target_render->format == kColorFormat &&
                            resolved->image.format == kColorFormat &&
                            (request_width * 4 >= fits_width * 5 || request_height * 4 >= fits_height * 5);

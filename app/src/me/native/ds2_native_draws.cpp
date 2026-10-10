@@ -99,6 +99,7 @@ REXCVAR_DEFINE_BOOL(ds2_native_sort_updates_texture, true, "SA2 renderer",
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <bit>
 #include <chrono>
 #include <atomic>
@@ -3397,6 +3398,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                                   .count());
       ++sub_n_[14];
     }
+    static const bool check_slots = [] {
+      const char* v = std::getenv("DS2_CHECK_SLOTS");
+      return v && v[0] == 49;
+    }();
+    if (check_slots) [[unlikely]] CheckSlots(shared, p);
     Stage(2, mark);
     // Upload commands execute BEFORE all work commands in the submission. Updating
     // an existing image here would retroactively change earlier draws sampling it:
@@ -8421,6 +8427,24 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &image;
     dfn_.vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+    if (heap < 4 && slot < diag_written_[heap].size()) diag_written_[heap].set(slot);
+  }
+
+  // ds2-nx diagnostic (DS2_CHECK_SLOTS=1): every texture and sampler index a draw hands its shaders must be inside
+  // its heap and already written. The software Vulkan driver (lavapipe) reads a null pointer and brings the process
+  // down on a descriptor nobody wrote; a real GPU samples garbage silently.
+  std::array<std::bitset<4096>, 4> diag_written_;
+  uint32_t diag_slot_errors_ = 0;
+  void CheckSlots(const uint32_t* shared, const SubmissionDraw& p) {
+    for (uint32_t i = 0; i < 64; ++i) {
+      const uint32_t heap = i < 48 ? i / 16 : 3, slot = i < 48 ? shared[i] & 0xFFFFu : shared[i];
+      if (slot < heaps_[heap].capacity && diag_written_[heap].test(slot)) continue;
+      if (diag_slot_errors_++ < 40) {
+        REXLOG_ERROR("[native] SLOT CHECK: heap {} register {} gets slot {} (word {:08X}): {} | VS n{} PS n{} draw {}",
+                     heap, i & 15, slot, shared[i], slot >= heaps_[heap].capacity ? "outside the heap" : "never written",
+                     p.vs ? int64_t(p.vs->number) : -1, p.ps ? int64_t(p.ps->number) : -1, drawn_);
+      }
+    }
   }
 
   void WriteSampler(uint32_t slot, VkSampler sampler) {
@@ -8435,6 +8459,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
     write.pImageInfo = &image;
     dfn_.vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+    if (slot < diag_written_[3].size()) diag_written_[3].set(slot);
   }
 
   uint32_t ReserveSlot(uint32_t heap) {
@@ -8442,6 +8467,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (!m.free.empty()) {
       const uint32_t slot = m.free.back();
       m.free.pop_back();
+      if (slot >= m.capacity && diag_slot_errors_ < 40) [[unlikely]] {
+        REXLOG_ERROR("[native] SLOT CHECK: the free list of heap {} held slot {} (capacity {})", heap, slot, m.capacity);
+      }
       return slot;
     }
     return m.next < m.capacity ? m.next++ : 0;
@@ -8682,6 +8710,22 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (offset < 0) {
         Reject(24, "negative vertex offset");
         return nullptr;
+      }
+      // ds2-nx diagnostic: DS2_TRACE_VS_ATTRIBUTES=<shader number> logs what each vertex element of that vertex
+      // shader became (first 40 lines).
+      static const long trace_vs = [] {
+        const char* v = std::getenv("DS2_TRACE_VS_ATTRIBUTES");
+        return v && *v ? std::strtol(v, nullptr, 10) : -1L;
+      }();
+      if (trace_vs >= 0 && long(vs.number) == trace_vs) [[unlikely]] {
+        static std::atomic<int> logged{0};
+        if (logged.fetch_add(1) < 40) {
+          REXLOG_INFO("[vsattr] VS n{} {}{} register r{} -> location {} slot {} stride {} offset {} format {} "
+                      "(vk {}) signed {} integer {} swizzle {:03X} remap {:03X} patched {:08X} {:08X} {:08X}",
+                      vs.number, UsageName(element.usage), element.usage_index, (patched[q] >> 12) & 0x3F, location,
+                      slot, stride, offset, format, uint32_t(vk), (d1 >> 12) & 0x1, (d1 >> 13) & 0x1, d1 & 0xFFF,
+                      code, patched[q], d1, d2);
+        }
       }
       entry_.attributes.push_back({uint32_t(location), binding, vk, uint32_t(offset)});
       if (repack) entry_.repacks.push_back({binding, uint32_t(offset), format, bool((d1 >> 12) & 0x1)});
@@ -9042,6 +9086,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
     }
     slot = SlotView(texture.image.image, tf.format, swizzle, tf.swizzle_host, heap);
+    if (slot >= heaps_[heap].capacity && diag_slot_errors_ < 40) [[unlikely]] {
+      REXLOG_ERROR("[native] SLOT CHECK: SlotView gave slot {} for heap {} (capacity {}, next {}, {} free): fetch "
+                   "{:08X} {:08X} {:08X} {:08X} {:08X} {:08X}, {}x{} format {} layers {} in flight {}",
+                   slot, heap, heaps_[heap].capacity, heaps_[heap].next, heaps_[heap].free.size(), f[0], f[1], f[2],
+                   f[3], f[4], f[5], width, height, format, layers, images_in_flight_.count(texture.image.image));
+    }
     host_width_out = texture.image.width;  // the host's, which is what the shader sees
     host_height_out = texture.image.height;
     if (texture.frame == frame_) {
@@ -9957,9 +10007,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   }
 
   // The views_ key (image, heap and both swizzles), factored out for CollectBindings.
+  // ds2-nx: the four are hashed together as data. They used to be XXH3 of the 8 bytes of the handle with heap and
+  // swizzles as the seed, and for an input that short XXH3 only XORs the input with (constant - seed): two images
+  // whose handles differ by 0x200 (heap bit 41 lands on handle bit 9; 0x100 for 3D), with the same swizzles, had the
+  // SAME key as a 2D and a cube view. Handles are pointers the driver allocates one after another, so it happened:
+  // Dark Souls II's environment cube map got the slot of a 2D texture's view (107, 110...), outside the 64-entry
+  // cube heap. A GPU samples whatever is there; lavapipe reads a null pointer and the process dies.
   static uint64_t ViewKey(VkImage image, uint32_t swizzle, uint16_t swizzle_host, uint32_t heap) {
-    return XXH3_64bits_withSeed(&image, sizeof(image),
-                                (uint64_t(heap) << 40) | (uint64_t(swizzle) << 16) | swizzle_host);
+    uint64_t words[2] = {0, (uint64_t(heap) << 40) | (uint64_t(swizzle) << 16) | swizzle_host};
+    std::memcpy(&words[0], &image, sizeof(image));
+    return XXH3_64bits(words, sizeof(words));
   }
 
   // Heap slot (0 for 2D textures, 2 for cubemaps) for a view of the image with that swizzle.
@@ -9967,6 +10024,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                        uint32_t heap = 0) {
     const uint64_t key = ViewKey(image, swizzle, swizzle_host, heap);  // The same key
     if (const auto it = views_.find(key); it != views_.end()) {
+      if (it->second.image != image || it->second.heap != heap) [[unlikely]] {  // ds2-nx: see ViewKey
+        Warn(59, "two texture views with the same key: the empty texture is used");
+        return 0;
+      }
       return it->second.slot;
     }
     // An image whose vkBindImageMemory is still on the bind thread. The view carries the image's GPU

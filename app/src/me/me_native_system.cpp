@@ -3543,6 +3543,28 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       }
       REXLOG_INFO("[trace] #{} PS constants:{}", draws_, line);
     }
+    // ds2-nx diagnostic: DS2_TRACE_VERTICES=<bytes> lists, for every traced draw, the vertex fetch constants that
+    // describe a buffer of at most that many bytes, with the buffer's contents as big-endian words (what a
+    // full-screen or one-row quad really gives the vertex shader).
+    static const uint32_t vertices_limit = [] {
+      const char* v = std::getenv("DS2_TRACE_VERTICES");
+      return v ? uint32_t(std::strtoul(v, nullptr, 10)) : 0u;
+    }();
+    if (vertices_limit) {
+      for (uint32_t n = 0; n < 96; ++n) {
+        const uint32_t w0 = Register(g::XE_GPU_REG_SHADER_CONSTANT_FETCH_00_0 + n * 2);
+        const uint32_t w1 = Register(g::XE_GPU_REG_SHADER_CONSTANT_FETCH_00_0 + n * 2 + 1);
+        const uint32_t address = w0 & 0x1FFFFFFCu, bytes = ((w1 >> 2) & 0xFFFFFFu) * 4;
+        if ((w0 & 0x3) != 3 || !address || !bytes || bytes > vertices_limit) continue;
+        std::string hex;
+        const uint8_t* data = memory_->TranslatePhysical(address);
+        for (uint32_t i = 0; i + 4 <= bytes; i += 4) {
+          hex += fmt::format(" {:02X}{:02X}{:02X}{:02X}", data[i], data[i + 1], data[i + 2], data[i + 3]);
+        }
+        REXLOG_INFO("[trace] #{} vertex fetch {} at {:08X}, {} bytes, endian {}:{}", draws_, n, address, bytes,
+                    w1 & 0x3, hex);
+      }
+    }
   }
 
   void Draw() {

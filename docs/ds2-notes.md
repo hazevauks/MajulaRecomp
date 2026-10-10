@@ -347,12 +347,67 @@ e usa a parte inteira como expoente e a fração como mantissa do 7e3. Isso só 
 de 10 bits multiplicado por 8, que no Xbox 360 é o campo `exp_adjust` da constante de textura (a GPU multiplica o
 valor amostrado por 2^exp_adjust). O renderizador não aplicava esse campo a texturas (só registrava um aviso para
 fetches de vértice). Agora o expoente (6 bits) vai nos bits 16..21 da palavra que já levava o índice e os sinais da
-textura, e os fetches do tradutor multiplicam por 2^expoente. **Ainda não verificado em execução**: a biblioteca de
-shaders precisa ser refeita.
+textura, e os fetches do tradutor multiplicam por 2^expoente. **Verificado em execução** com a biblioteca refeita
+(`ds2_026.log`): o rastro mostra `t0=117AC000 ... fmt 54 ... exp 3`, a redução de 640x360 da cena passou de média
+~0,015 para ~0,12 e a luminância medida de 0,045 para 0,14.
 
 Hipótese descartada no caminho: o limite `[FLT_MIN, FLT_MAX]` das instruções log/recíproco "com limite" do tradutor
 parecia errado, mas `FLT_MIN` ali é definido como o maior negativo (`0xff7fffff`); está certo.
 
-A tabela zerada ainda não está explicada por si só: pelo shader que a desenha, ela sai exatamente zero quando a
+(Explicada na seção seguinte: era o resolve de 256x8 encolhido para 256x1.) A tabela zerada ainda não estava explicada por si só: pelo shader que a desenha, ela sai exatamente zero quando a
 coordenada de textura chega zerada (ou a luminância lida é zero). Pode ser consequência da mesma causa (as texturas de
 luminância são lidas com outro formato) ou um segundo defeito; a conferir depois da biblioteca nova.
+
+## O 3D na tela: a tabela de tone mapping e a queda do lavapipe (2026-10-09)
+
+Sessão `out/pc/logs/ds2_035.log` (renderizador nativo, lavapipe, 560 s, sem queda): a composição final do quadro
+rastreado (`10220000`) e os quadros apresentados mostram o jogo — o personagem em Things Betwixt, pilares com hera, o
+capim, a fenda azul, o HUD e a faixa com o nome da área. Duas causas, as duas no renderizador herdado e nenhuma no
+código do jogo:
+
+**1. A tabela de tone mapping saía zerada por causa de um resolve "encolhido".** O jogo desenha a tabela na linha 0 de
+um alvo de EDRAM e copia uma janela de **256x8** para a textura de **256x1**. No console essa cópia é 1 para 1 (o que
+passa do tamanho da textura cai no preenchimento do armazenamento dela). O renderizador tinha um caminho, feito para o
+Mass Effect desenhado acima do tamanho do alvo, que **reduz** a origem para o destino com um blit linear sempre que a
+janela pedida é 1,25 vez o destino ou mais: as 8 linhas viravam 1 e a única linha desenhada sumia (o log dizia
+`[resolution] the 256x8 scene is downscaled to 256x1 when resolved (supersampling)`). Esse caminho agora só entra com
+`ds2_native_resolve_shrink = true` (padrão `false`): a cópia é 1 para 1 e recortada. Depois disso a tabela vale
+0,004–0,54 com alfa 1 e a composição final tem média 0,18/0,20/0,22 (antes 0,008/0,007/0,006, só o HUD).
+
+O que foi descartado no caminho, com medição: constantes do pixel shader (`DS2_TRACE_PS_CONSTANTS`), enquadramento do
+desenho de uma linha (`DS2_TRACE_THIN_DRAWS`: viewport 0,0 256x1, meio pixel certo), atributos de vértice do VS da
+tabela (`DS2_TRACE_VS_ATTRIBUTES=<n>`: posição float4 no deslocamento 0, coordenada float2 no 16, passo 24) e a posse
+dos blocos de EDRAM (o desenho publicava; só não havia mudança de dono para registrar).
+
+**2. A queda dentro do lavapipe era um índice de textura fora do heap, por colisão de chave.** As quedas tinham estado
+idêntico (mesmo código JIT, mesmos registradores, leitura do endereço 0 numa thread de rasterização), ou seja, um
+desenho específico, não uma corrida. O código no ponto da queda carrega o ponteiro `functions` de um descritor de
+textura e o encontra nulo. Um autoteste novo (`DS2_CHECK_SLOTS=1`: todo índice de textura e de amostrador entregue a um
+desenho tem de estar dentro do heap e já escrito) apontou o desenho: o amostrador de cubemap do registro 9 (o mapa de
+ambiente) recebia o slot 107 ou 110, com o heap de cubemaps tendo 64 entradas e um único slot alocado. Quem devolvia o
+slot era `SlotView`, pela busca de uma vista existente.
+
+A chave das vistas era `XXH3_64bits_withSeed(&imagem, 8, heap << 40 | swizzles)`. Para uma entrada de 8 bytes o XXH3 só
+faz XOR da entrada com (constante − semente) antes da mistura final, então duas imagens cujos handles diferem em 0x200
+(o bit 41 da semente cai no bit 9 do handle; 0x100 para 3D), com os mesmos swizzles, têm a **mesma** chave como vista
+2D e como vista de cubemap. Handles são ponteiros que o driver aloca em sequência, daí acontecer em parte das sessões
+e não em outras. A diferença de 0x200 entre os handles é dedução pela fórmula do XXH3; o que foi observado
+diretamente é `SlotView` devolver 110 para o heap 2 com `next = 2` e lista livre vazia. Correção: a chave agora é o
+hash dos quatro campos como dados (16 bytes), e um acerto de chave cuja imagem ou heap não confere usa a textura vazia
+e avisa (causa 59). Numa GPU real isso não derruba nada: o shader amostra o que houver naquela posição — o defeito
+existe nos portes de referência e valeria avisar lá.
+
+Com isso cai a hipótese anterior (thread de ligação de texturas): as sessões 029, 031 e 033 caíram com
+`ds2_native_textures_binding_thread = false`. As camadas de validação do Vulkan (sessão 032, 480 s, até o 3D) não
+acusaram nenhum erro; só avisos de saída de fragment shader sem anexo de cor.
+
+**Como fica o 3D no lavapipe** (i5-3210M, sem GPU): ~0,5 quadro/s em jogo, ~670 desenhos e ~28 cópias por quadro, 136
+pipelines, 212 texturas. Serve para conferir imagem, não para jogar.
+
+**Pendências que o log ainda mostra, por quadro:** 3 desenhos sem shader identificado; 2 desenhos rejeitados (causa
+109: textura copiada de 128x128 lida com outro tamanho lógico, `resolved logical crop rejected 14B11000 128x128`);
+divergências de identidade no pareamento desenho ↔ objeto de shader (VS n505/n882, PS n838/n904); texturas com sinal
+lidas sem sinal (formato 29).
+
+Diagnósticos acrescentados: `DS2_TRACE_VERTICES=<bytes>` (os buffers de vértice pequenos de cada desenho rastreado),
+`DS2_TRACE_VS_ATTRIBUTES=<n>`, `DS2_TRACE_PS_CONSTANTS`, `DS2_TRACE_THIN_DRAWS=1`, `DS2_CHECK_SLOTS=1`.
