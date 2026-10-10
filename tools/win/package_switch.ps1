@@ -24,15 +24,17 @@ foreach ($f in 'ds2_shaders.mesp', 'ds2_shaders.mesp.idx') {
 # Fallback configurations for the first hardware tests: copy one over ds2.toml to use it.
 $configs = Join-Path $dest 'configs'
 New-Item -ItemType Directory -Force $configs | Out-Null
-$base = Get-Content (Join-Path $root 'app\ds2_switch.toml') -Raw
-Set-Content -Path (Join-Path $configs 'ds2_padrao.toml') -Value $base -Encoding utf8
-Set-Content -Path (Join-Path $configs 'ds2_melhorias_desligadas.toml') -Encoding utf8 -Value ($base +
+$base = Get-Content (Join-Path $root 'app\ds2_switch.toml') -Raw -Encoding UTF8
+# Written without a byte order mark (Windows PowerShell's "utf8" adds one, which a TOML reader may not accept).
+$noBom = New-Object System.Text.UTF8Encoding($false)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_padrao.toml'), $base, $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_melhorias_desligadas.toml'), ($base +
     "`n# Todos os atalhos de CPU e GPU herdados do sa2-nx desligados: os caminhos originais em tudo.`n" +
-    "ds2_cpu_enhancements = false`nds2_noncpu_enhancements = false`n")
-Set-Content -Path (Join-Path $configs 'ds2_gpu_emulada.toml') -Encoding utf8 -Value (
+    "ds2_cpu_enhancements = false`nds2_noncpu_enhancements = false`n"), $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_gpu_emulada.toml'), (
     ($base -replace 'ds2_renderer_native = true', 'ds2_renderer_native = false') +
-    "`n# A GPU emulada do SDK no lugar do renderizador nativo (muito lenta no console; só para comparar a imagem).`n" +
-    "ds2_gpu_backend = `"vulkan`"`n")
+    "`n# A GPU emulada do SDK no lugar do renderizador nativo (muito lenta no console; serve para comparar a imagem).`n" +
+    "ds2_gpu_backend = `"vulkan`"`n"), $noBom)
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null

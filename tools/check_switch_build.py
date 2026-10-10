@@ -21,13 +21,17 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# The 15 functions whose original PowerPC code has a "b ." halt (the non-LTO optimised build, 2026-10-06). Optimisation
-# may duplicate a halt instruction (the LTO build has two adjacent ones in sub_828DB988 and sub_8293FA08), so the check
-# is by function: a branch-to-self anywhere else is a polling loop that lost its barrier.
-KNOWN_HALTS = ['sub_8215CB08', 'sub_8216E7F8', 'sub_82176F68', 'sub_821B15E0', 'sub_822BA028', 'sub_8235DF50',
-               'sub_82374728', 'sub_823BD350', 'sub_823E96D0', 'sub_82431930', 'sub_8252B7C8', 'sub_8252C0F8',
-               'sub_828DB988', 'sub_829296A8', 'sub_8293FA08']
-DEVKITA64 = next((d + '/devkitA64/bin/' for d in (os.environ.get('DEVKITPRO', ''), 'C:/devkitPro', '/opt/devkitpro')
+# Dark Souls II (2026-10-10, classic codegen, no LTO). Its image has no "b ." instruction at all; the five
+# branch-to-self the first NRO has are loops of the original code that never end for an input the game does not
+# produce, and that read no memory on that path: a list search that keeps comparing a null node with the wanted one
+# (sub_82BE8748), a fill loop whose count is not reloaded (sub_828FC278). GCC proves them endless and emits "b .".
+# Read in the generated code: sub_82BE8748 and sub_828FC278; the other three have the same shape in the disassembly
+# (a compare of two unchanged registers before the branch). A branch-to-self anywhere else is a polling loop that lost
+# its barrier.
+KNOWN_HALTS = ['sub_828FC278', 'sub_82B11CB8', 'sub_82BE8748', 'sub_82C3FAA0', 'sub_82DE5A18']
+DEVKITA64 = next((d + '/devkitA64/bin/' for d in (os.environ.get('DS2_DEVKITPRO', ''), os.environ.get('DEVKITPRO', ''),
+                                                  'C:/devkitPro', os.path.expanduser('~/Downloads/devkitPro'),
+                                                  '/opt/devkitpro')
                   if d and os.path.isdir(d + '/devkitA64/bin')), 'C:/devkitPro/devkitA64/bin/')
 EXE = '.exe' if os.name == 'nt' else ''
 
@@ -52,8 +56,9 @@ def main():
     ap.add_argument('--nro', default=os.path.join(ROOT, 'out', 'nx', 'ds2.nro'))
     ap.add_argument('--halts', default=','.join(KNOWN_HALTS),
                     help='the recompiled functions with a genuine guest halt (b . in the original PowerPC code)')
-    ap.add_argument('--sdk-vulkan', default='C:/devkitPro/mesa-switch-main-nfsmw-source/mesa-switch-main/'
-                    'mesa-unified-install/opt/devkitpro/portlibs/switch/lib/libvulkan.a')
+    ap.add_argument('--sdk-vulkan', default=os.environ.get('NVK_SDK', os.path.join(
+        ROOT, '_tools', 'mesa-switch', 'mesa-unified-install', 'opt', 'devkitpro', 'portlibs', 'switch'))
+        + '/lib/libvulkan.a')
     a = ap.parse_args()
     failures = []
 
@@ -64,10 +69,8 @@ def main():
         failures.append('_start is not at address 0')
 
     nro = open(a.nro, 'rb').read()
-    if b'optimised codegen' not in nro:
-        failures.append('the NRO does not name the optimised codegen flavour')
-    else:
-        print('flavour: optimised codegen')
+    # ds2-nx: the classic codegen is what is delivered until the optimised flavour is brought up for this game.
+    print('flavour: ' + ('optimised codegen' if b'optimised codegen' in nro else 'classic codegen'))
     mesa = sorted(set(re.findall(rb'Mesa \d+\.\d+\.\d+ \(git-[0-9a-f]+\)', nro)))
     sdk = sorted(set(re.findall(rb'Mesa \d+\.\d+\.\d+ \(git-[0-9a-f]+\)', open(a.sdk_vulkan, 'rb').read())))
     print('Mesa in the NRO:', [m.decode() for m in mesa], '| in the SDK:', [m.decode() for m in sdk])
@@ -96,6 +99,10 @@ def main():
         if op == 'b' and args.split(' ')[0] == addr:
             if guest:
                 self_loops.append(func)
+        elif op in ('fmla', 'fmls') and guest and '.2d' in args:
+            # ds2-nx: two of the guest's own scalar fmadd/fmsub (double lanes) that GCC put in one vector instruction
+            # (sub_82C31A30 has 24 of them in a row). VMX arithmetic is single precision (.4s lanes).
+            scalar_fma += 2
         elif op in ('fmla', 'fmls') and guest:
             vector_fma[func] += 1
         elif op in ('fmadd', 'fmsub', 'fnmadd', 'fnmsub') and guest:

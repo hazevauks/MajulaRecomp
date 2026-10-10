@@ -31,7 +31,7 @@ endereços do jogo ainda precisam dos dados do DS2.
 | 3. Tradução do código (`rexglue codegen`) | **feito**: 83.143 funções, 0 erros de validação; varreduras de ponteiros e de tabelas de salto limpas |
 | 4. Primeiro boot no PC com a GPU emulada | **feito**: menus, criação de save, vídeo de abertura e carregamento do primeiro mapa, sem crash do código do jogo; a GPU emulada não desenha o 3D no lavapipe (SPIR-V rejeitado) |
 | 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado e rodando no lavapipe; biblioteca com os 1.409 shaders do disco; **o jogo aparece certo no primeiro mapa 3D** (cena, HUD, tone mapping), a ~0,5 quadro/s por software, sem nenhum desenho rejeitado ou sem shader em 25 min na área inicial (morte e recarga incluídas); falta percorrer o resto do jogo, o que este PC sem GPU torna muito lento (ver as notas) |
-| 7. Build para o Switch (devkitA64 + NVK) | pendente |
+| 7. Build para o Switch (devkitA64 + NVK) | **primeiro NRO gerado** (codegen clássico, sem LTO/PGO; driver NVK do nfsmw-nx compilado aqui); aguardando o primeiro teste no console ([docs/switch-testing.md](docs/switch-testing.md)) |
 | 8–11. Medição no console e otimizações de CPU/GPU | pendente |
 
 ## Estrutura
