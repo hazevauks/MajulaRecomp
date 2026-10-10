@@ -206,6 +206,14 @@ REXCVAR_DEFINE_INT32(ds2_native_verify_n, 2048, "SA2 renderer",
     .range(0, 2147483647)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
+REXCVAR_DEFINE_BOOL(ds2_native_edram4_overwrite_depth_only, true, "DS2",
+                    "EDRAM mode 4: in the depth-only mode (RB_MODECONTROL 5) the loaded pixel shader's kill and the "
+                    "alpha test do not stop a rectangle from being proven a full overwrite (no pixel shader runs). "
+                    "false = as sa2-nx");
+REXCVAR_DEFINE_BOOL(ds2_diag_rect_proof, false, "DS2",
+                    "Diagnostic: counts, per reason and render target, the single-rectangle draws that write depth "
+                    "with the test at ALWAYS (Direct3D's Clear) whose full overwrite was not proven; listed in the "
+                    "10 s report");
 REXCVAR_DEFINE_INT32(ds2_diag_draw_every, 1, "DS2",
                      "Diagnostic, for machines whose GPU cannot keep up (software Vulkan): only one frame in this many "
                      "is drawn; in the others the ring thread still reads every packet, identifies the shaders and "
@@ -3255,6 +3263,9 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
     ++multi_rect_proven_;
   }
   uint64_t multi_rect_proven_ = 0;
+  // ds2-nx diagnostic (ds2_diag_rect_proof).
+  std::map<std::string, uint64_t> rect_proof_failures_;
+  const char* rect_proof_reason_ = "not attempted (clip on, or the vertex shader is not the identified one, or not 3 vertices)";
   std::unordered_map<uint64_t, const ds2::native::ShaderEntry*> identity_memo_;
   uint64_t identity_memo_hits_ = 0;
   uint64_t exact_edges_ = 0;
@@ -3263,7 +3274,14 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
 
   void ProveFullOverwrite(ds2::native::SubmissionDraw& request, const StencilClearOwnershipInput& proof) {
     if (!REXCVAR_GET(ds2_native_edram4_overwrite) || !request.ps) return;
-    if (!proof.ps_no_discard) { ++overwrite_rejects_[0]; return; }
+    // ds2-nx (ds2_native_edram4_overwrite_depth_only): in the depth-only EDRAM mode (5) no pixel shader runs (the
+    // renderer draws it without a fragment stage), so whatever shader and alpha test state were left loaded cannot
+    // kill a sample. Dark Souls II clears its shadow atlas regions (Direct3D's Clear through the 4x alias) in that
+    // mode with a stale pixel shader that has a kill: the clear was not recognised and the whole atlas was converted
+    // to the alias and back, piece by piece, for every shadow map.
+    const bool depth_only = REXCVAR_GET(ds2_native_edram4_overwrite_depth_only) &&
+        (Register(rex::graphics::XE_GPU_REG_RB_MODECONTROL) & 7) == 5;
+    if (!proof.ps_no_discard && !depth_only) { ++overwrite_rejects_[0]; return; }
     if (!proof.sample_coverage_proven_full) { ++overwrite_rejects_[1]; return; }
     const auto& pos = proof.post_vs_position;
     float x0 = pos[0][0], x1 = pos[0][0], y0 = pos[0][1], y1 = pos[0][1];
@@ -3310,7 +3328,7 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
                    (!(dc & 0x80) || stencil_replaced((dc >> 20) & 7, (dc >> 26) & 7, proof.stencil_back));
     }
     // Alpha test or alpha-to-coverage can kill samples: then neither depth nor stencil is fully written.
-    const bool killable = ((proof.color_control >> 3) & 1) || ((proof.color_control >> 4) & 1);
+    const bool killable = !depth_only && (((proof.color_control >> 3) & 1) || ((proof.color_control >> 4) & 1));
     if (!killable && stencil && stencil_ok && !stencil_inert && (!z_enable || ((dc >> 4) & 7) == 7))
       request.edram_stencil_replace_rect = rect;  // every sample reaches the stencil pass op
     if (!killable && z_enable && z_write && ((dc >> 4) & 7) == 7 && stencil_ok) slots |= 1;
@@ -3382,7 +3400,7 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       request.edram_overwrite_color0 = proof.post_vs_interpolator0[0];
     // Constant depth: the same post-viewport Z at all three corners, no polygon offset, no PS depth
     // export. Lets mode 4 apply the rectangle as a depth clear in the current owner's view.
-    if ((slots & 1) && proof.ps_no_depth_export && !(proof.su_sc_mode & 0x3800u)) {
+    if ((slots & 1) && (proof.ps_no_depth_export || depth_only) && !(proof.su_sc_mode & 0x3800u)) {
       const uint32_t vte = proof.vte_cntl;
       const float zs = (vte & 0x10) ? std::bit_cast<float>(Register(rex::graphics::XE_GPU_REG_PA_CL_VPORT_ZSCALE))
                                     : 1.0f;
@@ -3700,6 +3718,10 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
         NativeDrawExtentEstimator::Diagnostics diagnostic;
         request.edram_used_height_estimate = draw_extent_estimator_->Estimate(registers_, vs_microcode_, &diagnostic);
         if (g_estimator_reason.active) g_estimator_reason.UseSampled();
+        // ds2-nx diagnostic (ds2_diag_rect_proof): the estimator's own reason (a literal) when it declined.
+        rect_proof_reason_ = request.edram_used_height_estimate
+            ? (request.ps ? "estimated, overwrite not proven (see the overwrite proof counters)" : "no pixel shader")
+            : (diagnostic.reason_text[0] ? diagnostic.reason_text : "estimator declined");
         if (request.edram_used_height_estimate && request.ps) {
           StencilClearOwnershipInput proof;
           proof.depth_control = Register(rex::graphics::XE_GPU_REG_RB_DEPTHCONTROL);
@@ -3785,6 +3807,27 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
                         diagnostic.position[2][0], diagnostic.position[2][1], diagnostic.position[2][2], diagnostic.position[2][3]);
         }
       }
+    }
+    // ds2-nx diagnostic (ds2_diag_rect_proof): a clear rectangle the EDRAM logic will have to draw as it is.
+    if (REXCVAR_GET(ds2_diag_rect_proof)) [[unlikely]] {
+      const uint32_t initiator = Register(kRegVgtDrawInitiator);
+      const uint32_t dc = Register(rex::graphics::XE_GPU_REG_RB_DEPTHCONTROL);
+      if ((initiator & 63u) == uint32_t(xenos::PrimitiveType::kRectangleList) && (dc & 0x76) == 0x76 &&
+          !(request.edram_overwrite_rect && (request.edram_overwrite_slots & 1) && request.edram_overwrite_depth) &&
+          rect_proof_failures_.size() < 64) {
+        const char* why = request.edram_overwrite_rect ? ((request.edram_overwrite_slots & 1)
+                              ? "depth not constant" : "rect proven, depth slot not") : rect_proof_reason_;
+        const uint32_t tl = Register(rex::graphics::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL);
+        const uint32_t br = Register(rex::graphics::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR);
+        ++rect_proof_failures_[fmt::format(
+            "{} | {} vertices, clip {:08X}, VS n{} PS n{}, depth {:08X} surface {:08X} mode {} dc {:08X} scissor "
+            "{},{}-{},{} vte {:03X}", why, initiator >> 16, Register(rex::graphics::XE_GPU_REG_PA_CL_CLIP_CNTL),
+            request.vs ? int(request.vs->number) : -1, request.ps ? int(request.ps->number) : -1,
+            Register(rex::graphics::XE_GPU_REG_RB_DEPTH_INFO), Register(rex::graphics::XE_GPU_REG_RB_SURFACE_INFO),
+            Register(rex::graphics::XE_GPU_REG_RB_MODECONTROL) & 7, dc, tl & 0x3FFF, (tl >> 16) & 0x3FFF,
+            br & 0x3FFF, (br >> 16) & 0x3FFF, Register(rex::graphics::XE_GPU_REG_PA_CL_VTE_CNTL) & 0xFFF)];
+      }
+      rect_proof_reason_ = "not attempted (clip on, or the vertex shader is not the identified one, or not 3 vertices)";
     }
     if (SkippedFrame()) [[unlikely]] {  // ds2_diag_draw_every
       ++diag_skipped_draws_;
@@ -3892,6 +3935,11 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
         REXLOG_INFO("[native] overwrite proof: discard {} samplemask {} emptyrect {} depthstencil {} noslot {} ok {}",
                     overwrite_rejects_[0], overwrite_rejects_[1], overwrite_rejects_[2], overwrite_rejects_[3],
                     overwrite_rejects_[4], overwrite_rejects_[5]);
+        if (!rect_proof_failures_.empty()) {  // ds2_diag_rect_proof
+          for (const auto& [what, n] : rect_proof_failures_)
+            REXLOG_INFO("[native] clear rectangle not proven, {} draws: {}", n, what);
+          rect_proof_failures_.clear();
+        }
         overwrite_rejects_ = {};
       }
       report_gpu_ns_ = gpu;

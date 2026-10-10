@@ -803,3 +803,41 @@ câmera, GPU de 55,8 a 104,5 ms por quadro. Olhando para a casa das firekeepers:
 **edram_import 29,8** (contra ~4 na direção oposta), edram_alias 17,3. O relatório dessa janela:
 `draw/depth-repr-switch=3919ops/297744tiles`, `whole-target runs: depth-repr-switch=844` em ~96 quadros, ou seja,
 ~9 conversões de profundidade de alvo inteiro por quadro por troca de representação. É o próximo alvo.
+
+## Rodada 4: as limpezas do atlas de sombras em modo só profundidade (2026-10-10)
+
+**Nono build no console** (`out/switch_logs/009/ds2_014.log`, 540p, sem overclock): imagem certa segundo quem jogou
+(o fantasma sumiu), 8 shaders reescritos, nenhum aviso. Dois estados estáveis na primeira fogueira:
+
+| direção | quadros/s | GPU por quadro | cena | 640 | edram_import | edram_alias |
+|---|---|---|---|---|---|---|
+| saída (as três fogwalls) | 14,1–14,5 | 69–71 ms | 23,0 | 5,1 | 3,3 | 17,1 |
+| casa das firekeepers | 8,4 | 119,2 ms | 32,3 | 10,7 | **50,1** | 17,1 |
+
+Na vista da casa: `draw/depth-repr-switch=7392ops/355152tiles` em 84 quadros (88 conversões de profundidade por
+quadro, 13 delas de alvo inteiro).
+
+**O que são.** Reproduzido no PC girando a câmera (`tools/live.py pad "rright ..."`) com
+`ds2_native_edram4_pair_report`. Nessa vista há luzes com sombra própria: o jogo usa um atlas de profundidade em
+EDRAM (base 0, passo 1040, D24FS8) e, para cada mapa de sombra (regiões de 128 ou 256 pixels), faz o Clear do
+Direct3D em três partes: o miolo alinhado a blocos pela superfície 4x apelidada (passo 520), as bordas por
+retângulos comuns em 1x, e só então desenha os objetos e copia a região para a textura `1326C000`. O mesmo vale
+para as cascatas do sol (passo 800, D24S8), que usam os mesmos blocos antes.
+
+O atalho das limpezas (rodada 2) não pegava esses Clears: o relatório novo `ds2_diag_rect_proof` mostrou
+`estimated, overwrite not proven` para o retângulo de 3 vértices na superfície `08020208`. O jogo desenha essas
+limpezas no modo de EDRAM só profundidade (`RB_MODECONTROL` 5) com o pixel shader que ficou carregado do desenho
+anterior, e nessa vista ele tem `kill`; a prova de sobrescrita total exige um shader sem descarte e sem teste de
+alfa. Sem a prova, o renderizador importava o atlas inteiro para a vista apelidada, desenhava a limpeza lá e
+depois trazia os blocos de volta para a vista de 1 amostra aos pedaços, a cada desenho recortado de cada mapa:
+no PC, 160–190 conversões e ~6.000 blocos por quadro.
+
+**Correção** (`ds2_native_edram4_overwrite_depth_only`, padrão `true`, em `ProveFullOverwrite`): no modo 5 nenhum
+pixel shader roda (o próprio renderizador desenha sem estágio de fragmento), então descarte, teste de alfa,
+alpha-to-coverage e exportação de profundidade do shader carregado não entram na prova.
+
+**No PC, mesma vista:** nenhuma conversão por troca de representação; restam ~25 importações pequenas por quadro
+(32 blocos) do dono anterior de outro formato (`D000/f0:800x800 → D000/f1:1040x1040`), nos blocos parciais das
+bordas (`partial tile: owner unsupported`; as bordas vêm num desenho de dois retângulos, que não vira limpeza
+redirecionada). Atlas de sombras e imagem final conferidos a olho num quadro rastreado (regiões com profundidade de
+cena e fundo limpo); não houve comparação A/B bit a bit.

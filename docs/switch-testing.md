@@ -4,6 +4,21 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo build (2026-10-10): rodada 4 de desempenho (sombras das luzes)
+
+Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` continuam os mesmos).
+
+O que muda: olhando para a casa das firekeepers o jogo caía para ~8 quadros/s porque, para cada luz com sombra, o
+renderizador convertia o buffer de sombras inteiro de ida e volta. Essas limpezas agora são reconhecidas e feitas
+direto. No PC as conversões nessa vista caíram de ~170 para ~25 pequenas por quadro.
+
+Mesmo roteiro do último teste, a 540p e sem overclock:
+
+- ~30 s parado olhando para a casa das firekeepers e ~30 s olhando para a saída (as fogwalls);
+- repare nas **sombras** perto da casa e das tochas/fogueira: alguma sombra faltando, piscando ou no lugar errado?
+
+Depois a pasta `logs/`.
+
 ## Nono build (2026-10-10): correção dos "fantasmas" a 540p
 
 Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` continuam os mesmos).
