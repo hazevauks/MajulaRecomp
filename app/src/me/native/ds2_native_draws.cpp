@@ -779,6 +779,10 @@ DS2_ENHANCEMENT(g_entry_hash, ds2_cpu_ring_entry_hash, ds2::enh::kCpu, true,
 // resolve. The 8x8 centre of the title card's mission box is loaded where a 512x512 character shadow map had been
 // resolved during the Knuckles event; it was taken for the shadow map and dropped (the box lost its red fill for
 // 2.3 s). It now takes the ordinary texture path (guest memory), as the 8 pieces around it always did.
+REXCVAR_DEFINE_BOOL(ds2_native_viewport_whole_pixels, true, "DS2",
+                    "At a render resolution other than the game's, a viewport whose edges fall inside a host pixel is "
+                    "set as the whole host pixels it covers, with the difference in the vertex shader's NDC scale and "
+                    "offset (NVK truncates a fractional viewport's clip rectangle). false = the fractional viewport");
 REXCVAR_DEFINE_BOOL(ds2_native_compressed_fetch_not_resolved, true, "DS2",
                     "A block-compressed (DXT) texture fetch is read from guest memory even when a resolve once wrote "
                     "to its address: a resolve cannot produce compressed data, so the memory was reused");
@@ -5179,6 +5183,38 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       viewport.width = width;
       viewport.height = height;
     }
+    // ds2-nx: at a render resolution other than the game's a viewport edge can fall inside a host pixel (q / 4 of an
+    // odd guest size: Dark Souls II's 256x1 tone map table is 192x0.75 at 540p). NVK programs the hardware's viewport
+    // clip rectangle with the edges and the size truncated to integers, so that table was never drawn on the console
+    // (height 0) and a 33.75-pixel viewport lost its last row; lavapipe rasterizes the fractional viewport as written.
+    // The host viewport therefore becomes the whole host pixels whose centres the scaled viewport covers (the rule of
+    // me_resolution_scale.h) and the difference goes into g_NdcScale / g_NdcOffset, which every vertex shader applies
+    // in clip space: the geometry lands on the same host coordinates as before.
+    if (!no_clip && pass_res_q_ != kScaleQuartersNative && REXCVAR_GET(ds2_native_viewport_whole_pixels)) {
+      const float x0 = viewport.x, x1 = viewport.x + viewport.width;
+      const float y0 = std::min(viewport.y, viewport.y + viewport.height);
+      const float y1 = std::max(viewport.y, viewport.y + viewport.height);
+      if (x0 != std::floor(x0) || x1 != std::floor(x1) || y0 != std::floor(y0) || y1 != std::floor(y1)) {
+        const float ax = std::ceil(x0 - 0.5f), bx = std::ceil(x1 - 0.5f);
+        const float ay = std::ceil(y0 - 0.5f), by = std::ceil(y1 - 0.5f);
+        if (!(bx > ax) || !(by > ay)) return 1;  // it covers no pixel centre: nothing would be drawn
+        const float width = bx - ax, height = by - ay;
+        const float sign = viewport.height < 0.0f ? -1.0f : 1.0f;
+        ndc[0] = viewport.width / width;
+        ndc[2] = (center_x - (ax + width * 0.5f)) * 2.0f / width;
+        // The shader's Y is D3D's (DXC flips it at the end of the VS): the offset has the opposite sign of Vulkan's.
+        ndc[1] = std::abs(viewport.height) / height;
+        ndc[3] = -(center_y - (ay + height * 0.5f)) * 2.0f / (sign * height);
+        viewport.x = ax;
+        viewport.width = width;
+        viewport.y = sign > 0.0f ? ay : by;
+        viewport.height = sign * height;
+        if (++viewports_whole_pixels_ == 1)
+          REXLOG_INFO("[native] draws: viewports moved to whole host pixels (ds2_native_viewport_whole_pixels): the "
+                      "first one {}..{} x {}..{} -> {}..{} x {}..{}, NDC scale {} {} offset {} {}", x0, x1, y0, y1, ax,
+                      bx, ay, by, ndc[0], ndc[1], ndc[2], ndc[3]);
+      }
+    }
     scissor = VkRect2D{};
     // ds2-nx diagnostic: DS2_TRACE_THIN_DRAWS=1 logs the framing of the first draws whose guest scissor is at most
     // two rows high (Dark Souls II draws its tone map table into a 256x1 target).
@@ -5198,9 +5234,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                     pass_height_, pass_scale_, pass_raster_scale_x_, pass_res_q_);
       }
     }
-    // ds2-nx: below the game's resolution a viewport of one guest pixel is less than one host pixel and still covers
-    // a pixel centre (Dark Souls II draws its tone map table into a 256x1 target: 192x0.75 at 540p, and the draw was
-    // dropped here, leaving the table with whatever the EDRAM held).
+    // ds2-nx: with ds2_native_viewport_whole_pixels off, a viewport of one guest pixel below the game's resolution is
+    // less than one host pixel and still covers a pixel centre (192x0.75 at 540p; the draw used to be dropped here).
     const float min_extent = std::min(1.0f, float(pass_res_q_) * 0.25f);
     if (viewport.width < min_extent || std::abs(viewport.height) < min_extent) {
       return 1;
@@ -13229,6 +13264,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   uint64_t framing_pass_series_ = 0;
   uint64_t pass_series_ = 0;                // incremented on every BeginPass
   VkViewport framing_viewport_{};
+  uint64_t viewports_whole_pixels_ = 0;  // ds2-nx: framings whose viewport was moved to whole host pixels
   VkRect2D framing_scissor_{};
   float framing_ndc_[4] = {};
   uint32_t empty_framing_ = 0;

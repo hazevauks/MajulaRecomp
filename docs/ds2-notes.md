@@ -759,3 +759,21 @@ não mostra padrão novo (as camadas de neblina de meia resolução aparecem nos
 O `ds2.toml` do pacote da rodada 3 vai com `ds2_render_height_handheld = 540` para medir no console;
 `configs/ds2_teste_720p.toml` volta à resolução do jogo. A interface também é desenhada a 540p e ampliada (texto
 menos nítido): se vale a troca é decisão de quem joga.
+
+**No console a cena continuou amarela** (`out/switch_logs/007/ds2_012.log`, foto de quem jogou; HUD certo). A correção
+acima só vale no lavapipe. O NVK programa o retângulo de recorte do viewport do hardware com campos inteiros
+(`nvk_cmd_draw.c`: `.y0 = ymin`, `.height = ymax - ymin`, floats truncados): 0,75 de altura vira 0 e nada é
+desenhado; de quebra, um viewport de 33,75 pixels perde a última linha (os alvos de 96x45 do bloom viram 72x34).
+
+Solução no renderizador (`ds2_native_viewport_whole_pixels`, padrão `true`, em `ComputeFraming`): fora da escala do
+jogo, um viewport com borda fracionária passa a ser os pixels inteiros do host cujos centros ele cobre (a mesma regra
+de `me_resolution_scale.h`) e a diferença vai para `g_NdcScale` / `g_NdcOffset`, que todo vertex shader aplica no
+espaço de clip. A geometria cai nas mesmas coordenadas do host; o meio pixel do D3D já é calculado a partir do
+viewport enviado. Para a tabela: `0..192 x 0..0,75 → 0..192 x 0..1`, escala NDC `1 0,75`, deslocamento `0 0,25`.
+No PC a imagem ficou igual à do viewport fracionário e a tabela é a mesma rampa. O efeito no NVK só o console confirma.
+
+**Desempenho a 540p no console, ainda sem número firme.** Na mesma sessão (imagem errada, ~80 s dentro do mapa, sem
+overclock) as janelas de 10 s deram 13,3 / 13,7 / 13,8 / 12,2 / 15,7 / 17,2 / 17,0 quadros/s com 76,2 / 73,2 / 72,5 /
+82,5 / 63,4 / 58,1 / 58,6 ms de GPU por quadro: não estabilizou como a 720p (127 quadros por janela, 78,8 ms, em 17
+janelas seguidas). Nas duas últimas: cena 22,4 ms (quase igual a 720p), edram_alias 17,1 (era 30,0), 640: 4,7,
+cópias 2,9, edram_import 3,3, edram_import9 2,2. A comparação válida fica para a sessão com a imagem certa.

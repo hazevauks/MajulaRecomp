@@ -4,6 +4,20 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Oitavo build (2026-10-10): correção da tela amarela a 540p
+
+Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` são os mesmos do sétimo build).
+
+No sétimo build a cena saiu amarela/verde no console, com o HUD certo: o driver de vídeo do Switch arredonda o
+tamanho do viewport para pixels inteiros, e o desenho de 1 linha da tabela de tone mapping (0,75 pixel de altura a
+540p) sumia. No PC isso não acontece, por isso passou no teste daqui. Agora o renderizador só envia viewports de
+pixels inteiros.
+
+Uma sessão: até a fogueira, ~1 minuto parado, sem overclock. As cores voltaram ao normal? O texto e o HUD a 540p
+incomodam? Depois a pasta `logs/`.
+
+Se ainda sair amarelo, volte a 720p (abaixo) para continuar jogando e me mande o log mesmo assim.
+
 ## Sétimo build (2026-10-10): rodada 3, 540p no modo portátil
 
 Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
