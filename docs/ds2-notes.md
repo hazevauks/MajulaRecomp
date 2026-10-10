@@ -612,3 +612,37 @@ Logs em `out/switch_logs/002` (sessões `ds2_004` e `ds2_005`, já com o NRO cor
   numa execução "headless" do SDK que devolve o texto ou `X_ERROR_CANCELLED`. Segunda diferença do `sdk/` em relação
   ao sa2-nx. Não testado em console ainda; no PC nada muda.
 - Ícone do NRO: `assets/icon.jpg` (fora do git; 256x256 JPEG fornecido pelo usuário), usado pelo CMake quando existe.
+
+## Primeiro perfil de GPU no console (2026-10-10)
+
+Sessão `out/switch_logs/003/ds2_006.log` (9,5 min; criação do personagem com o teclado do sistema, que funcionou:
+`XamShowKeyboardUI: software keyboard confirmed (7 of at most 13 characters)`; depois a primeira fogueira, parado).
+
+**Na fogueira: 6,3 quadros/s, `GPU per Swap: total 158,3 ms`**, ~980 desenhos, ~80 trocas de alvo e ~60 cópias por
+quadro. Por categoria (ms por quadro): cena 34,0; alvos de 640: 6,1; cópias 3,9; cena sem Z 2,7; intervalos 10,6;
+`edram_import` 35,0; `edram_alias` 50,1; `edram_import9` 15,1. As três últimas são passes que **começam** com uma
+transferência de EDRAM; o tempo inclui os desenhos do jogo que vêm depois no mesmo passe. Pelo tempo por passe
+(soma de 10 s, 63 quadros), o que é só transferência, sem desenho do jogo:
+
+| Passe | ms por quadro | O que é |
+|---|---|---|
+| cat 10, sem shader | 21,5 | importações de profundidade (troca de representação do alvo inteiro, ~8 por quadro) |
+| cat 13, sem shader | 9,3 | importações de stencil em 9 passes (~4 por quadro) |
+| cat 12, sem shader | 1,5 | conversões de cor entre vistas do mesmo EDRAM |
+| cat 12, PS n720 | 22,6 | desenhos do jogo (2 passes de tela cheia com um shader de 3,2 KB) |
+| cat 2, PS n95 / n1125 | 10,0 / 6,6 | cena |
+
+Os 16 passes listados somam 56 % do tempo; o resto está espalhado em dezenas de passes pequenos (a lista passou a ter
+64 entradas). Ou seja, ~32 ms por quadro (20 %) são pura emulação de EDRAM, e o resto é o custo do próprio quadro do
+jogo neste hardware a 720p com a GPU a 460 MHz.
+
+**ZCULL desligado no alvo de profundidade principal.** O driver registra `ZCULL: SIN plano para profundidad
+1280x1280: usos incompatibles (TRANSFER_DST?)`, e o mesmo para os mapas de sombra (800x800, 1600x1600, 1040x1040).
+O renderizador dá `TRANSFER_DST` às vistas de profundidade de 1 amostra para importar stencil pelo motor de cópia
+(`ds2_native_edram4_stencil_copy`), e isso custa o plano de ZCULL. No SA2 a profundidade da cena é multiamostrada e
+não cai nessa regra; no DS2 ela é de 1 amostra, então a cena inteira roda sem descarte hierárquico. Teste A/B
+preparado: `configs/ds2_teste_zcull.toml` (`ds2_native_zcull_1x_depth = true`).
+
+**Cópia rejeitada nova:** `resolve exponent bias / format not supported (cause 14)`, a partir da área da fogueira
+(1.226 cópias rejeitadas de 112.297 na sessão). O caminho com viés de expoente só cobre FP16 → FP16; o log agora diz
+os formatos. Sem relato de defeito visível, mas é conteúdo que não chega à textura.

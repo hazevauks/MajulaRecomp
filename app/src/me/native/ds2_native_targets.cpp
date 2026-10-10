@@ -1736,6 +1736,17 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
           ResolverPreviousFront(base_resolved, false);
           if (!ResolverWithBias(*target_render, resolved->image, x0, y0, dx, dy,
                                 width, height, exp_bias)) {
+            // ds2-nx diagnostic: which resolve it was (the first 12), to implement its formats.
+            static std::atomic<int> logged{0};
+            if (logged.fetch_add(1) < 12) {
+              REXLOG_WARN("[native] targets: resolve with exponent bias {} not done: source host format {} (guest RT "
+                          "format {}, {}x{}, samples {}) -> {:08X} host format {} (guest texture format {}, {}x{}), "
+                          "rect {}x{} at {},{} -> {},{}, copy command {}",
+                          exp_bias, uint32_t(target_render->format), (info_color >> 16) & 0xF, target_render->width,
+                          target_render->height, uint32_t(target_render->sample_count), base_resolved,
+                          uint32_t(resolved->image.format), resolved->image.resolved_guest_format,
+                          resolved->image.width, resolved->image.height, width, height, x0, y0, dx, dy, command);
+            }
             return Reject(14, "resolve exponent bias / format not supported");
           }
           ++copies_;
@@ -9748,7 +9759,9 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
         std::vector<std::pair<uint64_t, uint64_t>> top(gpu_labels_ns_.begin(), gpu_labels_ns_.end());
         std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
         std::string list;
-        for (size_t k = 0; k < std::min<size_t>(top.size(), 16); ++k)
+        // ds2-nx: 64 entries (was 16). Dark Souls II spreads its frame over ~80 passes, and the first 16 were only
+        // 56 % of the GPU time of the first console profile.
+        for (size_t k = 0; k < std::min<size_t>(top.size(), 64); ++k)
           list += fmt::format(" [cat {} VS{} PS{}: {:.1f} ms]", top[k].first >> 32, (top[k].first >> 16) & 0xFFFF,
                                top[k].first & 0xFFFF, double(top[k].second) / 1e6);
         REXLOG_INFO("[native] GPU time by pass (category, first draw's shaders), 10 s:{}", list);

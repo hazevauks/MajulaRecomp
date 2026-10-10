@@ -39,6 +39,10 @@ $noBom = New-Object System.Text.UTF8Encoding($false)
     "`n# Medicao: tempo de GPU por categoria de passe e amostragem das pilhas de CPU (rex_profile.log). Roda um pouco`n" +
     "# mais devagar; serve para saber onde o tempo vai.`n" +
     "ds2_gpu_marks_categories = true`nswitch_profile_stacks = true`nswitch_profile_report = true`n"), $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_zcull.toml'), ($base +
+    "`n# Teste A/B: ZCULL tambem nos alvos de profundidade de 1 amostra (o principal do jogo). As importacoes de`n" +
+    "# stencil passam a usar passes mascarados em vez do motor de copia.`n" +
+    "ds2_native_zcull_1x_depth = true`n"), $noBom)
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null

@@ -4,6 +4,21 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Quarto build (2026-10-10): primeira rodada de desempenho
+
+Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+
+Este build não fica mais rápido por si só: ele mede melhor e traz um teste. São **duas sessões no mesmo lugar** (a
+primeira fogueira; com o save, "Continue" já abre lá), sem overclock, cada uma com ~1 minuto parado olhando a cena:
+
+1. **Sessão A:** com o `ds2.toml` deste pacote, como está.
+2. **Sessão B:** apague o `ds2.toml` da pasta do jogo, copie `configs/ds2_teste_zcull.toml` para lá e **renomeie a
+   cópia para `ds2.toml`**. (O jogo só lê o arquivo com esse nome.) Rode de novo no mesmo lugar. Repare também se a
+   imagem continua certa, principalmente sombras e bordas dos objetos.
+
+Depois mande a pasta `logs/` e, se puder, a pasta de saves `switch/ds2-nx/ds2/` do cartão: com o seu save eu consigo
+abrir essa mesma área no PC para investigar.
+
 ## Terceiro build (2026-10-10)
 
 Copie por cima dos antigos: `ds2.nro`, **`ds2.toml`** e a pasta `configs/`. O `game_root/` não muda.
