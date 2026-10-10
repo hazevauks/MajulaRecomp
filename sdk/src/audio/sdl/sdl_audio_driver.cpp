@@ -380,7 +380,12 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
     } else {
       auto buffer = driver->frames_queued_.front();
       driver->frames_queued_.pop();
-      if (REXCVAR_GET(audio_mute)) {
+      // ds2-nx (the one difference from sa2-nx's SDK in this file): with audio_mute and audio_dump_output_s both set,
+      // the frame is still converted and the dump records what would have been heard; the device gets silence. The
+      // unattended test runs are muted, and the dump is the only way to check their sound.
+      const bool mute = REXCVAR_GET(audio_mute);
+      const bool mute_dump = mute && REXCVAR_GET(audio_dump_output_s) > 0;
+      if (mute && !mute_dump) {
         std::memset(data, 0, len);
       } else {
         switch (driver->sdl_device_channels_) {
@@ -397,12 +402,16 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
             break;
         }
       }
+      if (mute_dump) {
+        RecordOutput(data, len, driver->sdl_device_channels_);
+        std::memset(data, 0, len);
+      }
       if (!SDL_PutAudioStreamData(stream, data, len)) {
         REXAPU_ERROR("SDL_PutAudioStreamData() failed: {}", SDL_GetError());
         driver->frames_unused_.push(buffer);
         break;
       }
-      RecordOutput(data, len, driver->sdl_device_channels_);
+      if (!mute_dump) RecordOutput(data, len, driver->sdl_device_channels_);
       CountFrame(false);
       driver->frames_unused_.push(buffer);
 

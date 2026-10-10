@@ -206,6 +206,13 @@ REXCVAR_DEFINE_INT32(ds2_native_verify_n, 2048, "SA2 renderer",
     .range(0, 2147483647)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
+REXCVAR_DEFINE_INT32(ds2_diag_draw_every, 1, "DS2",
+                     "Diagnostic, for machines whose GPU cannot keep up (software Vulkan): only one frame in this many "
+                     "is drawn; in the others the ring thread still reads every packet, identifies the shaders and "
+                     "checks the draws, but sends no draw, clear or copy to the GPU, so the game advances at its own "
+                     "pace between drawn frames. An odd number keeps the game's alternating targets (its adapted "
+                     "luminance) alternating. 1 = every frame")
+    .range(1, 100000);
 REXCVAR_DEFINE_BOOL(ds2_gpu_vs_fetch_reorder_streams, true, "DS2 renderer",
                     "A vertex shader whose fetches Direct3D reordered is also identified when a fetch moved to another "
                     "vertex stream's group (me_vertex_fetch_reorder.h). false = only within one stream, as sa2-nx");
@@ -3761,6 +3768,11 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
         }
       }
     }
+    if (SkippedFrame()) [[unlikely]] {  // ds2_diag_draw_every
+      ++diag_skipped_draws_;
+      trace_result_ = 2;
+      return;
+    }
     ++native_draw_attempts_;
     g_banjo_last_reject_cause = 0;
     const bool drawn = targets_->Draw(request);
@@ -3771,8 +3783,16 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
     }
   }
 
+  // ds2_diag_draw_every: whether the frame being read is one of those not sent to the GPU.
+  bool SkippedFrame() const {
+    static const uint64_t every = uint64_t(std::max(REXCVAR_GET(ds2_diag_draw_every), 1));
+    return every > 1 && swaps_ % every != 0;
+  }
+  uint64_t diag_skipped_draws_ = 0;
+
   void Copy() {
     if (!EnsureTargets()) return;
+    if (SkippedFrame()) [[unlikely]] return;  // ds2_diag_draw_every
     namespace g = rex::graphics;
     ds2::native::RegistersCopy r;
     r.rb_surface_info = Register(g::XE_GPU_REG_RB_SURFACE_INFO);

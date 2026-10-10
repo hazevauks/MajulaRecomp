@@ -464,3 +464,43 @@ errado é escolhido primeiro e descartado pela conferência do microcódigo); to
 - **Validação do Vulkan** numa sessão inteira até o 3D em 720p (`ds2_032.log`): nenhum erro.
 - O jogo guarda o progresso em `Documents\ds2\<perfil>\465307E4\00000001\-GAME_0000` (23 arquivos, 7,2 MB), aberto a
   cada sessão: as sessões de teste continuam de onde a anterior salvou.
+
+## Percorrer o jogo num PC sem GPU: ferramentas e o que foi coberto (2026-10-09)
+
+**O problema.** No lavapipe o mapa 3D sai a ~0,5 quadro/s, e o jogo avança por quadro: a essa taxa ele roda em câmera
+lenta (o personagem levou ~5,5 min de relógio para correr da plataforma inicial até a primeira rocha). Roteiros por
+tempo não servem para andar pelo mapa, e não dá para jogar à mão.
+
+**Ferramentas novas:**
+
+- `ds2_diag_draw_every = N` (diagnóstico): só um quadro em N é mandado para a GPU; nos outros a thread do anel lê
+  todos os pacotes, identifica os shaders e confere os desenhos, mas não envia desenho, limpeza nem cópia. Com N = 61 o
+  jogo roda a 10–12 quadros/s no mapa (20 vezes mais rápido) e a imagem se atualiza a cada ~5 s. N ímpar para os
+  alvos alternados do jogo (luminância adaptada) continuarem alternando. No primeiro quadro 3D aparece o aviso `texture
+  format not supported yet (cause 429)`: é a textura de luminância lida antes da primeira cópia, por causa dos
+  quadros pulados.
+- `ds2_input_live = <arquivo>`: controle ao vivo. O jogo relê o arquivo quando ele muda; itens `<botões> [segundos]`
+  separados por vírgula (`lup, a 0.6`).
+- `ds2_snap_live = true`: captura sob demanda (`captures/snap_request` → `captures/snap.rgba`).
+- `tools/live.py`: `pad "<itens>"`, `snap [nome]`, `wait <s>`, `sheet a b c` (uma folha com várias capturas), para
+  guiar o jogo passo a passo numa sessão longa (lançada à parte com `Start-Process`, pois dura mais que um comando).
+- `audio_dump_output_s` agora grava também com `audio_mute` (as sessões de teste são mudas): **única diferença do
+  `sdk/` em relação ao sa2-nx**, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`, marcada com `ds2-nx`.
+
+**O que foi coberto e conferido por imagem:**
+
+- Do boot ao jogo: avisos iniciais, logo da Havok, tela de título, "Now loading" do save, menu principal (New Game /
+  Continue), telas de carregamento com descrição de item, fade-in do mapa. Tudo certo.
+- Sessão de 25 min a 720p andando pelo capim de Things Betwixt (`ds2_040.log`, todos os quadros desenhados): 0
+  desenhos rejeitados, 0 sem shader, 0 erros de slot, sem queda. Capim, rochas, HUD e a faixa da área certos.
+- Sessão guiada de 22 min com 1 quadro em 61 (`ds2_042.log`): 14.766 quadros do jogo, 0 rejeitados, 0 sem shader,
+  183 pipelines, 404 texturas. O personagem caiu num abismo, **morreu, o jogo recarregou e ele renasceu** na
+  plataforma inicial: morte, telas de carregamento e recarga do mapa funcionam.
+- **Áudio** (70 s gravados da tela de título e dos menus, `out/pc/audio_output.wav`): 24 s de silêncio nos avisos
+  iniciais, depois sinal contínuo, pico 0,29, sem saturação, sem NaN, estéreo (L ≠ R), com um pulso a cada 6 s que
+  coincide com os toques de A do roteiro (som de menu). Parece áudio de verdade; a qualidade só se julga ouvindo.
+
+**Onde parou.** Saindo da plataforma em linha reta o personagem bate numa rocha depois do capim; contornando para um
+lado há um abismo, para o outro ele voltou a encostar na mesma rocha. Com uma imagem a cada ~5 s e a câmera voltando
+para trás do personagem, cada passo "olhar e agir" leva mais de um minuto; achar a passagem para a cabana (onde ficam
+a cena e a criação do personagem) é questão de horas neste PC. Não foi além da área inicial.

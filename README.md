@@ -18,7 +18,7 @@ O método e quase todo o código de infraestrutura vêm dos portes irmãos:
 | [StevensND/nfsmw-nx](https://github.com/StevensND/nfsmw-nx) | Camada do Switch, driver NVK (Mesa) com patch, PGO/LTO, vídeo WMV3, notas de plataforma |
 | [ChanseyIsTheBest/futari-nx](https://github.com/ChanseyIsTheBest/futari-nx) | Outro jogo de disco (ISO); caderno compartilhado de otimizações (`xbox360.md`) |
 
-`sdk/` está **idêntico** ao sa2-nx de propósito, para que as otimizações futuras desses repositórios possam ser
+`sdk/` está **idêntico** ao sa2-nx de propósito (uma exceção, marcada `ds2-nx`: a gravação do áudio com o som mudo, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`), para que as otimizações futuras desses repositórios possam ser
 trazidas com um diff simples. O que é específico do Dark Souls II fica em `app/` e `docs/`. Em `tools/`, `shaders/` e
 no renderizador (`app/src/me`, copiado do sa2-nx) os nomes `sa2` viraram `ds2`; as ferramentas que dependem de
 endereços do jogo ainda precisam dos dados do DS2.
@@ -30,7 +30,7 @@ endereços do jogo ainda precisam dos dados do DS2.
 | 2. Arquivos do jogo extraídos e inspecionados | **feito** (ver [docs/ds2-notes.md](docs/ds2-notes.md)) |
 | 3. Tradução do código (`rexglue codegen`) | **feito**: 83.143 funções, 0 erros de validação; varreduras de ponteiros e de tabelas de salto limpas |
 | 4. Primeiro boot no PC com a GPU emulada | **feito**: menus, criação de save, vídeo de abertura e carregamento do primeiro mapa, sem crash do código do jogo; a GPU emulada não desenha o 3D no lavapipe (SPIR-V rejeitado) |
-| 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado e rodando no lavapipe; biblioteca com os 1.409 shaders do disco; **o jogo aparece certo no primeiro mapa 3D** (cena, HUD, tone mapping), a ~0,5 quadro/s por software, sem nenhum desenho rejeitado ou sem shader no quadro conferido; falta percorrer mais do jogo |
+| 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado e rodando no lavapipe; biblioteca com os 1.409 shaders do disco; **o jogo aparece certo no primeiro mapa 3D** (cena, HUD, tone mapping), a ~0,5 quadro/s por software, sem nenhum desenho rejeitado ou sem shader em 25 min na área inicial (morte e recarga incluídas); falta percorrer o resto do jogo, o que este PC sem GPU torna muito lento (ver as notas) |
 | 7. Build para o Switch (devkitA64 + NVK) | pendente |
 | 8–11. Medição no console e otimizações de CPU/GPU | pendente |
 

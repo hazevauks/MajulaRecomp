@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -33,6 +34,11 @@ REXCVAR_DEFINE_BOOL(ds2_video_half, true, "DS2",
 REXCVAR_DEFINE_INT32(ds2_video_every, 1, "DS2",
                      "Take one frame every this many sixtieths of a second (60 = one frame a second)")
     .range(1, 3600);
+
+REXCVAR_DEFINE_BOOL(ds2_snap_live, false, "DS2",
+                    "Snapshots on request, for exploring unattended: whenever captures/snap_request exists next to "
+                    "the executable, the game image is written to captures/snap.rgba (+ snap.txt, half resolution "
+                    "with ds2_video_half) and the request file is removed");
 
 namespace ds2::capture {
 namespace {
@@ -126,9 +132,51 @@ void Record(std::function<rex::ui::Presenter*()> get_presenter, int start_s, int
               width / step, height / step, seconds, missed, rex::path_to_utf8(folder / (name + ".rgba")));
 }
 
+std::thread g_snap_thread;
+
+// ds2_snap_live: polls for captures/snap_request four times a second.
+void Snap(std::function<rex::ui::Presenter*()> get_presenter) {
+  const uint32_t step = REXCVAR_GET(ds2_video_half) ? 2 : 1;
+  const auto folder = rex::filesystem::GetExecutableFolder() / "captures";
+  std::error_code ec;
+  std::filesystem::create_directories(folder, ec);
+  std::vector<uint8_t> frame;
+  uint32_t taken = 0;
+  while (!WaitUntil(std::chrono::steady_clock::now() + std::chrono::milliseconds(250))) {
+    if (!std::filesystem::exists(folder / "snap_request", ec)) {
+      continue;
+    }
+    rex::ui::Presenter* presenter = get_presenter ? get_presenter() : nullptr;
+    rex::ui::RawImage image;
+    if (!presenter || !presenter->CaptureGuestOutput(image) || !image.width || !image.height) {
+      continue;  // tried again at the next poll
+    }
+    const uint32_t w = image.width / step, h = image.height / step;
+    frame.resize(size_t(w) * h * 4);
+    for (uint32_t y = 0; y < h; ++y) {
+      const uint8_t* row = image.data.data() + size_t(y) * step * image.stride;
+      for (uint32_t x = 0; x < w; ++x) {
+        std::memcpy(frame.data() + (size_t(y) * w + x) * 4, row + size_t(x) * step * 4, 4);
+      }
+    }
+    std::ofstream(folder / "snap.rgba", std::ios::binary | std::ios::trunc)
+        .write(reinterpret_cast<const char*>(frame.data()), std::streamsize(frame.size()));
+    std::ofstream(folder / "snap.txt", std::ios::binary | std::ios::trunc)
+        << w << ' ' << h << " 1 1 " << ++taken << std::endl;
+    std::filesystem::remove(folder / "snap_request", ec);
+  }
+}
+
 }  // namespace
 
 void Start(std::function<rex::ui::Presenter*()> get_presenter) {
+  if (REXCVAR_GET(ds2_snap_live) && !g_snap_thread.joinable()) {
+    {
+      std::lock_guard lock(g_mutex);
+      g_stop = false;
+    }
+    g_snap_thread = std::thread(Snap, get_presenter);
+  }
   if (REXCVAR_GET(ds2_video_s) <= 0 || g_thread.joinable()) {
     return;
   }
@@ -148,6 +196,9 @@ void Stop() {
   g_cv.notify_all();
   if (g_thread.joinable()) {
     g_thread.join();
+  }
+  if (g_snap_thread.joinable()) {
+    g_snap_thread.join();
   }
 }
 

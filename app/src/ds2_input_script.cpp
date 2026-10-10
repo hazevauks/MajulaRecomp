@@ -8,7 +8,10 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -26,6 +29,12 @@
 REXCVAR_DEFINE_STRING(ds2_input_script, "", "DS2",
                       "Scripted pad for unattended runs: comma-separated <time>:<buttons> steps (seconds, or f<frame>; "
                       "a range t0-t1 holds, a trailing * presses rapidly). Example: 12:start,15:a,17:a,20-25:lup");
+
+REXCVAR_DEFINE_STRING(ds2_input_live, "", "DS2",
+                      "Live pad for exploring unattended: a text file the game rereads when it changes (at most "
+                      "every 100 ms). Comma-separated '<buttons> [seconds]' items, buttons joined by '+': "
+                      "'lup, a 0.6' holds the left stick up until the file changes and presses A for 0.6 s. An "
+                      "empty file releases everything. Adds to ds2_input_script");
 
 namespace ds2::input_script {
 namespace {
@@ -147,8 +156,9 @@ std::vector<Step> Parse(std::string script) {
 
 class ScriptedInputDriver final : public rex::input::InputDriver {
  public:
-  explicit ScriptedInputDriver(std::vector<Step> steps)
-      : InputDriver(nullptr, 0), steps_(std::move(steps)), start_(std::chrono::steady_clock::now()) {
+  explicit ScriptedInputDriver(std::vector<Step> steps, std::string live = {})
+      : InputDriver(nullptr, 0), steps_(std::move(steps)), start_(std::chrono::steady_clock::now()),
+        live_path_(std::move(live)) {
     two_players_ = std::any_of(steps_.begin(), steps_.end(), [](const Step& s) { return s.player == 1; });
   }
 
@@ -258,6 +268,9 @@ class ScriptedInputDriver final : public rex::input::InputDriver {
       }
       buttons |= step.buttons;
     }
+    if (player == 0 && !live_path_.empty()) {
+      buttons |= Live(seconds);
+    }
     const uint32_t changed = buttons ^ held_[player];
     if (changed) {
       ++packet_[player];
@@ -280,8 +293,57 @@ class ScriptedInputDriver final : public rex::input::InputDriver {
     return buttons;
   }
 
+  // ds2_input_live: the buttons the file holds now. The file is read again when its write time changes; an item
+  // with a duration counts from the moment it was read.
+  uint32_t Live(double seconds) {
+    if (seconds - live_checked_ >= 0.1) {
+      live_checked_ = seconds;
+      std::error_code ec;
+      const auto written = std::filesystem::last_write_time(live_path_, ec);
+      if (!ec && written != live_written_) {
+        live_written_ = written;
+        live_items_.clear();
+        std::ifstream file(live_path_, std::ios::binary);
+        std::stringstream text;
+        text << file.rdbuf();
+        std::string all = text.str(), item;
+        for (char& c : all) {
+          if (c == 10 || c == 13) c = ',';
+        }
+        std::stringstream items(all);
+        while (std::getline(items, item, ',')) {
+          std::stringstream words(item);
+          std::string names;
+          double duration = 0;
+          if (!(words >> names)) continue;
+          words >> duration;
+          uint32_t bits = 0;
+          std::transform(names.begin(), names.end(), names.begin(), [](unsigned char c) { return std::tolower(c); });
+          std::stringstream each(names);
+          std::string name;
+          while (std::getline(each, name, '+')) {
+            for (const auto& button : kButtons) {
+              if (name == button.name) bits |= button.bit;
+            }
+          }
+          if (bits) live_items_.push_back({bits, duration > 0 ? seconds + duration : 1e300});
+        }
+        REXLOG_INFO("[input-script] {:.2f} s: live file read, {} item(s): {}", seconds, live_items_.size(), all);
+      }
+    }
+    uint32_t buttons = 0;
+    for (const auto& [bits, until] : live_items_) {
+      if (seconds < until) buttons |= bits;
+    }
+    return buttons;
+  }
+
   const std::vector<Step> steps_;
   const std::chrono::steady_clock::time_point start_;
+  const std::string live_path_;
+  std::filesystem::file_time_type live_written_{};
+  double live_checked_ = -1;
+  std::vector<std::pair<uint32_t, double>> live_items_;  // (buttons, held until this many seconds)
   std::mutex mutex_;
   bool two_players_ = false;
   uint32_t held_[2] = {};
@@ -294,15 +356,17 @@ class ScriptedInputDriver final : public rex::input::InputDriver {
 void Install(rex::Runtime* runtime) {
   auto* input = runtime ? static_cast<rex::input::InputSystem*>(runtime->input_system()) : nullptr;
   std::string script = REXCVAR_GET(ds2_input_script);
-  if (!input || script.empty()) {
+  std::string live = REXCVAR_GET(ds2_input_live);
+  if (!input || (script.empty() && live.empty())) {
     return;
   }
   auto steps = Parse(script);
-  if (steps.empty()) {
+  if (steps.empty() && live.empty()) {
     return;
   }
-  REXLOG_INFO("[input-script] {} step(s): {}", steps.size(), script);
-  input->AddDriver(std::make_unique<ScriptedInputDriver>(std::move(steps)));
+  REXLOG_INFO("[input-script] {} step(s): {}{}", steps.size(), script,
+              live.empty() ? std::string() : " | live file " + live);
+  input->AddDriver(std::make_unique<ScriptedInputDriver>(std::move(steps), std::move(live)));
 }
 
 }  // namespace ds2::input_script
