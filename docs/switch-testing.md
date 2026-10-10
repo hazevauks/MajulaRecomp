@@ -4,6 +4,20 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo primeiro build (2026-10-10): depois da queda do sistema
+
+Copie por cima: `ds2.nro`.
+
+A tela de erro do Atmosphère do último teste veio de um módulo do próprio sistema (`pcv`, que cuida de clocks e
+tensões): ele ficou sem memória para sessões e derrubou outros três módulos junto, entre eles o seu sysmodule de
+clocks. Não dá para afirmar quem causou. O jogo era um dos programas com sessões abertas nesse módulo (só para
+anotar os clocks no log), então este build deixou de mantê-las abertas.
+
+- Jogue normalmente; se a tela de erro voltar, mande de novo as pastas `crash_reports` e `fatal_reports` e me diga
+  o que estava aberto (barra de status, menu do sysmodule de clocks).
+- Se voltar, vale um teste com a barra de status desligada para isolar.
+- As sombras perto da casa das firekeepers e da fogueira continuam valendo a conferida.
+
 ## Décimo build (2026-10-10): rodada 4 de desempenho (sombras das luzes)
 
 Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` continuam os mesmos).

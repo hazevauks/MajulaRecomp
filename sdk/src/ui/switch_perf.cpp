@@ -527,27 +527,36 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
   {
     static bool started = false;
     static bool has_clkrst = false;
-    static ClkrstSession sessions[3]{};
     static u64 cores_mask = 0;
     if (!started) {
       started = true;
       if (R_FAILED(svcGetInfo(&cores_mask, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0))) {
         cores_mask = 0;
       }
+    }
+    // ds2-nx (a difference from sa2-nx's SDK): no clkrst session is kept open. The three sessions used to stay open
+    // for the whole run and were read every second. On a console that also runs a clock sysmodule and a status
+    // overlay (both clients of pcv), pcv aborted with 2011-0102 (out of session memory) in the middle of a Dark
+    // Souls II session and took ptm, Bus and the clock sysmodule with it. Whether this process was what filled
+    // pcv's sessions is not known; it no longer holds any: the clocks are read at the first report and once a
+    // minute after that, with the sessions opened and closed around the read.
+    static u32 hz[3] = {0, 0, 0};
+    static unsigned reports = 0;
+    if (reports++ % 60 == 0) {
+      has_clkrst = false;
       if (R_SUCCEEDED(clkrstInitialize())) {
         static const PcvModuleId modules[3] = {PcvModuleId_CpuBus, PcvModuleId_GPU, PcvModuleId_EMC};
         has_clkrst = true;
         for (unsigned i = 0; i < 3; ++i) {
-          if (R_FAILED(clkrstOpenSession(&sessions[i], modules[i], 3))) {
+          ClkrstSession session{};
+          if (R_SUCCEEDED(clkrstOpenSession(&session, modules[i], 3))) {
+            if (R_FAILED(clkrstGetClockRate(&session, &hz[i]))) has_clkrst = false;
+            clkrstCloseSession(&session);
+          } else {
             has_clkrst = false;
           }
         }
-      }
-    }
-    u32 hz[3] = {0, 0, 0};
-    if (has_clkrst) {
-      for (unsigned i = 0; i < 3; ++i) {
-        clkrstGetClockRate(&sessions[i], &hz[i]);
+        clkrstExit();
       }
     }
     unsigned cores = 0;

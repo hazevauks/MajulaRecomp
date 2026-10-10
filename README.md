@@ -18,7 +18,7 @@ O método e quase todo o código de infraestrutura vêm dos portes irmãos:
 | [StevensND/nfsmw-nx](https://github.com/StevensND/nfsmw-nx) | Camada do Switch, driver NVK (Mesa) com patch, PGO/LTO, vídeo WMV3, notas de plataforma |
 | [ChanseyIsTheBest/futari-nx](https://github.com/ChanseyIsTheBest/futari-nx) | Outro jogo de disco (ISO); caderno compartilhado de otimizações (`xbox360.md`) |
 
-`sdk/` está **idêntico** ao sa2-nx de propósito (duas exceções, marcadas `ds2-nx`: a gravação do áudio com o som mudo, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`, e o teclado do sistema do Switch para `XamShowKeyboardUI`, em `sdk/src/kernel/xam/xam_ui.cpp`), para que as otimizações futuras desses repositórios possam ser
+`sdk/` está **idêntico** ao sa2-nx de propósito (três exceções, marcadas `ds2-nx`: a gravação do áudio com o som mudo, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`; o teclado do sistema do Switch para `XamShowKeyboardUI`, em `sdk/src/kernel/xam/xam_ui.cpp`; e a leitura dos clocks sem manter sessões `clkrst` abertas, em `sdk/src/ui/switch_perf.cpp`), para que as otimizações futuras desses repositórios possam ser
 trazidas com um diff simples. O que é específico do Dark Souls II fica em `app/` e `docs/`. Em `tools/`, `shaders/` e
 no renderizador (`app/src/me`, copiado do sa2-nx) os nomes `sa2` viraram `ds2`; as ferramentas que dependem de
 endereços do jogo ainda precisam dos dados do DS2.
@@ -32,7 +32,7 @@ endereços do jogo ainda precisam dos dados do DS2.
 | 4. Primeiro boot no PC com a GPU emulada | **feito**: menus, criação de save, vídeo de abertura e carregamento do primeiro mapa, sem crash do código do jogo; a GPU emulada não desenha o 3D no lavapipe (SPIR-V rejeitado) |
 | 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado e rodando no lavapipe; biblioteca com os 1.409 shaders do disco; **o jogo aparece certo no primeiro mapa 3D** (cena, HUD, tone mapping), a ~0,5 quadro/s por software, sem nenhum desenho rejeitado ou sem shader em 25 min na área inicial (morte e recarga incluídas); falta percorrer o resto do jogo, o que este PC sem GPU torna muito lento (ver as notas) |
 | 7. Build para o Switch (devkitA64 + NVK) | **roda no console** (codegen clássico, sem LTO/PGO; driver NVK do nfsmw-nx compilado aqui): menus, criação de personagem com o teclado do sistema, save, áudio e o primeiro mapa sem desenhos rejeitados ([docs/switch-testing.md](docs/switch-testing.md)) |
-| 8–11. Medição no console e otimizações de CPU/GPU | **em andamento**: na primeira fogueira, modo portátil a 720p sem overclock, de 7,3 para 12,7 quadros/s (GPU de 137,9 para 78,8 ms por quadro) em duas rodadas; 540p no portátil com imagem confirmada no console: 14,5 quadros/s olhando para a saída e 8,4 para a casa das firekeepers (correção das limpezas do atlas de sombras aguardando teste). Menus a 43–60. Falta CPU (perfil de pilhas), LTO/PGO e o modo TV |
+| 8–11. Medição no console e otimizações de CPU/GPU | **em andamento**: na primeira fogueira, modo portátil a 720p sem overclock, de 7,3 para 12,7 quadros/s (GPU de 137,9 para 78,8 ms por quadro) em duas rodadas; 540p no portátil com imagem confirmada no console: 14,6 quadros/s olhando para a saída e 11,6 para a casa das firekeepers (era 8,4 antes da rodada 4; nessa vista o limite agora é a CPU). Menus a 43–60. Falta CPU (perfil de pilhas), LTO/PGO e o modo TV |
 
 ## Estrutura
 

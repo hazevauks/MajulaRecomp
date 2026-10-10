@@ -841,3 +841,40 @@ alpha-to-coverage e exportação de profundidade do shader carregado não entram
 bordas (`partial tile: owner unsupported`; as bordas vêm num desenho de dois retângulos, que não vira limpeza
 redirecionada). Atlas de sombras e imagem final conferidos a olho num quadro rastreado (regiões com profundidade de
 cena e fundo limpo); não houve comparação A/B bit a bit.
+
+**Décimo build no console** (`out/switch_logs/010/ds2_016.log`, 540p, sem overclock, casa das firekeepers):
+
+| | quadros/s | GPU por quadro | edram_import | thread do anel por quadro |
+|---|---|---|---|---|
+| nono build | 8,4 | 119,2 ms | 50,1 ms | — |
+| décimo build | 11,2–12,0 | 84,5–89,2 ms | 1,2 ms | 75,4 ms (1.169 desenhos) |
+
+Nenhuma conversão por troca de representação (`depth-repr-switch` sumiu do relatório); restam ~48 importações
+pequenas por quadro (`draw/depth-depth=5635ops/9200tiles` em 116 quadros) e as recusas `depth not proven constant`
+e `partial tile: owner unsupported` (3 por quadro cada) das bordas. Dos 86 ms de GPU, 17,9 são `gap` (GPU parada):
+nessa vista o limite passou a ser a **CPU**, com a thread do anel a 75 ms por quadro (64 µs por desenho). Na vista
+da saída: 14,6 quadros/s, 68,1 ms de GPU, anel a 47,5 ms. As sombras ainda não foram conferidas por quem jogou.
+
+## Queda do sistema durante uma sessão: pcv sem memória de sessões (2026-10-10)
+
+Aos 2,5 minutos da sessão `ds2_016` o console mostrou a tela de erro do Atmosphère. Relatórios do mesmo segundo
+(cópias em `out/switch_logs/010/`):
+
+| processo | resultado | significado |
+|---|---|---|
+| `pcv` (010000000000001A), fatal | 2011-0102 | sf/hipc: sem memória de sessões |
+| `ptm`, `Bus` | 2011-0301 | sessão fechada (consequência da queda do pcv) |
+| `hoc:clk` (00FF0000636C6BFF) | 2345-0048 | o sysmodule de clocks do console (Horizon OC), logo depois |
+
+O log do jogo vai normal até 16:55:19,7 (relógio do console); a falha é das 16:55:20. Os clocks estavam no padrão
+(CPU 1020, GPU 460,8, memória 1331,2 MHz), SoC a 37 °C. Não há relatório do nosso processo.
+
+O que se sabe: o `pcv` (o serviço de clocks e tensões) ficou sem memória para sessões. Clientes dele nesse console:
+o sysmodule de clocks, a barra de status (overlay) e o nosso processo, que pelo código herdado do sa2-nx mantinha
+**três sessões `clkrst` abertas** a sessão inteira (CPU, GPU e memória, lidas a cada segundo para a linha `clocks:`
+do `rex_profile.log`). O que não se sabe: quem de fato esgotou as sessões. Aconteceu uma vez em ~16 sessões com o
+mesmo código.
+
+Mudança (`sdk/src/ui/switch_perf.cpp`, marcada `ds2-nx`): o processo não mantém mais nenhuma sessão `clkrst`; os
+clocks são lidos no primeiro relatório e uma vez por minuto, abrindo e fechando as sessões na hora. Se a queda
+voltar com esse build, o próximo passo é testar sem o overlay e sem o sysmodule de clocks para isolar.
