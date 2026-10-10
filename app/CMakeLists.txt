@@ -176,8 +176,15 @@ if(REXGLUE_PLATFORM_SWITCH)
     endif()
     # The homebrew menu's entry. LTO, PGO, function ordering and the built-in settings come with the Switch stage
     # (sa2-nx app/CMakeLists.txt has the full set).
+    # The icon is not in the repository (game artwork): assets/icon.jpg, a 256x256 baseline JPEG, when it is there;
+    # libnx's default icon otherwise.
+    set(DS2_NRO_ICON "")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../assets/icon.jpg")
+        set(DS2_NRO_ICON ICON "${CMAKE_CURRENT_SOURCE_DIR}/../assets/icon.jpg")
+    endif()
     rexglue_switch_add_nro(ds2
         NAME "Dark Souls II"
         AUTHOR "hazevauks"
-        VERSION "0.0.1")
+        VERSION "0.0.2"
+        ${DS2_NRO_ICON})
 endif()

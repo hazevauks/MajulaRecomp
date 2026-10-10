@@ -16,6 +16,9 @@ ds2_render_height_docked = 720
 asset_pack = true
 asset_pack_build = false
 
+# Tempo de GPU por categoria de passe no log (linha "GPU per Swap"), enquanto se mede onde o tempo vai.
+ds2_gpu_marks_categories = true
+
 # Log completo em arquivo durante os testes.
 log_level = "info"
 log_to_file = true

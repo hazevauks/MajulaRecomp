@@ -596,3 +596,19 @@ Correção: ao manter um bloco, ele passa a valer só até o tamanho comparado (
 sa2-nx; lá não apareceu porque os shaders daquele jogo não combinam assim.
 
 Verificado no PC: caixa cinza-escura, YES azul, NO laranja, contador de almas normal. O NRO foi refeito com a correção.
+
+## Segundo e terceiro testes no Switch (2026-10-10)
+
+Logs em `out/switch_logs/002` (sessões `ds2_004` e `ds2_005`, já com o NRO corrigido).
+
+- O usuário confirmou no console: a caixa "Save and quit game" saiu certa.
+- **Sem overclock o mapa fica em 6,8 quadros/s, estável** (68 trocas a cada 10 s durante minutos; `GPU per Swap:
+  total 148,5 ms`; ~608 desenhos por quadro). Os 9–13 quadros/s do primeiro log eram de um overclock leve que o
+  usuário testou: desconsiderados.
+- As categorias de tempo de GPU não estavam ligadas: o jogo só lê `ds2.toml`, e o `ds2_perfil.toml` foi copiado ao
+  lado sem substituir. O `ds2.toml` de teste passou a trazer `ds2_gpu_marks_categories = true`.
+- **Bloqueio de progresso:** mais adiante o jogo pede o nome do personagem (`XamShowKeyboardUI`), e o diálogo do SDK é
+  uma caixa ImGui que precisa de teclado físico. No Switch a chamada agora abre o teclado do sistema (libnx `swkbd`),
+  numa execução "headless" do SDK que devolve o texto ou `X_ERROR_CANCELLED`. Segunda diferença do `sdk/` em relação
+  ao sa2-nx. Não testado em console ainda; no PC nada muda.
+- Ícone do NRO: `assets/icon.jpg` (fora do git; 256x256 JPEG fornecido pelo usuário), usado pelo CMake quando existe.

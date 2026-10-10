@@ -9,6 +9,8 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <cstring>
+
 #include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/string.h>
@@ -16,6 +18,11 @@
 #include <rex/system/kernel_state.h>
 
 #include <imgui.h>
+
+#include <rex/platform.h>
+#if REX_PLATFORM_SWITCH
+#include <switch.h>  // ds2-nx: the console's software keyboard (XamShowKeyboardUI)
+#endif
 
 REXCVAR_DEFINE_BOOL(headless, false, "Kernel",
                     "Don't display any UI, using defaults for prompts as needed");
@@ -478,6 +485,40 @@ u32 XamShowKeyboardUI_entry(u32 user_index, u32 flags, mapped_wstring default_te
                            REX_KERNEL_MEMORY()->TranslateVirtual(default_text.guest_address())))
                      : "";
 
+#if REX_PLATFORM_SWITCH
+    // ds2-nx (a difference from sa2-nx's SDK): on the console the text comes from the system's software keyboard
+    // (libnx swkbd). The ImGui dialog below needs a physical keyboard, so Dark Souls II could not get past naming
+    // the character. Cancelling the keyboard reports X_ERROR_CANCELLED, as cancelling the dialog does.
+    {
+      const uint32_t max_chars = buffer_length > 1 ? uint32_t(buffer_length) - 1 : 1;
+      auto run = [buffer, buffer_length, max_chars, title_str, desc_str, def_text_str](
+                     uint32_t& extended_error, uint32_t& length) -> X_RESULT {
+        length = 0;
+        bool entered = false;
+        char text[1024] = {};
+        SwkbdConfig keyboard;
+        if (R_SUCCEEDED(swkbdCreate(&keyboard, 0))) {
+          swkbdConfigMakePresetDefault(&keyboard);
+          if (!title_str.empty()) swkbdConfigSetHeaderText(&keyboard, title_str.c_str());
+          if (!desc_str.empty()) swkbdConfigSetGuideText(&keyboard, desc_str.c_str());
+          if (!def_text_str.empty()) swkbdConfigSetInitialText(&keyboard, def_text_str.c_str());
+          swkbdConfigSetStringLenMax(&keyboard, max_chars);
+          entered = R_SUCCEEDED(swkbdShow(&keyboard, text, sizeof(text)));
+          swkbdClose(&keyboard);
+        }
+        REXKRNL_INFO("XamShowKeyboardUI: software keyboard {} ({} of at most {} characters)",
+                     entered ? "confirmed" : "cancelled or unavailable", std::strlen(text), max_chars);
+        if (!entered) {
+          extended_error = X_ERROR_CANCELLED;
+          return X_ERROR_SUCCESS;
+        }
+        rex::string::copy_and_swap_truncating(buffer, rex::string::to_utf16(std::string(text)), buffer_length);
+        extended_error = X_ERROR_SUCCESS;
+        return X_ERROR_SUCCESS;
+      };
+      return xeXamDispatchHeadlessEx(run, overlapped.guest_address());
+    }
+#endif
     if (imgui_drawer) {
       uint32_t buffer_length_safe = buffer_length + 1;  // +1 for null terminator, just in case
       result = xeXamDispatchDialogEx<KeyboardInputDialog>(

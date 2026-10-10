@@ -18,7 +18,7 @@ O método e quase todo o código de infraestrutura vêm dos portes irmãos:
 | [StevensND/nfsmw-nx](https://github.com/StevensND/nfsmw-nx) | Camada do Switch, driver NVK (Mesa) com patch, PGO/LTO, vídeo WMV3, notas de plataforma |
 | [ChanseyIsTheBest/futari-nx](https://github.com/ChanseyIsTheBest/futari-nx) | Outro jogo de disco (ISO); caderno compartilhado de otimizações (`xbox360.md`) |
 
-`sdk/` está **idêntico** ao sa2-nx de propósito (uma exceção, marcada `ds2-nx`: a gravação do áudio com o som mudo, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`), para que as otimizações futuras desses repositórios possam ser
+`sdk/` está **idêntico** ao sa2-nx de propósito (duas exceções, marcadas `ds2-nx`: a gravação do áudio com o som mudo, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`, e o teclado do sistema do Switch para `XamShowKeyboardUI`, em `sdk/src/kernel/xam/xam_ui.cpp`), para que as otimizações futuras desses repositórios possam ser
 trazidas com um diff simples. O que é específico do Dark Souls II fica em `app/` e `docs/`. Em `tools/`, `shaders/` e
 no renderizador (`app/src/me`, copiado do sa2-nx) os nomes `sa2` viraram `ds2`; as ferramentas que dependem de
 endereços do jogo ainda precisam dos dados do DS2.

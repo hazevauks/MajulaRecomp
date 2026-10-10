@@ -4,6 +4,18 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Terceiro build (2026-10-10)
+
+Copie por cima dos antigos: `ds2.nro`, **`ds2.toml`** e a pasta `configs/`. O `game_root/` não muda.
+
+- **Teclado para o nome do personagem:** quando o jogo pedir um texto, abre o teclado do próprio Switch. Ainda não foi
+  testado em console: se o teclado não abrir, travar ou o nome não for aceito, me diga exatamente o que aconteceu.
+- **Ícone** novo no menu de homebrew.
+- **Medição ligada no `ds2.toml` normal:** o jogo só lê o arquivo chamado `ds2.toml`; um `ds2_perfil.toml` ao lado do
+  `.nro` é ignorado (pode apagar). Por isso o `ds2.toml` deste build já traz o tempo de GPU por categoria ligado. Basta
+  jogar: entre no mapa, ande um pouco, fique uns 30 s parado olhando a cena, e me mande a pasta `logs/`.
+- Sem overclock, por favor, para os números serem comparáveis (o primeiro log, com overclock leve, eu desconsiderei).
+
 ## Segundo build (2026-10-10)
 
 Só o `ds2.nro` e a pasta `configs/` mudaram: copie esses dois por cima (o `game_root/` não precisa ser copiado de novo).
