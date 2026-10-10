@@ -3435,7 +3435,25 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
     }
 #endif
     const int32_t at = REXCVAR_GET(banjo_trace_frame_s);
-    if (trace_phase_ == 0 && at > 0 && Clock::now() - start_ >= std::chrono::seconds(at)) {
+    // ds2-nx diagnostic: DS2_TRACE_LIVE=1 traces the next frame whenever captures/trace_request exists next to the
+    // executable (tools/live.py trace), any number of times in a session; the traced frame is always drawn
+    // (ds2_diag_draw_every does not skip it).
+    static const bool trace_live = [] {
+      const char* v = std::getenv("DS2_TRACE_LIVE");
+      return v && v[0] == 49;
+    }();
+    bool requested = false;
+    if (trace_live && trace_phase_ != 1) [[unlikely]] {
+      std::error_code ec;
+      const auto request = rex::filesystem::GetExecutableFolder() / "captures" / "trace_request";
+      if (std::filesystem::exists(request, ec)) {
+        std::filesystem::remove(request, ec);
+        requested = true;
+        trace_draws_ = trace_quiet_draws_ = 0;
+        trace_dump_sequence_ = 0;
+      }
+    }
+    if (requested || (trace_phase_ == 0 && at > 0 && Clock::now() - start_ >= std::chrono::seconds(at))) {
       trace_phase_ = 1;
       REXLOG_INFO("[trace] ---- frame after swap {} ----", swaps_);
     } else if (trace_phase_ == 1) {
@@ -3786,7 +3804,7 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
   // ds2_diag_draw_every: whether the frame being read is one of those not sent to the GPU.
   bool SkippedFrame() const {
     static const uint64_t every = uint64_t(std::max(REXCVAR_GET(ds2_diag_draw_every), 1));
-    return every > 1 && swaps_ % every != 0;
+    return every > 1 && swaps_ % every != 0 && trace_phase_ != 1;
   }
   uint64_t diag_skipped_draws_ = 0;
 

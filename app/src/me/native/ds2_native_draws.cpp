@@ -3711,6 +3711,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         SameAsUploaded(from_upload ? upload_data_ + constants_vs_offset_ : shadow_constants_vs_.data(),
                        shadow_constants_vs_.data(), r + kRegConstantsVs, bytes_vs, from_upload)) {
       constants_vs_generation_ = p.generation_constants_vs;
+      constants_vs_bytes_ = bytes_vs;  // ds2-nx: only this prefix was compared (see the pixel shader case below)
       ++deduped_constants_[0];
     } else if (constants_vs_generation_ != p.generation_constants_vs ||
         constants_vs_epoch_ != epoch_upload_ || bytes_vs > constants_vs_bytes_) {
@@ -3749,6 +3750,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         SameAsUploaded(from_upload ? upload_data_ + constants_ps_offset_ : shadow_constants_ps_.data(),
                        shadow_constants_ps_.data(), r + kRegConstantsPs, bytes_ps, from_upload)) {
       constants_ps_generation_ = p.generation_constants_ps;
+      // ds2-nx: the block is current for the new generation only as far as it was compared. It used to stay marked as
+      // covering its whole old size, so a shader that reads more registers reused it with stale values beyond the
+      // compared prefix. Dark Souls II's interface (Scaleform) hit it every frame: a quad tinted through c32 (purple,
+      // additive), then text, whose shader reads fewer registers (the prefix was equal: block kept), then every other
+      // quad, whose c32 was white again in the registers but purple in the kept block. The "Save and quit game" box,
+      // its buttons and the HUD drawn after it came out purple and pink, on the console and on the PC alike.
+      constants_ps_bytes_ = bytes_ps;
       ++deduped_constants_[1];
     } else if (ps && (constants_ps_generation_ != p.generation_constants_ps ||
                constants_ps_epoch_ != epoch_upload_ || bytes_ps > constants_ps_bytes_ ||
@@ -9409,13 +9417,25 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (format == 60) TranscodeCtx1(data.data(), data.size());  // banjo-nx: k_CTX1 -> BC1
     // sa2-nx diagnostic: DS2_DUMP_TEXTURE=<guest base, hex> writes the bytes uploaded for that texture
     // (untiled, byte order changed, all levels) once, to check a texture a draw samples against the game's data.
-    if (static const uint32_t dump_base = [] {
-          const char* v = std::getenv("DS2_DUMP_TEXTURE");
-          return v && *v ? uint32_t(std::strtoul(v, nullptr, 16)) : 0u;
-        }();
-        dump_base && (uint32_t(base) & 0x1FFFFFFFu) == (dump_base & 0x1FFFFFFFu)) {
-      static std::atomic<bool> dumped{false};
-      if (!dumped.exchange(true)) {
+    // ds2-nx: a comma-separated list of bases, each written once (tools/bc_to_png.py decodes the DXT ones).
+    static const std::vector<uint32_t> dump_bases = [] {
+      std::vector<uint32_t> list;
+      const char* v = std::getenv("DS2_DUMP_TEXTURE");
+      while (v && *v) {
+        char* end = nullptr;
+        const unsigned long value = std::strtoul(v, &end, 16);
+        if (end == v) break;
+        list.push_back(uint32_t(value) & 0x1FFFFFFFu);
+        v = *end == ',' ? end + 1 : end;
+      }
+      return list;
+    }();
+    if (!dump_bases.empty()) [[unlikely]] {
+      static std::vector<uint32_t> dumped;
+      const uint32_t dump_base = uint32_t(base) & 0x1FFFFFFFu;
+      if (std::find(dump_bases.begin(), dump_bases.end(), dump_base) != dump_bases.end() &&
+          std::find(dumped.begin(), dumped.end(), dump_base) == dumped.end()) {
+        dumped.push_back(dump_base);
         const auto path = rex::filesystem::GetExecutableFolder() /
                           fmt::format("texture_{:08X}_{}x{}_f{}_l{}.bin", dump_base, width, height, format,
                                       texture.levels);

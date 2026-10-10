@@ -35,6 +35,10 @@ $noBom = New-Object System.Text.UTF8Encoding($false)
     ($base -replace 'ds2_renderer_native = true', 'ds2_renderer_native = false') +
     "`n# A GPU emulada do SDK no lugar do renderizador nativo (muito lenta no console; serve para comparar a imagem).`n" +
     "ds2_gpu_backend = `"vulkan`"`n"), $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_perfil.toml'), ($base +
+    "`n# Medicao: tempo de GPU por categoria de passe e amostragem das pilhas de CPU (rex_profile.log). Roda um pouco`n" +
+    "# mais devagar; serve para saber onde o tempo vai.`n" +
+    "ds2_gpu_marks_categories = true`nswitch_profile_stacks = true`nswitch_profile_report = true`n"), $noBom)
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null

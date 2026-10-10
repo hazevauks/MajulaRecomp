@@ -555,3 +555,44 @@ O link sem o driver acusava também `posix_memalign` (usado pelo FFmpeg): quem o
 **Cartão SD.** O cartão do usuário é FAT32: o jogo vai como pasta `game_root/` solta (121 arquivos, 5,71 GB, o maior
 com 2,64 GB), sem pacote único. `tools\win\package_switch.ps1 -IncludeGame -LooseGame` monta
 `out\nx\sdcard\switch\ds2-nx` (129 arquivos, 5,87 GB); instruções em `docs/switch-testing.md`.
+
+## Primeiro boot no Switch (2026-10-10)
+
+Logs em `out/switch_logs/001` (fora do git): `ds2_001.log`, `rex_profile.log`, `rex_stderr.log`. Console em modo
+portátil, CPU a 1020 MHz, GPU a 460,8 MHz (o gerente de relógios do SDK sobe a GPU de 307 para 460 MHz).
+
+- **Funcionou de primeira:** 3 min 18 s de sessão, do boot ao primeiro mapa (New Game) e à saída pelo menu, sem
+  queda. Relato do usuário: imagem certa do começo ao fim, exceto a caixa de confirmação de saída, rosa/roxa.
+- **Renderizador:** 417.049 desenhos, **0 rejeitados, 0 sem shader**, 192 pipelines, 251 texturas, 3 vertex shaders
+  identificados pela reordenação de fetches. Nenhum aviso do renderizador no log.
+- **Som:** 471 de 471 buffers de áudio com sinal no mapa, pico 0,19, nenhum saturado.
+- **Save:** o jogo criou e regravou o save no cartão (`ds2/B13EBABEBABEBABE/465307E4/00000001/-GAME_0000`, 23
+  arquivos).
+- **Taxa de quadros:** menus e telas 2D a 43–56 quadros/s; no mapa 3D **5–7 quadros/s** (até 13 conforme a vista).
+- **O limite no 3D é a GPU:** `GPU per Swap: total ~150 ms`; a thread do anel passa ~80 % do tempo esperando a GPU
+  (`fences waited 46/s, 805 ms/s`) e usa 19 % de um núcleo. Por quadro: ~606 desenhos, ~28 cópias, e as
+  transferências de EDRAM (por 10 s: `color alias=402 depth import=636 guestspace depth resolve=804`, e 8,5
+  conversões de representação do alvo de profundidade inteiro por quadro). As categorias de tempo de GPU estavam
+  desligadas nesta sessão; o detalhe por passe sai com `configs/ds2_perfil.toml`.
+- **CPU:** a thread principal do jogo fica em 92–96 % de um núcleo tanto nos menus (50 quadros/s) quanto no mapa
+  (6 quadros/s), ou seja, gira esperando em vez de dormir; o perfil conta ~38.600 `svcSleepThread` de até 1 ms por
+  segundo. A ver com a amostragem de pilhas.
+- Este NRO não tem LTO nem PGO, e nenhuma das otimizações específicas por jogo dos portes de referência.
+
+**A caixa "Save and quit game" roxa (corrigido).** Reproduzido no PC com o controle ao vivo (Start, ícone de sistema,
+Quit Game): a caixa saía roxa, o botão selecionado rosa, e o HUD desenhado depois dela tingido. O rastro do quadro
+(agora disparável a qualquer momento: `DS2_TRACE_LIVE=1` + `tools/live.py trace`) mostrou todos esses desenhos com
+entradas certas: mesmo par de shaders (VS n505, PS n838: `textura * g_MulColor + g_AddColor`, vezes a cor do vértice),
+cores de vértice brancas e `c32 = (1,1,1,1)`. As texturas, extraídas dos dados do jogo (`DS2_DUMP_TEXTURE=<bases>` +
+`tools/bc_to_png.py`), são couro cinza-escuro, molduras azuis e brilho laranja: nada roxo. O roxo vem de **um** desenho
+do HUD que o próprio jogo tinge com `c32 = (0,77; 0,29; 0,90; 0,69)`, em mistura aditiva.
+
+A causa estava na deduplicação de constantes herdada (`ds2_native_constants_dedupe`): quando uma geração nova de
+constantes tem os bytes que o shader lê iguais aos do último bloco enviado, o bloco é mantido. Mas ele continuava
+marcado como válido no tamanho antigo inteiro. Sequência do jogo em todo quadro de interface: quadro roxo (o shader lê
+até c33; bloco enviado com c32 roxo), texto (o shader do texto lê menos registradores; o prefixo é igual: bloco
+mantido e dado como atual), demais quadros (c32 branco nos registradores, mesma geração: bloco roxo reaproveitado).
+Correção: ao manter um bloco, ele passa a valer só até o tamanho comparado (para VS e PS). O mesmo defeito existe no
+sa2-nx; lá não apareceu porque os shaders daquele jogo não combinam assim.
+
+Verificado no PC: caixa cinza-escura, YES azul, NO laranja, contador de almas normal. O NRO foi refeito com a correção.

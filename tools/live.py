@@ -109,6 +109,13 @@ def main():
         if command == 'sheet':
             sheet(args[i + 1:])
             return
+        if command == 'trace':
+            # Needs DS2_TRACE_LIVE=1 (and DS2_TRACE_DUMP=1 for the images): the next frame is traced into the log.
+            os.makedirs(CAPTURES, exist_ok=True)
+            open(os.path.join(CAPTURES, 'trace_request'), 'w').close()
+            print('trace: requested')
+            i += 1
+            continue
         if command == 'pad' and i + 1 < len(args):
             pad(args[i + 1])
             i += 2
@@ -117,7 +124,7 @@ def main():
             i += 2
         elif command == 'snap':
             name = 'snap'
-            if i + 1 < len(args) and args[i + 1] not in ('pad', 'wait', 'snap'):
+            if i + 1 < len(args) and args[i + 1] not in ('pad', 'wait', 'snap', 'trace'):
                 name = args[i + 1]
                 i += 1
             snap(name)
