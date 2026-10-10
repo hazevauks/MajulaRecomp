@@ -504,3 +504,34 @@ tempo não servem para andar pelo mapa, e não dá para jogar à mão.
 lado há um abismo, para o outro ele voltou a encostar na mesma rocha. Com uma imagem a cada ~5 s e a câmera voltando
 para trás do personagem, cada passo "olhar e agir" leva mais de um minuto; achar a passagem para a cabana (onde ficam
 a cena e a criação do personagem) é questão de horas neste PC. Não foi além da área inicial.
+
+## Build para o Switch: o que esta máquina precisou (2026-10-10)
+
+Decisão do usuário: o PC (Vulkan por software) é fraco demais para seguir testando; os testes passam para o console.
+
+**O jogo (`tools\win\build_switch.ps1`).** O devkitPro daqui fica em `Downloads\devkitPro` e a variável `DEVKITPRO` do
+sistema vale `/opt/devkitpro` (caminho do MSYS2). O CMake relê o arquivo de toolchain dentro dos testes de compilador,
+onde `-DDEVKITPRO` não chega, e a configuração falhava com `libnx linker specs not found: /opt/devkitpro/libnx/
+switch.specs`; o script agora exporta o caminho do Windows. A configuração também exige o driver
+(`REXGLUE_SWITCH_NVK_SDK` com `lib/libvulkan.a`); para compilar os objetos enquanto o driver não existe, serve uma
+pasta com um `libvulkan.a` vazio (`out\nvk_stub`), e no fim reconfigura-se com o SDK de verdade (só o link refaz).
+Sem LTO nem PGO nesta fase (o `app/CMakeLists.txt` ainda não os liga).
+
+**O driver (NVK, Mesa).** Não há binário pronto: compila-se
+[danfromtico/mesa-switch](https://github.com/danfromtico/mesa-switch) no commit `1a8c1a66d6f` com o patch do nfsmw-nx
+(`_ref/nfsmw-nx/mesa/mesa-switch-nfsmw.patch`), em `_tools/mesa-switch` (fora do git). Os scripts foram escritos para
+um MSYS2 em `C:\msys64`; o que foi instalado e ajustado aqui:
+
+- MSYS2 em `C:\msys64` (winget `MSYS2.MSYS2`), e `C:\msys64\opt\devkitpro` como junção para `Downloads\devkitPro`;
+- pacotes: `flex bison git make patch diffutils pkgconf`; do MINGW64 `gcc meson ninja python python-mako python-yaml
+  python-packaging rust-bindgen pkgconf`; do CLANG64 `clang llvm lld libclc spirv-llvm-translator spirv-tools cmake
+  pkgconf cbindgen zlib zstd` (as ferramentas de host do Mesa são compiladas com o clang do CLANG64);
+- no MSYS2 do devkitPro: `switch-libexpat` e `switch-libzstd` (o Mesa precisa deles; não vinham instalados);
+- Rust por `rustup-init` dentro de `_tools/mesa-switch/build/deps/{cargo,rustup}` (onde os wrappers o procuram):
+  `stable-x86_64-pc-windows-gnu` com o alvo `aarch64-unknown-linux-gnu`;
+- `switch_native_tools_msys2.txt`: `cbindgen` em `clang64` (o arquivo apontava para `clangarm64`, a máquina do autor);
+- `windows_x64_host_cross_file_msys2.txt`: a entrada `cmake` aponta para um executável que não existe. Com o CMake
+  4.4 e o Windows em português, o Meson 1.12 quebra ao consultar o CMake numa dependência opcional (`libudev`:
+  `'utf-8' codec can't decode byte 0xba`, "This is a Meson bug"); nada nesse passo precisa do CMake;
+- execução, num shell MINGW64: `PATH=$PATH:/clang64/bin DEVKITPRO=C:/msys64/opt/devkitpro ALLOW_DIRTY=1
+  ./build-unified.sh` (com `NINJA` apontando para um wrapper `ninja -j2`, para dividir a máquina com o build do jogo).

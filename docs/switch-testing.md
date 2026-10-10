@@ -13,14 +13,13 @@ switch/ds2-nx/ds2.nro                  o jogo
 switch/ds2-nx/ds2.toml                 configuração (log ligado nestes testes)
 switch/ds2-nx/ds2_shaders.mesp         biblioteca de shaders do renderizador nativo
 switch/ds2-nx/ds2_shaders.mesp.idx
-switch/ds2-nx/game_root.nxpack         os arquivos do jogo num arquivo só (≈ 5,8 GB)
-switch/ds2-nx/game_root.nxidx          índice do pacote
+switch/ds2-nx/game_root/               os arquivos do jogo, soltos (121 arquivos, ≈ 5,8 GB)
 switch/ds2-nx/configs/                 configurações alternativas (ver abaixo)
 ```
 
-O cartão precisa estar em **exFAT ou FAT32 com suporte a arquivos grandes**: o `game_root.nxpack` passa de 4 GB. Em
-FAT32 puro ele não cabe; nesse caso me avise, que eu monto o pacote com a pasta `game_root/` solta (o console monta o
-pacote no primeiro boot).
+O cartão é **FAT32**, que não aceita arquivo de 4 GB ou mais: por isso o jogo vai como pasta `game_root/` e não como
+pacote único. O maior arquivo (`GameData1.bdt`) tem 2,8 GB e cabe. A cópia leva um tempo; confira no fim se os 121
+arquivos chegaram (o Windows às vezes interrompe cópias grandes para cartões).
 
 ## Como abrir
 

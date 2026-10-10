@@ -11,10 +11,10 @@ ds2_renderer_native = true
 ds2_render_height_handheld = 720
 ds2_render_height_docked = 720
 
-# Os arquivos do jogo num arquivo só (game_root.nxpack + .nxidx). Se só houver a pasta game_root/, o console monta o
-# pacote no primeiro boot (demora alguns minutos; aparece no log como "[pack] packing N %").
+# Os arquivos do jogo vão soltos na pasta game_root/ (121 arquivos, o maior com 2,8 GB): o conjunto tem 5,8 GB e um
+# pacote único não cabe num cartão FAT32 (limite de 4 GB por arquivo). O SDK já recusa montar o pacote nesse caso.
 asset_pack = true
-asset_pack_build = true
+asset_pack_build = false
 
 # Log completo em arquivo durante os testes.
 log_level = "info"
