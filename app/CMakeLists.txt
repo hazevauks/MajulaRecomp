@@ -40,6 +40,8 @@ set(DS2_SOURCES
     src/ds2_crash_log.cpp
     # Recordings of the game image for testing (cvar ds2_video_s; tools/frames_to_png.py makes a contact sheet).
     src/ds2_capture.cpp
+    # Profile collection of the PGO-instrumented Switch build (DS2_PGO=generate); empty otherwise.
+    src/ds2_pgo.cpp
     # Scripted pad for unattended test runs (cvar ds2_input_script; tools/win/boot_test.ps1 -Pad).
     src/ds2_input_script.cpp
     # Stage 2, phase A: wraps the game's Direct3D candidates and logs them (cvar ds2_d3d_trace, off by default).
@@ -174,8 +176,75 @@ if(REXGLUE_PLATFORM_SWITCH)
         set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/ds2_register.cpp"
             APPEND PROPERTY COMPILE_OPTIONS -O0)
     endif()
-    # The homebrew menu's entry. LTO, PGO, function ordering and the built-in settings come with the Switch stage
-    # (sa2-nx app/CMakeLists.txt has the full set).
+    # Switch compiler optimisations, from sa2-nx's app/CMakeLists.txt (which has them from nfsmw-nx and
+    # UnleashedRecomp-NX). Both are off unless asked for, so the everyday build stays the quick one:
+    #   - DS2_SWITCH_LTO: the recompiled game (ds2_recomp) and the app are compiled to GIMPLE (-flto
+    #     -fno-fat-lto-objects) and optimised as one program at the link (-flto=N -flto-partition=balanced, N =
+    #     DS2_SWITCH_LTO_JOBS parallel LTRANS jobs), with -fipa-pta. The link repeats -ffp-contract=off and
+    #     -fno-strict-aliasing (the LTRANS stage must not fuse what the compile stage kept apart). The SDK libraries
+    #     stay out.
+    #   - DS2_PGO=generate: an instrumented NRO that writes its branch counts to pgo/ on the SD card
+    #     (src/ds2_pgo.cpp; registered in a section, not by constructors: libgcov's exit-time files do not fit the
+    #     Switch). Value profiling is off: its shared lists are not safe without atomic updates.
+    #   - DS2_PGO=use: the counts merged on the PC (tools/win/pgo_merge.ps1). Code the sessions did not run is
+    #     compiled as without a profile (-fprofile-partial-training), and functions changed since the instrumented
+    #     build keep no profile (-Wno-coverage-mismatch). -fprofile-correction: the counts were taken without atomic
+    #     updates while several game threads ran the same code, so some blocks' counts do not add up.
+    # The profile is pgo/ at the root of the repository (DS2_PGO_DIR): one .gcda per object, named by the object's
+    # path in the build folder with # for each folder separator; -fprofile-prefix-path makes GCC use those relative
+    # names, so an instrumented build in one folder and the optimised build in another share the profile.
+    # xxHash is built with XXH_FORCE_MEMORY_ACCESS=0 in those builds: nfsmw-nx's LTO+PGO builds hit xxHash's default
+    # (a strict-aliasing violation) once it was inlined into a cache-key function (garbage keys).
+    option(DS2_SWITCH_LTO "Link-time optimisation of the game code and the app (Switch)" OFF)
+    set(DS2_SWITCH_LTO_JOBS "2" CACHE STRING "Parallel LTRANS jobs of the Switch LTO link")
+    option(DS2_SWITCH_IPA_PTA "-fipa-pta at the Switch LTO link" ON)
+    set(DS2_PGO "" CACHE STRING "Profile-guided optimisation of the Switch build: empty, generate or use")
+    set_property(CACHE DS2_PGO PROPERTY STRINGS "" generate use)
+    set(DS2_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo" CACHE PATH "Folder of the PGO profile (.gcda files)")
+    if(DS2_SWITCH_LTO OR DS2_PGO)
+        target_compile_definitions(ds2 PRIVATE XXH_FORCE_MEMORY_ACCESS=0)
+    endif()
+    if(DS2_SWITCH_LTO)
+        set(_ds2_lto_compile -flto -fno-fat-lto-objects)
+        set(_ds2_lto_link -flto=${DS2_SWITCH_LTO_JOBS} -flto-partition=balanced -ffp-contract=off -fno-strict-aliasing)
+        if(DS2_SWITCH_IPA_PTA)
+            list(APPEND _ds2_lto_compile -fipa-pta)
+            list(APPEND _ds2_lto_link -fipa-pta)
+        endif()
+        foreach(target ds2_recomp ds2)
+            if(TARGET ${target})
+                target_compile_options(${target} PRIVATE ${_ds2_lto_compile})
+            endif()
+        endforeach()
+        target_link_options(ds2 PRIVATE ${_ds2_lto_link})
+        message(STATUS "ds2: Switch LTO on (${DS2_SWITCH_LTO_JOBS} LTRANS jobs, -fipa-pta ${DS2_SWITCH_IPA_PTA})")
+    endif()
+    get_filename_component(_ds2_pgo_dir "${DS2_PGO_DIR}" ABSOLUTE)
+    file(TO_NATIVE_PATH "${_ds2_pgo_dir}" _ds2_pgo_dir)
+    file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}" _ds2_pgo_prefix)
+    if(DS2_PGO STREQUAL "generate")
+        set(_ds2_pgo "-fprofile-generate=${_ds2_pgo_dir}" "-fprofile-prefix-path=${_ds2_pgo_prefix}"
+                     -fno-profile-values -fprofile-update=single -fprofile-info-section=gcov_info)
+        target_compile_definitions(ds2 PRIVATE DS2_PGO_GENERATE=1)
+    elseif(DS2_PGO STREQUAL "use")
+        if(NOT EXISTS "${DS2_PGO_DIR}")
+            message(FATAL_ERROR "DS2_PGO=use: no profile in ${DS2_PGO_DIR}")
+        endif()
+        set(_ds2_pgo "-fprofile-use=${_ds2_pgo_dir}" "-fprofile-prefix-path=${_ds2_pgo_prefix}" -fprofile-correction
+                     -fno-profile-values -fprofile-partial-training -Wno-missing-profile -Wno-coverage-mismatch)
+    elseif(DS2_PGO)
+        message(FATAL_ERROR "DS2_PGO must be empty, generate or use (got ${DS2_PGO})")
+    endif()
+    if(DS2_PGO)
+        foreach(target ds2_recomp ds2)
+            if(TARGET ${target})
+                target_compile_options(${target} PRIVATE ${_ds2_pgo})
+            endif()
+        endforeach()
+        target_link_options(ds2 PRIVATE ${_ds2_pgo})
+        message(STATUS "ds2: PGO ${DS2_PGO}")
+    endif()
+    # The homebrew menu's entry.
     # The icon is not in the repository (game artwork): assets/icon.jpg, a 256x256 baseline JPEG, when it is there;
     # libnx's default icon otherwise.
     set(DS2_NRO_ICON "")

@@ -1023,3 +1023,45 @@ de exceção; os que forem funções chamadas só por ponteiro montado de um jei
 como esta queda, um por vez. A varredura estrutural (`tools/gap_fixpoint.py`, que declara todo buraco que seja uma
 folha completa, com ou sem referência) ainda não foi rodada neste jogo; ela pode mexer em muitos arquivos gerados,
 então fica para junto da recompilação completa do PGO/LTO.
+
+## Varredura estrutural de funções sem dono e a preparação do PGO/LTO (2026-10-10/11)
+
+O décimo terceiro build passou do ponto da queda (`out/switch_logs/014/ds2_020.log`, sem `FATAL`).
+
+**Varredura estrutural** (`tools/gap_fixpoint.py`, portada para o Windows: acha o `rexglue.exe`, monta o manifesto
+da passagem com caminhos relativos, chama `tools/codegen.ps1` e depois `tools/post_codegen.py` com o próprio
+interpretador; `--dry-run` para só contar). Ela declara como função todo buraco de 8 a 1.024 bytes cujo código
+gerado é uma folha completa (cabe no buraco, termina em `blr`/`bctr` ou desvio de cauda, não usa pilha nem LR, não
+lê registrador indefinido na entrada), com ou sem referência conhecida.
+
+Dois tipos de buraco falso apareceram e passaram a ser descartados:
+
+- `tools/find_gaps.py` conta uma instrução por linha de comentário; uma função com tabela de saltos dentro do código
+  (as palavras da tabela não têm comentário) parece mais curta do que é, e os últimos bytes dela, o código dos casos,
+  aparecem como buraco. Declarar uma função ali cortaria o switch dos seus casos. Critério: o buraco contém um rótulo
+  `loc_` do código gerado. 33 candidatos descartados (exemplo: `sub_8328FA30`, tabela de 17 entradas em 0x8328FA58);
+- tabela de endereços lida como instruções: metade ou mais das palavras são endereços alinhados dentro do código.
+
+Resultado: passagem 1, 901 buracos novos, 365 aceitos; passagem 2, 4 novos, 3 aceitos; passagem 3, ponto fixo.
+**368 funções** novas em `app/overrides.toml` (710 entradas no total): 226 são um `blr` sozinho (funções vazias),
+111 terminam em `bctr` (encaminhamento por vtable, como as duas da queda), o resto são getters, setters e thunks.
+`tools/switch_check.py` depois da regeneração: 0 tabelas truncadas, 0 alvos errados, 0 perdidas. 220 arquivos
+gerados mudaram (cerca de 110 unidades de compilação).
+
+Limite conhecido: a varredura só aceita folhas. Uma função sem dono que use pilha, ou cujo endereço seja calculado
+de um jeito que nenhuma das varreduras vê, ainda apareceria como `Call to invalid or unregistered function`.
+
+**PGO/LTO, o que foi montado** (de `sa2-nx`):
+
+- `app/src/ds2_pgo.cpp`: no build instrumentado grava as contagens em `pgo/ds2_pgo_<N>.stream` ao lado do NRO, a
+  cada 2 minutos, ao perder o foco (menu HOME) e ao sair; `Ds2App` chama `Start`/`DumpNow`/`Stop`;
+- `app/CMakeLists.txt`: `DS2_SWITCH_LTO` (desligado por padrão), `DS2_SWITCH_LTO_JOBS`, `DS2_SWITCH_IPA_PTA`,
+  `DS2_PGO` (`generate`/`use`), `DS2_PGO_DIR`. Antes o script passava `DS2_SWITCH_LTO_JOBS` e o CMake ignorava;
+- `tools/win/build_switch.ps1`: `-BuildDir` e `-Lto`. Cada tipo de build tem a sua pasta, porque trocar as flags de
+  uma pasta recompila o jogo inteiro: `out\nx` (o do dia a dia), `out\nx_pgo` (instrumentado), `out\nx_rel`
+  (otimizado). O perfil casa entre pastas por causa do `-fprofile-prefix-path`;
+- `tools/win/pgo_merge.ps1`: acha o devkitPro como o script de build e aceita `-BuildDir` e `-Python`.
+
+Sobre o LTO neste jogo: no codegen clássico as chamadas entre funções do jogo passam por símbolos fracos
+(`sub_X` é um apelido fraco de `__imp__sub_X`), então o ganho de inlining entre arquivos pode ser pequeno; no sa2-nx
+ele vem junto do codegen "optimised" (chamadas diretas), que aqui ainda não foi feito. Fica medido, não presumido.

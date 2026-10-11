@@ -15,11 +15,18 @@
 # merge-stream ADDS to .gcda files already there: a second run with the same streams would count them twice, so it
 # stops when the profile folder or out\nx already has .gcda files (move them aside first; pgo\ holds the released
 # NRO's profile).
-param([Parameter(Mandatory = $true, Position = 0)][string]$Streams, [string]$Out = '')
+param([Parameter(Mandatory = $true, Position = 0)][string]$Streams, [string]$Out = '',
+      [string]$BuildDir = 'out\nx_pgo', [string]$Python = 'python')
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$build = Join-Path $root 'out\nx'
+# -BuildDir: the folder the instrumented NRO was built in (tools\win\build_switch.ps1 -BuildDir out\nx_pgo -Pgo
+# generate). -Python: the interpreter for tools\pgo_summary.py (plain `python` may be the Windows Store alias).
+$build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
 if (-not $Out) { $Out = Join-Path $root 'pgo' }
-$tool = 'C:\devkitPro\devkitA64\bin\aarch64-none-elf-gcov-tool.exe'
+# devkitPro as tools\win\build_switch.ps1 finds it (DS2_DEVKITPRO names an install that is not at C:\devkitPro).
+$devkitpro = @($env:DS2_DEVKITPRO, $env:DEVKITPRO, 'C:/devkitPro', (Join-Path $HOME 'Downloads\devkitPro')) |
+    Where-Object { $_ -and (Test-Path (Join-Path $_ 'devkitA64')) } | Select-Object -First 1
+if (-not $devkitpro) { throw 'devkitPro not found: set DS2_DEVKITPRO to its folder (the one holding devkitA64)' }
+$tool = Join-Path $devkitpro 'devkitA64\bin\aarch64-none-elf-gcov-tool.exe'
 if (-not (Test-Path $tool)) { throw "gcov-tool not found: $tool" }
 $files = Get-ChildItem -Path $Streams -Filter 'ds2_pgo_*.stream' -File | Sort-Object Name
 if (-not $files) { throw "no ds2_pgo_*.stream in $Streams" }
@@ -29,7 +36,7 @@ if (Get-ChildItem -Path $Out -Filter *.gcda -File | Select-Object -First 1) {
     throw "$Out already has .gcda files: move them aside first (merge-stream would add to them)"
 }
 if ((Test-Path $build) -and (Get-ChildItem -Path $build -Filter *.gcda -Recurse -File | Select-Object -First 1)) {
-    throw "out\nx already has .gcda files: move them aside first (merge-stream would add to them)"
+    throw "$build already has .gcda files: move them aside first (merge-stream would add to them)"
 }
 foreach ($f in $files) {
     "merging $($f.Name) ($([math]::Round($f.Length / 1MB, 1)) MB)"
@@ -48,6 +55,6 @@ if (Test-Path $build) {
 if ($moved) { "$moved file(s) moved from out\nx to $Out" }
 $count = (Get-ChildItem -Path $Out -Filter *.gcda -File).Count
 if (-not $count) { throw "no .gcda file in $Out after merging: the streams name another folder (merge on the PC that built the instrumented NRO)" }
-& python (Join-Path $root 'tools\pgo_summary.py') $Out $files.Count
+& $Python (Join-Path $root 'tools\pgo_summary.py') $Out $files.Count
 if ($LASTEXITCODE) { throw 'pgo_summary.py failed' }
 "$($files.Count) session(s) merged into $count file(s) in $Out"

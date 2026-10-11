@@ -15,6 +15,13 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 $nro = Join-Path $root 'out\nx\ds2.nro'
 if (-not (Test-Path $nro)) { throw "no NRO at ${nro}: run tools\win\build_switch.ps1 first" }
 Copy-Item -Force $nro (Join-Path $dest 'ds2.nro')
+# The other builds, when they exist (tools\win\build_switch_all.ps1): the PGO-instrumented NRO, which collects the
+# profile on the console, and the optimised one (LTO, and PGO when pgo\ has a profile). They read the same ds2.toml,
+# game files and saves as ds2.nro.
+foreach ($extra in @(@('out\nx_pgo\ds2.nro', 'ds2-pgo.nro'), @('out\nx_rel\ds2.nro', 'ds2-opt.nro'))) {
+    $from = Join-Path $root $extra[0]
+    if (Test-Path $from) { Copy-Item -Force $from (Join-Path $dest $extra[1]) }
+}
 Copy-Item -Force (Join-Path $root 'app\ds2_switch.toml') (Join-Path $dest 'ds2.toml')
 Copy-Item -Force (Join-Path $root 'docs\switch-testing.md') (Join-Path $dest 'LEIA-ME.md')
 # The shader package the PC build was verified with (out\pc), not a stale build output.

@@ -17,6 +17,7 @@
 #include "cpu/ds2_enhancements.h"
 #include "ds2_capture.h"
 #include "ds2_input_script.h"
+#include "ds2_pgo.h"
 #include "me/ds2_render_mode.h"
 #include "me/me_native_system.h"
 
@@ -105,9 +106,19 @@ class Ds2App : public rex::ReXApp {
       const auto* graphics = rt ? rt->graphics_system() : nullptr;
       return graphics ? graphics->presenter() : nullptr;
     });
+    // The PGO-instrumented build (DS2_PGO=generate) saves its counts to pgo/ every 2 minutes (nothing otherwise).
+    ds2::pgo::Start();
   }
 
-  void OnShutdown() override { ds2::capture::Stop(); }
+  // The PGO-instrumented build saves its counts when the game loses focus (HOME menu): it may be closed from there.
+  void OnWindowFocusChanged(bool focused) override {
+    if (!focused) ds2::pgo::DumpNow();
+  }
+
+  void OnShutdown() override {
+    ds2::capture::Stop();
+    ds2::pgo::Stop();
+  }
 
   // Analysis aid: with DS2_DUMP_IMAGE=<file>, write the loaded guest image (image_base..image_base+image_size) so
   // code pointers stored in data can be scanned for (tools/pointer_scan.py). Does nothing unless the variable is set.

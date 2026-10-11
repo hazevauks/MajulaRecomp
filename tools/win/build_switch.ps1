@@ -2,7 +2,11 @@
 # The generated code must already exist (tools\codegen.ps1 with the PC SDK): a cross build cannot run rexglue.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\build_switch.ps1 [-Jobs 8] [-LtoJobs 8] [-Reconfigure]
-#       [-Pgo none|generate|use]
+#       [-Pgo none|generate|use] [-Lto] [-BuildDir out\nx]
+# -BuildDir: each kind of build keeps its own folder, because switching the flags of one folder recompiles the whole
+# game (about 100 minutes on a 2-core PC): out\nx the everyday build (no LTO, no PGO), out\nx_pgo the instrumented
+# one (-Pgo generate), out\nx_rel the optimised one (-Lto and/or -Pgo use). -Lto turns link-time optimisation on in
+# that folder (it stays on there until -Reconfigure without it).
 # NVK_SDK (environment) overrides the Mesa SDK folder (it must contain lib\libvulkan.a).
 # -Pgo (profile-guided optimisation, 2026-10-08): generate = the instrumented NRO that collects counts on the console
 # (app/src/ds2_pgo.cpp); use = the optimised NRO from the counts tools\win\pgo_merge.ps1 merged; none = neither.
@@ -11,7 +15,9 @@ param(
     [int]$Jobs = 8,
     [int]$LtoJobs = 8,
     [switch]$Reconfigure,
-    [ValidateSet('', 'none', 'generate', 'use')][string]$Pgo = ''
+    [ValidateSet('', 'none', 'generate', 'use')][string]$Pgo = '',
+    [switch]$Lto,
+    [string]$BuildDir = 'out\nx'
 )
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 . (Join-Path $PSScriptRoot 'env.ps1')  # VS CMake and Ninja on PATH (the compilers come from the toolchain file)
@@ -27,7 +33,7 @@ $devkitpro = $devkitpro -replace '\\', '/'
 # it falls back to the environment: the MSYS path there made the configure fail ("libnx linker specs not found:
 # /opt/devkitpro/libnx/switch.specs"). The whole build gets the Windows path.
 $env:DEVKITPRO = $devkitpro
-$build = Join-Path $root 'out\nx'
+$build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
 $glslang = Join-Path $root 'out\glslang\StandAlone\glslangValidator.exe'  # host tool: SPIR-V is portable
 if ($Reconfigure -or -not (Test-Path (Join-Path $build 'CMakeCache.txt'))) {
     & cmake -S (Join-Path $root 'app') -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release `
@@ -49,6 +55,7 @@ if (-not (Test-Path (Join-Path $make 'make.exe'))) {
 $env:PATH = "$make;$env:PATH"
 $pgoArgs = @()
 if ($Pgo) { $pgoArgs = @("-DDS2_PGO=$(if ($Pgo -eq 'none') { '' } else { $Pgo })") }
+if ($Lto) { $pgoArgs += '-DDS2_SWITCH_LTO=ON' }
 & cmake $build "-DDS2_SWITCH_LTO_JOBS=$LtoJobs" @pgoArgs | Out-Null
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 & cmake --build $build -j $Jobs
