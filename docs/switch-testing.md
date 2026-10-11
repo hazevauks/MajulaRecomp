@@ -4,6 +4,18 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo segundo build (2026-10-10): rodada 5, CPU do renderizador (índices)
+
+Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/` (o `ds2.toml` volta a não amostrar pilhas).
+
+O perfil mostrou que a thread do renderizador gastava 28 % do tempo convertendo índices de geometria um por um,
+porque o jogo usa um formato (tiras com reinício) que o caminho rápido herdado não aceitava. Agora aceita.
+
+Jogue normalmente, sem overclock; uns 30 s parado em algum ponto e o resto andando. O que observar: geometria
+faltando, triângulos esticados pela tela ou objetos deformados (seria sinal de erro nessa conversão).
+
+Depois a pasta `logs/`.
+
 ## Rodada de perfil de CPU (2026-10-10): só o `ds2.toml` muda
 
 Copie por cima **só o `ds2.toml`** (o `ds2.nro` é o mesmo do décimo primeiro build; não troque).
@@ -19,8 +31,7 @@ Uma sessão de ~3 minutos, sem overclock:
 
 Depois a pasta `logs/` (o arquivo que importa é `logs/rex/rex_profile.log`).
 
-Para jogar sem a amostragem: apague o `ds2.toml`, copie `configs/ds2_sem_perfil.toml` para a pasta do jogo e renomeie
-para `ds2.toml`.
+Desde o décimo segundo build o `ds2.toml` normal já vem sem a amostragem; ela fica em `configs/ds2_perfil.toml`.
 
 ## Décimo primeiro build (2026-10-10): depois da queda do sistema
 

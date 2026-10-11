@@ -779,6 +779,9 @@ DS2_ENHANCEMENT(g_entry_hash, ds2_cpu_ring_entry_hash, ds2::enh::kCpu, true,
 // resolve. The 8x8 centre of the title card's mission box is loaded where a 512x512 character shadow map had been
 // resolved during the Knuckles event; it was taken for the shadow map and dropped (the box lost its red fill for
 // 2.3 s). It now takes the ordinary texture path (guest memory), as the 8 pieces around it always did.
+REXCVAR_DEFINE_BOOL(ds2_native_indices16_restart, true, "DS2",
+                    "16-bit indices with primitive restart at 0xFFFF take the fast index path (NEON swap, per-frame "
+                    "cache, 16-bit upload). false = the general loop, widened to 32 bits, as sa2-nx");
 REXCVAR_DEFINE_BOOL(ds2_native_position_scale, true, "DS2",
                     "At a render resolution other than the game's, the pixel position a pixel shader reads is given "
                     "in the game's pixels (host position * 4 / q). false = host pixels, as sa2-nx (Dark Souls II's "
@@ -3054,7 +3057,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (banjo_index_layouts_.insert(uint32_t(order) | (indices32 ? 4u : 0u) | (reset ? 8u : 0u)).second)
         REXLOG_INFO("[native] index layout seen: {} bit, endian {}, restart {}, type {}", indices32 ? 32 : 16,
                     uint32_t(order), reset, type);
-      if (!indices32 && !reset && !displacement && !quads && !fan &&
+      // ds2-nx (ds2_native_indices16_restart): Dark Souls II draws nearly everything as 16-bit triangle strips with
+      // primitive restart at 0xFFFF. That is also Vulkan's restart value for 16-bit indices, so they take the fast
+      // path as they are (swapped with NEON, cached per frame, uploaded as 16 bits); only the largest index has to
+      // leave the restart values out. In the general loop below (one index at a time, widened to 32 bits, never
+      // cached) the ring thread spent 28 % of its time on the console.
+      const bool restart16 = reset && reset_index == 0xFFFFu && REXCVAR_GET(ds2_native_indices16_restart);
+      if (!indices32 && (!reset || restart16) && !displacement && !quads && !fan &&
           (order == xenos::Endian::k8in16 || order == xenos::Endian::kNone)) {
         // The normal case in MASSEFFECT: 16 bits without restart or offset. They are uploaded as 16 bits, with a
         // branch-free loop the compiler can vectorize.
@@ -3097,6 +3106,17 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         if (!indices_cache_hit) {
           // With hand-written NEON and its guard (IndicesFrom16, ds2_native_indices_neon).
           IndicesFrom16(data, count, output, order == xenos::Endian::k8in16, min, max);
+          if (restart16 && max == 0xFFFFu) {
+            // The largest index that is not a restart (a branch-free pass over the converted indices). When every
+            // index is a restart it stays 0 and the smallest 0xFFFF: "resets only" below.
+            uint32_t largest = 0;
+            for (uint32_t i = 0; i < count; ++i) {
+              const uint32_t v = output[i];
+              largest = std::max(largest, v == 0xFFFFu ? 0u : v);
+            }
+            max = largest;
+            ++indices16_restart_draws_;
+          }
         }
         vmin = min;
         vmax = max;
@@ -12984,6 +13004,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     uint32_t scale = 0;  // ds2-nx: Scale mode: the render scale q, bit 8 = with the X grid
   };
   uint64_t modules_position_scale_ = 0;  // ds2-nx: pixel shaders rewritten for the render scale (log limit)
+  uint64_t indices16_restart_draws_ = 0;  // ds2-nx: draws converted by the fast path with restart values
   uint64_t position_scale_declined_ = 0;  // ds2-nx: lookups of a pixel shader the rewrite does not cover
   std::mutex modules_depth_mutex_;
   std::unordered_map<VkShaderModule, ModuleCodeDepth> codes_modules_depth_;

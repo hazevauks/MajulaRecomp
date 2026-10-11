@@ -919,3 +919,69 @@ funções esse tempo vai (código recompilado útil, esperas ativas do jogo, ou 
    código recompilado levou ~100 minutos; um link com LTO do programa inteiro refaz esse trabalho a cada mudança no
    renderizador, o que não cabe no ciclo de rodadas. Caminho previsto: otimizar o código recompilado uma vez (ele não
    muda entre rodadas) e manter o renderizador fora do LTO.
+
+## Perfil de CPU com pilhas no console e a pergunta do deko3d (2026-10-10)
+
+`out/switch_logs/012/` (sessão `ds2_018`, 540p, sem overclock, com `switch_profile_stacks`; ELF do build em
+`out/switch_elf/b08b0f7/`): 1 minuto na fogueira, o resto do tutorial até a fogueira de Majula. Com a amostragem
+ligada a CPU fica em 297 % de 300 % mesmo parado. Relatório: `python tools/switch_profile_report.py
+out/switch_logs/012/rex_profile.log --elf out/switch_elf/b08b0f7/ds2.elf --max-fps 30` (saída em `report.txt`).
+
+**Onde a CPU vai** (16.462 amostras em execução, 35 intervalos abaixo de 30 quadros/s):
+
+| thread | amostras | parte |
+|---|---|---|
+| Main XThread (jogo) | 4.024 | 24,4 % |
+| GPU ring native (o renderizador) | 3.452 | 21,0 % |
+| MtTaskWorkerThread (jogo) | 2.875 | 17,5 % |
+| XThread do jogo (B11F4AC0) | 2.510 | 15,2 % |
+| DrawCommandThread (jogo) | 917 | 5,6 % |
+| thread "?" no núcleo 0: a gravação adiada, onde rodam as chamadas Vulkan (NVK) | 603 | 3,7 % |
+| XMA Decoder | 403 | 2,4 % |
+| o resto (16 threads) | ~1.680 | ~10 % |
+
+O código recompilado do jogo soma cerca de dois terços. Na thread principal o perfil é plano (a função mais quente
+tem 1,5 %; pelas pilhas, `sub_82DACC38` 15 % e `sub_82DBB028` 9 % inclusivos): não há uma espera ativa dominando.
+
+**A thread do anel** (3.452 amostras):
+
+| função | parte |
+|---|---|
+| `DrawsVulkanImpl::Draw` (tempo próprio) | 36,4 % |
+| `CopyVertices` | 8,1 % |
+| `memmove` | 5,9 % |
+| `WriteConstantRunRaw`, `armDCacheClean_L0` | 3,0 % cada |
+| `Type3`, `_free_r`, fingerprints, `RexGmQueryProtect`, identidade de shaders, `PublishEDRAM4`... | 2,5 % ou menos cada |
+
+Dentro de `Draw`, 969 das 1.257 amostras (77 %) caem em 0x90 bytes de código: o laço geral de conversão de índices
+(`rev16`, soma da base, mínimo/máximo, teste do valor de reinício, um índice por vez, saída em 32 bits). O jogo
+desenha quase tudo como tiras de triângulos de 16 bits com reinício de primitiva em 0xFFFF (`index layout seen:
+16 bit, endian 1, restart true, type 6`), e o caminho rápido herdado (NEON, cache por quadro, envio em 16 bits)
+só aceitava índices sem reinício. Isso é 28 % da thread do anel, ~6 % de toda a CPU.
+
+**Correção** (`ds2_native_indices16_restart`, padrão `true`): 0xFFFF também é o valor de reinício do Vulkan para
+índices de 16 bits, então essas tiras passam pelo caminho rápido como estão; só o maior índice é recalculado sem os
+valores de reinício. No PC a geometria sai igual (captura no ninho de troca), sem erro novo de validação.
+
+**deko3d** (documentos do nfsmw-nx, ramo `deko3d-implementation`: `docs/HowToDeko3d.md` e
+`docs/deko3d-devlog.md`). O que eles relatam: no NFS MW a thread do anel gastava ~9 µs por desenho, ~3,4 µs dentro
+do NVK (pipeline, descriptor sets, draw), e o deko3d tira esse custo e as paradas de criação de pipeline; chegou a
+35,2 quadros/s a 960x540 contra 26-29 do NVK na mesma faixa. O custo: backend novo (~13 mil linhas lá), caminho de
+shaders HLSL → SPIR-V → SPIRV-Cross → GLSL → uam → DKSH com mudanças no tradutor, nada disso roda no PC (só no
+console), e na primeira comparação o deko3d precisou de quase o dobro de GPU até as economias do caminho NVK serem
+portadas (35-43 ms contra 19-24).
+
+Aqui a conta é outra:
+
+- o driver (NVK e o código comum do Vulkan) roda na thread da gravação adiada e soma **3,7 % da CPU**; é o teto do
+  que o deko3d tira diretamente, mais uma parte pequena da thread do anel (`PipelineFor` 1,0 %, enfileiramento
+  ~1 %);
+- a thread do anel gasta ~60 µs por desenho, seis vezes o total do NFS MW, e a maior parte é código nosso que
+  independe da API (índices, vértices, constantes, EDRAM);
+- dois terços da CPU são o jogo recompilado, que o deko3d não toca;
+- o renderizador deste jogo depende da lógica de EDRAM (vistas apelidadas, conversões por shader de fragmento e de
+  computação, ZCULL com patch próprio), toda escrita contra Vulkan e conferida no PC com lavapipe.
+
+Conclusão registrada: deko3d não é o próximo passo para este jogo; fica como opção para quando o renderizador e o
+código do jogo estiverem enxutos e o driver passar a pesar. Ordem atual: índices (feito), vértices/`memmove`,
+constantes, depois PGO/LTO do código recompilado.
