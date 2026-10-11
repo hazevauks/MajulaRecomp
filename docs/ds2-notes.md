@@ -1099,3 +1099,56 @@ com `-Wmissing-profile -Wcoverage-mismatch` não avisa nada. `tools/check_switch
 conhecidos, nenhum fmla vetorial; os fmadd escalares sobem de 10.499 para 13.650, cópias dos `std::fma` do próprio
 jogo por inlining). ELF em `out/switch_elf/pgo_lto_1/`; o do LTO sozinho em `out/switch_elf/lto_only/`. Nenhum dos
 dois foi rodado no console ainda.
+
+## PGO + LTO medido no console, e 540p contra 720p (2026-10-11)
+
+`out/switch_logs/016/`: `ds2_025` com o `ds2-opt.nro` (20 min, save novo) e `ds2_026` com o `ds2.nro` (8 min), sem
+overclock, sem queda e sem anomalia relatada. Em três pontos parados (o matagal do início, dentro da casa das
+firekeepers, a vista de Majula ao sair de Things Betwixt) quem jogou ficou ~30 s a 540p, trocou com L3 + R3 e ficou
+~50 s a 720p. A troca ao vivo funcionou no console (6 trocas por sessão no log). Janelas de 10 s inteiras dentro de
+cada trecho:
+
+| ponto | resolução | `ds2.nro` | `ds2-opt.nro` | ganho |
+|---|---|---|---|---|
+| 1 matagal | 540p | 15,5 | 16,2 | +5 % |
+| 1 matagal | 720p | 11,8 | 11,8 | 0 |
+| 2 casa | 540p | 15,8 | 19,0 | +20 % |
+| 2 casa | 720p | 12,2 | 13,0 | +7 % |
+| 3 vista de Majula | 540p | 15,3 | 17,1 | +12 % |
+| 3 vista de Majula | 720p | 12,5 | 12,7 | +2 % |
+
+(quadros por segundo). Onde a thread do anel não está esperando a GPU, o custo por desenho caiu de 44,8-48,6 para
+41,7-41,8 µs.
+
+**O que limita em cada caso.** A 720p a GPU não tem folga (2-3 ms parada por quadro) nos dois builds: o ganho de CPU
+não aparece. A 540p o `ds2-opt.nro` no ponto 1 também encosta na GPU (1,8 ms parada; a cena custa 32 ms ali, com o
+mato). Nos pontos 2 e 3 o build normal deixava a GPU 7,5 e 11,6 ms parada, e o otimizado aproveita.
+
+**540p contra 720p** (mesmo build, mesmo ponto): de +31 % a +46 % de quadros por segundo a 540p. Por categoria de GPU,
+720p → 540p: `edram_alias` 24,6-30,4 → 14,1-17,4 ms, cena 30-37 → 24-32 ms.
+
+**Próximo alvo de GPU: `edram_alias`.** São 14-17 ms por quadro a 540p (um quarto do quadro) e 25-30 a 720p, fixos em
+todos os pontos. Pelos tempos por passe da rodada 4, a categoria é dominada por passes cujo primeiro desenho usa
+`VS n3` com `PS n720` e `PS n184` na superfície 4x apelidada do alvo principal: desenhos de tela cheia do jogo feitos
+por amostra (não são Clears), seguidos da conversão do alvo inteiro para a vista de 1 amostra. Ainda não investigado.
+
+## Mesa 26.2.4 (2026-10-11)
+
+Quem joga deixou na raiz do projeto `mesa-26.2.4-switch-unified-horizon-sdk.zip` (um SDK já compilado, mesmo layout
+do nosso: `opt/devkitpro/portlibs/switch`). Extraído em `_tools/mesa-26.2.4-sdk/`. Comparando as cadeias de texto das
+duas `libvulkan.a`:
+
+| | atual (`_tools/mesa-switch`) | zip |
+|---|---|---|
+| versão | Mesa 26.2.1 (git-1a8c1a66d6) + patch do nfsmw-nx | Mesa 26.2.4 (git-606441c90e) |
+| ZCULL (plano por imagem de profundidade) | sim (`ZCULL: plano de ...`) | não (só os nomes dos registradores) |
+| `NVK_SWITCH_DIBUJO` (caminho de desenho mais barato, medição por desenho) | sim | não |
+| `NVK_SWITCH_DYN_UBO_DELTA` (set 4 por diferenças) | sim | não |
+| `NVK_COPY_ENGINE`, `NVK_SUBTILING_KNOB`, `NVK_SHADER_STATS` | sim | não |
+| `NVK_SWITCH_CPU_WRITE_MEM_UNCACHED`, `_MAPPED_COMPLETION`, `_NO_UBO_CBUF`, `_PERF_LOG` | sim | sim |
+
+Ou seja, é o mesa-switch mais novo sem as mudanças de driver do StevensND, que são as que este renderizador (via
+sa2-nx) usa; o `mesa/` do nfsmw-nx continua em 26.2.1. O ZCULL sozinho valeu ~8 % de GPU aqui (137,9 → 127,2 ms).
+Para decidir com medida, um NRO do build do dia a dia ligado contra o SDK novo (`ds2-mesa264.nro`) vai para um A/B
+no console; se o driver novo for melhor mesmo sem os patches, o passo seguinte é portar o patch do nfsmw-nx para o
+26.2.4.
