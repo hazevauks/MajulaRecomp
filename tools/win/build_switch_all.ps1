@@ -7,12 +7,14 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\build_switch_all.ps1 [-Steps 1,2,3] [-Jobs 4] [-LtoJobs 2]
 # NVK_SDK (environment) as for tools\win\build_switch.ps1.
-param([int[]]$Steps = @(1, 2, 3), [int]$Jobs = 4, [int]$LtoJobs = 2)
+# -Steps is text ("2,3"): with -File, PowerShell reads 2,3 into an [int[]] parameter as the single number 23.
+param([string]$Steps = '1,2,3', [int]$Jobs = 4, [int]$LtoJobs = 2)
+$stepList = @($Steps -split '[, ]+' | Where-Object { $_ } | ForEach-Object { [int]$_ })
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $log = Join-Path $root 'out\build_switch_all.log'
 $build = Join-Path $PSScriptRoot 'build_switch.ps1'
 function Step([int]$n, [string]$name, [string]$dir, [string[]]$more) {
-    if ($Steps -notcontains $n) { return }
+    if ($stepList -notcontains $n) { return }
     $started = Get-Date
     Add-Content $log "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') step ${n} (${name}): start"
     $stepLog = Join-Path $root "out\build_switch_all_$n.log"
@@ -23,7 +25,7 @@ function Step([int]$n, [string]$name, [string]$dir, [string[]]$more) {
     $size = if (Test-Path $nro) { (Get-Item $nro).Length } else { 0 }
     Add-Content $log "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') step ${n} (${name}): exit $code after $minutes min, NRO $size bytes"
 }
-Add-Content $log "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ---- build_switch_all: steps $($Steps -join ',')"
+Add-Content $log "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ---- build_switch_all: steps $($stepList -join ',')"
 Step 1 'everyday' 'out\nx' @()
 Step 2 'PGO generate' 'out\nx_pgo' @('-Pgo', 'generate')
 $rel = @('-Lto')

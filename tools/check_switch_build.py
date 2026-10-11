@@ -28,7 +28,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Read in the generated code: sub_82BE8748 and sub_828FC278; the other three have the same shape in the disassembly
 # (a compare of two unchanged registers before the branch). A branch-to-self anywhere else is a polling loop that lost
 # its barrier.
-KNOWN_HALTS = ['sub_828FC278', 'sub_82B11CB8', 'sub_82BE8748', 'sub_82C3FAA0', 'sub_82DE5A18']
+# Two more of the same kind show as "b ." only in the PGO-instrumented build (2026-10-11; the plain build compiles them
+# as a compare and a conditional branch): sub_8285E1D0, a copy of a quoted string that stops reading at 512 bytes and
+# then compares the last byte with '"' forever when there was no quote (read in the generated code), and sub_82B482D8
+# (in the disassembly: a test of an unchanged register's low byte before the branch, no memory access on that path).
+KNOWN_HALTS = ['sub_828FC278', 'sub_82B11CB8', 'sub_82BE8748', 'sub_82C3FAA0', 'sub_82DE5A18',
+               'sub_8285E1D0', 'sub_82B482D8']
 DEVKITA64 = next((d + '/devkitA64/bin/' for d in (os.environ.get('DS2_DEVKITPRO', ''), os.environ.get('DEVKITPRO', ''),
                                                   'C:/devkitPro', os.path.expanduser('~/Downloads/devkitPro'),
                                                   '/opt/devkitpro')

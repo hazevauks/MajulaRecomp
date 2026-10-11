@@ -4,6 +4,42 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo quarto build (2026-10-11): funções preventivas e o início do PGO
+
+Na pasta do pacote há agora até três programas. Todos usam o mesmo `ds2.toml`, os mesmos arquivos do jogo e os
+mesmos saves; copie os três por cima (os que existirem):
+
+| arquivo | o que é | para quê |
+|---|---|---|
+| `ds2.nro` | o build normal, com 368 funções pequenas do jogo declaradas de forma preventiva | jogar no dia a dia |
+| `ds2-pgo.nro` | o build **instrumentado**: conta quais trechos do código rodam | uma sessão de coleta (abaixo) |
+| `ds2-opt.nro` | o build com LTO (otimização em tempo de link), quando estiver na pasta | comparar com o `ds2.nro` |
+
+No menu do homebrew, entre na pasta `ds2-nx` para escolher qual abrir.
+
+### 1. `ds2.nro`
+
+Jogue normalmente. As 368 funções novas são do mesmo tipo da que derrubou o jogo na floresta (funções vazias,
+getters e atalhos de vtable que nada chama diretamente); foram declaradas antes de alguma fazer falta. Se o jogo
+fechar e voltar ao menu do console, a pasta `logs/` continua dizendo qual endereço faltou.
+
+### 2. A sessão de coleta com o `ds2-pgo.nro`
+
+Este build é **mais lento** (cada desvio do código é contado) e a cada 2 minutos dá uma engasgada de alguns segundos
+enquanto grava as contagens no cartão. É só para coletar; não serve para medir desempenho.
+
+- Abra o `ds2-pgo.nro` e jogue de 15 a 20 minutos do jeito mais variado que der: menus, uma fogueira, andar, lutar,
+  morrer, uma área aberta (Majula) e uma fechada (a floresta). O que não for exercitado não é otimizado.
+- Saia pelo menu do jogo ou pelo HOME (ele grava ao perder o foco e ao sair).
+- Mande a pasta `sdmc:/switch/ds2-nx/pgo/` (arquivos `ds2_pgo_<N>.stream`, um por sessão) junto com a `logs/`.
+
+Com esses arquivos eu gero o build otimizado pelo perfil.
+
+### 3. `ds2-opt.nro` (se estiver na pasta)
+
+Mesmo roteiro de medição de sempre, sem overclock: ~30 s parado num ponto e um trecho andando, uma vez com o
+`ds2.nro` e uma com o `ds2-opt.nro`, no mesmo lugar. Diga qual sessão foi qual.
+
 ## Décimo terceiro build (2026-10-10): a queda na Forest of Fallen Giants
 
 Copie por cima: `ds2.nro`.
