@@ -1149,6 +1149,13 @@ duas `libvulkan.a`:
 
 Ou seja, é o mesa-switch mais novo sem as mudanças de driver do StevensND, que são as que este renderizador (via
 sa2-nx) usa; o `mesa/` do nfsmw-nx continua em 26.2.1. O ZCULL sozinho valeu ~8 % de GPU aqui (137,9 → 127,2 ms).
-Para decidir com medida, um NRO do build do dia a dia ligado contra o SDK novo (`ds2-mesa264.nro`) vai para um A/B
-no console; se o driver novo for melhor mesmo sem os patches, o passo seguinte é portar o patch do nfsmw-nx para o
-26.2.4.
+**O link contra o SDK do zip falha** (`out/nx_build_mesa264.log`): milhares de referências indefinidas a funções da
+biblioteca base do Rust (`core::panicking::panic`, `panic_fmt`, `panic_bounds_check`, `core::fmt::write`,
+`alloc::alloc::handle_alloc_error`...), vindas do `nil` e do `nak_rs`. A `libvulkan.a` do zip só traz as instâncias
+genéricas do `core` (crate `CsR2NHd66MWo`), não a biblioteca em si; a nossa (crate `CslpfLnFkgLmC`, de outro
+compilador Rust) traz. Sem a `libcore` do mesmo `rustc` que gerou o zip não há como ligar, e a deste PC é de outra
+versão. O build do dia a dia voltou para o SDK atual (`-Reconfigure` com o `NVK_SDK` antigo; só religa).
+
+Para ter o 26.2.4 de verdade o caminho é compilar aqui o mesa-switch no commit `606441c90e` com o patch do nfsmw-nx
+portado (ele é contra o `1a8c1a66d6f`, 35 arquivos). Não foi feito: não há medida de que o 26.2.4 traga ganho para
+este jogo, e sem o patch ele perde o ZCULL.

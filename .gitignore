@@ -68,3 +68,6 @@ __pycache__/
 .vscode/
 .claude/
 .DS_Store
+
+# Prebuilt archives dropped in the project folder (driver SDKs and the like).
+*.zip
