@@ -195,6 +195,12 @@ if(REXGLUE_PLATFORM_SWITCH)
     # names, so an instrumented build in one folder and the optimised build in another share the profile.
     # xxHash is built with XXH_FORCE_MEMORY_ACCESS=0 in those builds: nfsmw-nx's LTO+PGO builds hit xxHash's default
     # (a strict-aliasing violation) once it was inlined into a cache-key function (garbage keys).
+    # From UnleashedRecomp-NX (docs/SWITCH-PERFORMANCE.md, "Math flags for the recompiled code"): the generated code
+    # calls sqrt() for fsqrt, and with GCC's default -fmath-errno every call is the instruction plus a check and a
+    # branch into libm to set errno; the guest never sees the host's errno or floating-point exception flags (nothing
+    # under sdk/include/rex/ppc reads them). No value changes: nothing that reassociates or contracts is enabled.
+    # Only in the optimised builds, so the everyday build stays the reference these are compared with.
+    option(DS2_SWITCH_MATH_FLAGS "-fno-math-errno -fno-trapping-math for the recompiled code (with LTO or PGO)" ON)
     option(DS2_SWITCH_LTO "Link-time optimisation of the game code and the app (Switch)" OFF)
     set(DS2_SWITCH_LTO_JOBS "2" CACHE STRING "Parallel LTRANS jobs of the Switch LTO link")
     option(DS2_SWITCH_IPA_PTA "-fipa-pta at the Switch LTO link" ON)
@@ -203,6 +209,9 @@ if(REXGLUE_PLATFORM_SWITCH)
     set(DS2_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo" CACHE PATH "Folder of the PGO profile (.gcda files)")
     if(DS2_SWITCH_LTO OR DS2_PGO)
         target_compile_definitions(ds2 PRIVATE XXH_FORCE_MEMORY_ACCESS=0)
+    endif()
+    if(DS2_SWITCH_MATH_FLAGS AND (DS2_SWITCH_LTO OR DS2_PGO STREQUAL "use") AND TARGET ds2_recomp)
+        target_compile_options(ds2_recomp PRIVATE -fno-math-errno -fno-trapping-math)
     endif()
     if(DS2_SWITCH_LTO)
         set(_ds2_lto_compile -flto -fno-fat-lto-objects)

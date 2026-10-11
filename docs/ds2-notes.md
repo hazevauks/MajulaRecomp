@@ -1159,3 +1159,62 @@ versão. O build do dia a dia voltou para o SDK atual (`-Reconfigure` com o `NVK
 Para ter o 26.2.4 de verdade o caminho é compilar aqui o mesa-switch no commit `606441c90e` com o patch do nfsmw-nx
 portado (ele é contra o `1a8c1a66d6f`, 35 arquivos). Não foi feito: não há medida de que o 26.2.4 traga ganho para
 este jogo, e sem o patch ele perde o ZCULL.
+
+## UnleashedRecomp-NX e MarathonRecomp-NX: o que serve para este porte (2026-10-11)
+
+Clonados em `_ref/` (fora do git). Os documentos lidos: `UnleashedRecomp-NX/docs/SWITCH-PERFORMANCE.md` (10 rodadas,
+com o resultado de cada conjunto de teste) e `MarathonRecomp-NX/docs/SWITCH-OPTIMISATIONS.md` (o catálogo completo,
+com o porquê de cada mudança ser exata). São portes do XenonRecomp com renderizador próprio (plume), então a parte de
+renderizador não se transplanta; a parte de **geração de código do jogo** e de **runtime** sim, e é onde está a nossa
+CPU (dois terços no código recompilado).
+
+**O ponto central.** O gerador emite cada função do jogo como um apelido fraco e `noinline` (para os hooks poderem
+substituí-la), e toda chamada passa por esse apelido: o GCC não consegue embutir nenhuma, com ou sem LTO. O passo
+"direct calls" deles faz as chamadas entre funções sem hook irem direto ao `__imp__sub_X` (Unleashed: 365.513
+chamadas para 41.315 funções). É o mesmo passo que o sa2-nx tem em `tools/direct_calls.py`, dentro do codegen
+"optimised", que este porte ainda não usa (estamos no "classic"). Isso explica o ganho modesto do nosso PGO + LTO.
+
+**Já temos, igual a eles:** LTO, PGO (coleta em seção, `-fprofile-update=single`, `-fprofile-partial-training`),
+`-fipa-pta`, alvos de profundidade sem `TRANSFER_DST` para o ZCULL, cache de pipelines, thread de render em
+prioridade não fatiada, constantes por UBO, desenhos só de profundidade sem estágio de fragmento, relógio da GPU
+corrigido (1,627), perfis de CPU/GPU.
+
+**Entra neste build (não invalida o perfil coletado):** `-fno-math-errno -fno-trapping-math` no código recompilado
+dos builds otimizados (`DS2_SWITCH_MATH_FLAGS`; 464 `sqrt()` no código gerado, cada um com teste e desvio para a
+libm). O `-fomit-frame-pointer` deles ficou de fora por ora: o `rex_crash.log` e o amostrador de pilhas andam pela
+cadeia de quadros através do código do jogo, e ainda estamos caçando erros.
+
+**Próxima etapa de CPU, na ordem do que eles mediram** (tudo isso muda o código gerado, então pede recompilação
+completa e **nova coleta de PGO**; o sa2-nx já traz as opções do gerador e as ferramentas de auditoria):
+
+| mudança | deles | aqui |
+|---|---|---|
+| chamadas diretas | Unleashed R1-3; Marathon 151.618 chamadas | `tools/direct_calls.py` (lista de hooks do DS2 a conferir) |
+| memória do jogo sem `volatile` + barreiras de laço | Unleashed R8; masseffect-nx +15-20 % | `pch_no_volatile.py` + `loop_barriers.py` (obrigatórios juntos) |
+| CR, CTR, XER e reserva como locais; sem MSR | os dois | `cr_as_local`, `ctr_as_local`, `xer_as_local`, `reserved_as_local`, `skip_msr` |
+| registradores não voláteis como locais, sem as chamadas `__savegprlr`/`__restgprlr` | masseffect-nx -10 % na thread principal | `non_volatile_as_local`, `elide_lr_stores` (aqui os helpers são 2-3 % das amostras) |
+| movimentos de ponto flutuante sem trocar o modo do FPCR | sa2-nx, Marathon | `fp_moves_modeless` |
+| registradores de rascunho como locais | sa2-nx | `non_argument_as_local` + lista por jogo (`tools/non_argument_audit.py`) |
+| atômicos do jogo sem barreira completa | os dois (`SwitchRelaxedAtomics`) | a verificar no ReXGlue |
+| seções críticas e eventos sem chamada de sistema quando ninguém espera; giro curto antes de dormir | os dois (ligados no Marathon depois de teste de áudio) | no kernel do SDK; mexe com áudio, A/B obrigatório |
+| threads do motor fora do núcleo 0 | Marathon (o som, não: deu falhas de áudio) | A/B |
+| funções nativas no lugar das mais quentes (RTTI, `dynamic_cast`, CRT, matrizes) | os dois | depende do perfil por função do DS2 |
+
+Requisitos por jogo antes de ligar o codegen "optimised" (pelo `perf_overrides.toml` do sa2-nx):
+`tools/read_before_write.py` e `tools/non_argument_audit.py` no código gerado, os chamadores de setjmp/longjmp, os
+funclets de exceção, e a conferência no PC (modo verify e captura em lockstep contra o clássico).
+
+**Na GPU**, o que eles fizeram no tradutor de shaders e que o nosso (mesma origem, XenosRecomp) ainda não tem: saída
+antecipada do teste de alfa (os pixels descartados pulam a aritmética entre a saída de alfa e o teste; 646 de 1.096
+shaders no Unleashed) e o "afundamento" das leituras de sombra para depois do teste; `gather` nos filtros de sombra;
+saídas de vértice que o pixel shader não lê não calculadas. Aqui a cena custa 24-32 ms a 540p e o matagal do início
+é o pior ponto, então a saída antecipada do teste de alfa é a primeira candidata. Exige regerar a biblioteca de
+shaders e conferir a imagem.
+
+**`edram_alias`, o que é.** A contagem do log (`color-resolve/color->color`, corridas de alvo inteiro) e o relatório
+de pares do PC apontam para conversões de formato do alvo inteiro: o jogo desenha a cena num alvo 7e3 (formato 3,
+RGBA16F no host) e o copia declarando a origem como formato 2 (2_10_10_10), isto é, lê os bits crus do HDR; o
+renderizador converte o alvo inteiro de float para os bits 7e3 empacotados a cada cópia dessas, e de volta quando o
+jogo volta a desenhar nele (`C000/f3:1280x1280 -> C000/f2` e o inverso, 720 blocos cada). São 4-6 por quadro. A
+investigar: se a textura resultante é lida como 7e3 de novo, as duas conversões se anulam e a imagem float pode ser
+entregue direto.
