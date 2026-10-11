@@ -343,6 +343,18 @@ REXCVAR_DEFINE_INT32(ds2_native_resolved_read_texels, 4096, "SA2 renderer",
                      "Native renderer: resolved textures of up to this many texels are also copied "
                      "to guest memory, which the game reads for its exposure (0 = "
                      "none; 4096 = 64x64, the ones exposure uses; 57600 = 320x180)");
+REXCVAR_DEFINE_BOOL(ds2_native_conversion_frag_identity, true, "DS2",
+                    "ds2_native_conversion_frag: when both views have the same tile pitch, sample layout and first "
+                    "tile and the run is whole tile rows, each destination texel reads its own position (no "
+                    "per-pixel tile arithmetic). false = the general mapping, as sa2-nx");
+REXCVAR_DEFINE_INT32(ds2_native_resolved_read_rare_texels, 65536, "DS2",
+                     "Native renderer: a resolved texture larger than ds2_native_resolved_read_texels and of up to "
+                     "this many texels is also copied to guest memory when it is resolved rarely (its first copy, or "
+                     "none in the last 30 frames), and the copy is finished before the game goes on. Dark Souls II "
+                     "draws each save's portrait (256x152, then 128x76) once when the save list opens and reads the "
+                     "pixels with the CPU; without this it read whatever the memory held (blank or noise "
+                     "portraits). 0 = off")
+    .range(0, 1048576);
 REXCVAR_DEFINE_BOOL(ds2_native_invalidate_textures_each_copy, false, "SA2 renderer",
                     "Native renderer: drop the texture caches on every copy (the old behavior). "
                     "Otherwise they are dropped only when a resolved texture is created, rebuilt, prepared or "
@@ -8161,6 +8173,19 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
                  source.edram_msaa_x, source.edram_msaa_y, target.edram_msaa_x, target.edram_msaa_y,
                  ScaledTileWidth(target.scale_q), ScaledTileHeight(target.scale_q)};
     static_assert(sizeof(Constants) == 76);
+    // ds2-nx (ds2_native_conversion_frag_identity): the run maps every destination texel onto the same position
+    // of the source. Whole tile rows (or one row) so that the scissor above is exactly the run.
+    {
+      const uint32_t pitch = PitchTilesEDRAM(target);
+      const bool rows = target_start / pitch == (target_start + count - 1) / pitch ||
+                        (target_start % pitch == 0 && (target_start + count) % pitch == 0);
+      if (variant == 0 && rows && pitch == PitchTilesEDRAM(source) && source_start == target_start &&
+          source.edram_msaa_x == target.edram_msaa_x && source.edram_msaa_y == target.edram_msaa_y &&
+          REXCVAR_GET(ds2_native_conversion_frag_identity)) {
+        constants.source_64bpp = 2;
+        ++conv_color_frag_identity_;
+      }
+    }
     if (draws_) draws_->FinishPass();
     if (edram4_batch_.active) {
       CloseComputeBatchEDRAM4();
@@ -9839,9 +9864,11 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       REXLOG_INFO("[native] EDRAM mode4 transfer causes:{}; whole-target runs:{}", causes,
                   full.empty() ? " none" : full);
       if (REXCVAR_GET(ds2_native_conversion_frag)) {
-        REXLOG_INFO("[native] EDRAM mode4 color conversions as fragment passes: {} done, {} declined (compute) since "
-                    "the last report", conv_color_frag_uses_ - conv_color_frag_uses_report_,
+        REXLOG_INFO("[native] EDRAM mode4 color conversions as fragment passes: {} done ({} texel for texel), {} "
+                    "declined (compute) since the last report", conv_color_frag_uses_ - conv_color_frag_uses_report_,
+                    conv_color_frag_identity_ - conv_color_frag_identity_report_,
                     conv_color_frag_rejections_ - conv_color_frag_rejections_report_);
+        conv_color_frag_identity_report_ = conv_color_frag_identity_;
         {
           std::string m;
           for (uint32_t k = 0; k < conv_color_frag_reasons_.size(); ++k)
@@ -10218,9 +10245,21 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   void ResolvedRead(const RegistersCopy& reg, const Resolved& resolved, int32_t x0, int32_t y0,
                     uint32_t dx, uint32_t dy, uint32_t width, uint32_t height) {
     const int32_t max = REXCVAR_GET(ds2_native_resolved_read_texels);
-    if (max <= 0 || uint64_t(width) * height > uint64_t(max) ||
-        resolved.image.format != kColorFormat) {
+    if (max <= 0 || resolved.image.format != kColorFormat) {
       return;
+    }
+    // ds2-nx (ds2_native_resolved_read_rare_texels): larger textures only when their copies are rare. The per-frame
+    // targets of the post-processing chain (160x90, 320x180...) are copied every frame and never qualify after
+    // their first copy.
+    bool rare = false;
+    if (uint64_t(width) * height > uint64_t(max)) {
+      const int32_t max_rare = REXCVAR_GET(ds2_native_resolved_read_rare_texels);
+      if (uint64_t(width) * height > uint64_t(std::max(max_rare, 0))) return;
+      uint64_t& last = rare_read_last_frame_[(uint64_t(reg.rb_copy_dest_base) << 28) ^ (uint64_t(width) << 14) ^
+                                             uint64_t(height)];
+      rare = !last || presented_ + 1 - last >= 30;
+      last = presented_ + 1;
+      if (!rare) return;
     }
     const uint64_t target_key =
         (uint64_t(reg.rb_copy_dest_base) << 28) ^ (uint64_t(width) << 14) ^ uint64_t(height);
@@ -10229,7 +10268,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     target.width = width;
     target.height = height;
     const uint64_t each = uint64_t(std::max(REXCVAR_GET(ds2_native_reads_each), 1));
-    if (target.copies++ % each != 0) {
+    if (target.copies++ % each != 0 && !rare) {
       ++target.skipped;  // exposure changes slowly: the guest keeps the previous one
       return;
     }
@@ -10307,7 +10346,21 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
                   "first: {:08X}, {}x{})",
                   max, reg.rb_copy_dest_base, width, height);
     }
+    if (rare) {
+      // The game reads these right after the copy (a texture lock waits for the GPU on the console): the work is
+      // sent and waited for here, so the texels are in guest memory before the ring goes on. Rare by definition.
+      SendWork(true);
+      ++waits_gpu_reason_[5];
+      WaitGpu();
+      Record();
+      if (++rare_reads_ <= 12)
+        REXLOG_INFO("[native] targets: rare read-back (ds2_native_resolved_read_rare_texels): {:08X} {}x{} written "
+                    "to guest memory at frame {}", reg.rb_copy_dest_base, width, height, presented_);
+    }
   }
+  std::unordered_map<uint64_t, uint64_t> rare_read_last_frame_;  // ds2-nx: target -> frame + 1 of its last copy
+  uint64_t conv_color_frag_identity_ = 0, conv_color_frag_identity_report_ = 0;  // ds2_native_conversion_frag_identity
+  uint64_t rare_reads_ = 0;
 
   // The submission finished: the submitted read-backs go to guest memory. Loaded with its fetch
   // constant (GpuSwap per word and R8G8B8A8), each texel must give the same channels as the resolved

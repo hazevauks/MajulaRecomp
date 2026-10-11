@@ -16,7 +16,7 @@ layout(push_constant) uniform Constants {
   uint tiles_count;
   uint source_format;   // class (0 RGBA8, 2 UNORM10, 3 7e3), bit 16 = the host view is RGBA8
   uint target_format;  // idem
-  uint source_64bpp;     // always 0 here
+  uint source_64bpp;     // 0, or 2 (ds2-nx): the source texel is the destination's (see main)
   uint target_64bpp;    // always 0 here
   uint source_msaa_x, source_msaa_y;
   uint target_msaa_x, target_msaa_y;
@@ -70,15 +70,24 @@ vec4 Unpack32(uint word, uint format) {
 void main() {
   uvec2 pixel = uvec2(gl_FragCoord.xy);
   if (any(greaterThanEqual(pixel, c.target_size))) discard;
-  // The physical sample this host texel stands for (the one with zero sub-sample bits, the compute's writer).
-  uvec2 physical = pixel << uvec2(c.target_msaa_x, c.target_msaa_y);
-  uint tile_target = (physical.y / c.tile_height) * c.pitch_tiles_target + physical.x / c.tile_width;
-  if (tile_target < c.tile_target_start || tile_target - c.tile_target_start >= c.tiles_count) discard;
-  uint tile_source = c.tile_source_start + (tile_target - c.tile_target_start);
-  uint word_local = physical.x % c.tile_width;
-  uvec2 p = uvec2((tile_source % c.pitch_tiles_source) * c.tile_width + word_local,
-                  (tile_source / c.pitch_tiles_source) * c.tile_height + physical.y % c.tile_height) >>
-            uvec2(c.source_msaa_x, c.source_msaa_y);
+  uvec2 p;
+  if (c.source_64bpp == 2u) {
+    // ds2-nx: both views have the same tile pitch, sample layout and first tile, and the run is whole tile rows (or
+    // lies in one), so the scissor is exactly the run and every destination texel reads its own position: none of
+    // the five integer divisions below, which the GPU has no instruction for. Dark Souls II converts its whole HDR
+    // target (720 tiles) this way once a frame.
+    p = pixel;
+  } else {
+    // The physical sample this host texel stands for (the one with zero sub-sample bits, the compute's writer).
+    uvec2 physical = pixel << uvec2(c.target_msaa_x, c.target_msaa_y);
+    uint tile_target = (physical.y / c.tile_height) * c.pitch_tiles_target + physical.x / c.tile_width;
+    if (tile_target < c.tile_target_start || tile_target - c.tile_target_start >= c.tiles_count) discard;
+    uint tile_source = c.tile_source_start + (tile_target - c.tile_target_start);
+    uint word_local = physical.x % c.tile_width;
+    p = uvec2((tile_source % c.pitch_tiles_source) * c.tile_width + word_local,
+              (tile_source / c.pitch_tiles_source) * c.tile_height + physical.y % c.tile_height) >>
+        uvec2(c.source_msaa_x, c.source_msaa_y);
+  }
   uint word = 0u;
   if (!any(greaterThanEqual(p, c.source_size))) {
     vec4 v = texelFetch(source, ivec2(p), 0);

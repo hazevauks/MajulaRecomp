@@ -4,6 +4,26 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo sétimo build (2026-10-11): retratos dos saves e mais um corte na GPU
+
+Copie por cima: `ds2-opt.nro` e `ds2.nro` (o `ds2.toml` e a pasta `configs/` são os do décimo sexto build; se o
+`ds2.toml` do cartão ainda for o `ds2_melhorias_desligadas` do último teste, volte o do pacote).
+
+O que muda:
+
+- **Retratos na lista de saves:** o jogo desenha cada retrato numa textura pequena e lê os pixels pela CPU; o
+  renderizador não devolvia essas texturas para a memória do jogo. Agora devolve.
+- **GPU:** a conversão de formato da imagem HDR que ainda sobrava (cerca de 5 ms por quadro a 540p) ganhou um atalho.
+
+O teste, com o `ds2-opt.nro`:
+
+1. Abra a lista de saves e veja os quatro retratos (uma foto ajuda). Entre num save, salve/saia para o título e
+   abra a lista de novo.
+2. Os três pontos parados de sempre (matagal, casa das firekeepers no mesmo lugar da primeira vez, vista de Majula),
+   ~30 s a 540p, L3 + R3, ~30 s a 720p.
+
+Depois a pasta `logs/`.
+
 ## Décimo sexto build (2026-10-11): perfil completo e conversões mais baratas
 
 Copie por cima: `ds2-opt.nro`, `ds2.nro`, `ds2.toml` e a pasta `configs/`.

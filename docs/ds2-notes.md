@@ -1250,3 +1250,50 @@ ao abrir o menu o jogo cria quatro texturas de cópia de 1280x720 (`158B4000`, `
 candidatas a retrato. No PC a lista aparece por poucos segundos antes de o jogo carregar o save e os retratos não
 chegam a ser desenhados nesse tempo, então não foi reproduzido. Próximo passo barato: abrir a lista no console com
 `configs/ds2_melhorias_desligadas.toml`; se os retratos saírem certos, é um dos atalhos de cópia herdados.
+
+## Rodada 6 medida no console; rodada 7: retratos dos saves e a conversão texel a texel (2026-10-11)
+
+**Décimo sexto build no console** (`out/switch_logs/019/ds2_029.log`, `ds2-opt.nro` com o perfil das duas coletas e
+`ds2_native_conversion_frag`; nenhum `FATAL`, nenhum desenho rejeitado; `302 done, 0 declined` por janela). Nos três
+pontos, contra a sessão `ds2_025` (build otimizado anterior, conversões por compute):
+
+| ponto | resolução | quadros/s antes → agora | `edram_alias` antes → agora | anel µs/desenho |
+|---|---|---|---|---|
+| 1 matagal | 540p | 16,2 → 16,5 | 14,1 → 10,7 ms | 37,3 |
+| 1 matagal | 720p | 11,8 → 12,6 | 24,6 → 18,6 ms | |
+| 2 casa (outra posição: 1.209 desenhos contra 824) | 540p | 19,0 → 15,1 | 14,4 → 10,9 ms | 38,5 |
+| 2 casa | 720p | 13,0 → 11,8 | 25,1 → 18,8 ms | |
+| 3 vista de Majula | 540p | 17,1 → 16,9 | 17,4 → 13,2 ms | 38,8 |
+| 3 vista de Majula | 720p | 12,7 → 13,7 | 30,4 → 22,9 ms | |
+
+O ponto 2 não é comparável (a câmera estava noutro lugar). A conversão por fragmento tira 3-4 ms a 540p e 6-7,5 ms a
+720p; o perfil maior leva a thread do anel de ~41,7 para ~38 µs por desenho. O que sobra em `edram_alias` é quase
+todo uma conversão por quadro do alvo inteiro (`[cat 12 VS19 PS720]`, ~5 ms por quadro a 540p): o shader
+`me_edram_color_to_color.frag` calcula o bloco de cada pixel com cinco divisões inteiras por valores que não são
+constantes, e a GPU não tem instrução para isso.
+
+**Conversão texel a texel** (`ds2_native_conversion_frag_identity`, padrão `true`): quando as duas vistas têm o
+mesmo passo em blocos, o mesmo arranjo de amostras e o mesmo primeiro bloco, e a corrida é de fileiras inteiras (o
+recorte já é exatamente a corrida), cada texel de destino lê a própria posição; o shader pula a aritmética de blocos
+(campo `source_64bpp = 2` das constantes). No PC, em Majula: `12 done (12 texel for texel)` por janela, imagem e
+cadeia HDR certas.
+
+Na casa das firekeepers voltou a aparecer `edram_import` (6,6 ms por quadro, `draw/depth-depth=10827ops` em 152
+quadros): são as bordas das limpezas do atlas de sombras com bloco parcial de dono de outro formato, o resto
+conhecido da rodada 4. Fica para depois.
+
+**Retratos da lista de saves.** Fotos do console com quatro saves: com o `ds2.toml` normal só o retrato do save
+recém-jogado sai certo, os outros ficam vazios e um é ruído; com `ds2_melhorias_desligadas` nenhum sai certo. O log
+(`ds2_030`, `ds2_031`) mostra o que o jogo faz ao abrir a lista: para cada save, ~33 desenhos num alvo copiado
+para uma textura de 256x152 e mais um desenho copiado para uma de **128x76**; essas de 128x76 aparecem no inventário
+como `0 reads *** NOBODY READS IT ***`, isto é, nenhum desenho as amostra como textura copiada: o jogo lê os
+pixels pela CPU (para a interface). O renderizador só escreve de volta na memória do jogo texturas copiadas de até
+4.096 texels (`ds2_native_resolved_read_texels`, as de exposição), e 128x76 são 9.728: o jogo lia o que houvesse
+na memória (zeros: retrato vazio; lixo: ruído).
+
+Correção (`ds2_native_resolved_read_rare_texels`, padrão 65.536): uma textura copiada maior que o limite normal e
+de até esse tamanho também é escrita na memória do jogo quando a cópia é rara (a primeira, ou nenhuma nos últimos 30
+quadros), e nesse caso o trabalho é enviado e esperado ali mesmo, para os texels estarem na memória antes de o anel
+seguir (no console de origem um lock de textura espera a GPU). Os alvos do pós-processamento, copiados todo quadro,
+só passam pela regra na primeira cópia (no PC: 12 leituras ao entrar no 3D, nenhuma depois). A lista de saves não
+foi reproduzida no PC ("Continue" carrega direto o save mais recente), então a confirmação é do console.
