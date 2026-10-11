@@ -5,6 +5,9 @@
 /Dark Souls II*/
 /assets/
 /app/generated/
+# The PGO profile: execution counts of the code generated from the game (tools/win/pgo_merge.ps1 makes it from the
+# console's pgo/ds2_pgo_<N>.stream files).
+/pgo/
 *.xex
 *.xexp
 *.iso
