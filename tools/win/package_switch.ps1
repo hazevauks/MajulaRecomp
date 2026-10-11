@@ -53,6 +53,9 @@ $noBom = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_sem_atalho_clear.toml'), ($base +
     "`n# Teste A/B: sem o atalho novo das limpezas por superficie 4x (rodada 2): como no build anterior.`n" +
     "ds2_native_edram4_clear_color0_alias = false`n"), $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_conversao_compute.toml'), (
+    ($base -replace 'ds2_native_conversion_frag = true', 'ds2_native_conversion_frag = false') +
+    "`n# Teste A/B: conversoes de formato do alvo HDR por compute shader, como ate o decimo quinto build.`n"), $noBom)
 [IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_720p.toml'), (
     ($base -replace 'ds2_render_height_handheld = 540', 'ds2_render_height_handheld = 720') +
     "`n# Teste A/B: modo portatil na resolucao do proprio jogo (1280x720), como nos builds anteriores.`n"), $noBom)

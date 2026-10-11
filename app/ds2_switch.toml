@@ -24,6 +24,11 @@ ds2_gpu_marks_categories = true
 # quadro na primeira fogueira.
 ds2_native_zcull_1x_depth = true
 
+# Rodada 6 (2026-10-11): as conversoes de formato do alvo HDR (RGBA8 / 10 bits / 7e3, 4 a 6 por quadro) como passe
+# de fragmento em vez de compute shader. Mesmos bits; no console eram 14-17 ms de GPU por quadro a 540p.
+# Para comparar: configs/ds2_teste_conversao_compute.toml.
+ds2_native_conversion_frag = true
+
 # Relatorio de CPU por thread no rex_profile.log (sem amostrar pilhas: isso fica em configs/ds2_perfil.toml).
 switch_profile_report = true
 

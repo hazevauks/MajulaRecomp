@@ -7,7 +7,7 @@
 #       [-Validation] [-Extra "REX_DS2_SOME_CVAR=value;DS2_SOME_SWITCH=1"]
 #
 # Stop it before building (the executable stays locked): taskkill /IM ds2.exe /F
-param([int]$Height = 720, [int]$Seconds = 900, [string]$Extra = '', [switch]$Validation)
+param([int]$Height = 720, [int]$Seconds = 900, [string]$Extra = '', [switch]$Validation, [string]$Pad = '')
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $root
 $icd = Join-Path $root '_tools\mesa\x64\lvp_icd.x86_64.json'
@@ -33,6 +33,8 @@ foreach ($pair in ($Extra -split ';')) {
 # A at the warning, START through the title screens, then A every 6 s: "Continue" and whatever asks for confirmation.
 $pad = '16-16.6:a,30-30.6:start,42-42.6:start,54-54.6:start'
 for ($t = 62; $t -le 160; $t += 6) { $pad += ",$t-$($t + 0.6):a" }
+# -Pad replaces the scripted presses (to stop at a menu and drive it with tools\live.py pad).
+if ($Pad) { $pad = $Pad }
 $p = Start-Process powershell -WindowStyle Hidden -PassThru `
     -ArgumentList "-NoProfile -File tools\win\boot_test.ps1 -Seconds $Seconds -Pad $pad"
 "started $($p.Id) at $(Get-Date -Format HH:mm:ss)"

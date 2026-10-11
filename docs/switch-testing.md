@@ -4,6 +4,26 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo sexto build (2026-10-11): perfil completo e conversões mais baratas
+
+Copie por cima: `ds2-opt.nro`, `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+
+O que muda:
+
+- `ds2-opt.nro`: PGO com as duas coletas (6,5 + 27 minutos) e LTO;
+- `ds2.toml` (vale para os dois programas): as conversões de formato da imagem HDR, que custavam 14-17 ms de GPU por
+  quadro a 540p, passam por um caminho mais barato. No PC a imagem saiu igual.
+
+**Teste 1 (principal), `ds2-opt.nro`:** os mesmos três pontos parados da última vez (matagal do início, dentro da
+casa das firekeepers, vista de Majula), ~30 s a 540p, L3 + R3, ~30 s a 720p, L3 + R3. Não precisa repetir com o
+`ds2.nro`. Repare se a imagem tem algo estranho em cores, brilho ou neblina (é o que essas conversões tocam).
+
+**Teste 2 (as miniaturas dos saves):** apague o `ds2.toml`, copie `configs/ds2_melhorias_desligadas.toml` para a
+pasta do jogo, renomeie para `ds2.toml`, abra o `ds2.nro` e vá até a lista de saves. Os retratos saem certos ou
+continuam com ruído? Uma foto ajuda. Depois volte o `ds2.toml` do pacote.
+
+Mande a pasta `logs/` das duas sessões.
+
 ## Décimo quinto build (2026-10-11): PGO + LTO e a troca de resolução ao vivo
 
 Copie por cima `ds2.nro` e `ds2-opt.nro` (o `ds2-pgo.nro` do build anterior pode ficar: serve para novas coletas).

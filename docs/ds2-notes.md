@@ -1218,3 +1218,35 @@ renderizador converte o alvo inteiro de float para os bits 7e3 empacotados a cad
 jogo volta a desenhar nele (`C000/f3:1280x1280 -> C000/f2` e o inverso, 720 blocos cada). São 4-6 por quadro. A
 investigar: se a textura resultante é lida como 7e3 de novo, as duas conversões se anulam e a imagem float pode ser
 entregue direto.
+
+## Rodada 6: perfil de PGO completo e conversões de formato como passe de fragmento (2026-10-11)
+
+**Perfil.** `out/switch_logs/017/pgo/`: `ds2_pgo_1.stream` (6,5 min) e `ds2_pgo_2.stream` (27 min, do início até o
+Last Giant, sessão `ds2_027`, sem `FATAL`). Juntados do zero em `pgo\` (o da sessão 1 está em `out/pgo_session1`):
+354 `.gcda`, `runs = 2`, maior contagem de arco 8.220.895.832. Build `out\nx_rel` (`-Lto -Pgo use`, mais
+`-fno-math-errno -fno-trapping-math`): 62,9 min depois de retomado (o notebook travou no meio do primeiro: eu
+rodava uma sessão do jogo no PC junto com a compilação; uma coisa de cada vez daqui em diante). NRO de 120,8 MB,
+`tools/check_switch_build.py` passa. ELF em `out/switch_elf/pgo_lto_2/`.
+
+**`edram_alias`, o que era de fato.** A lista "GPU time by pass" mostrava `[cat 12 VS3 PS720]` e `[cat 12 VS3
+PS184]`: não são shaders do jogo, são as conversões (o "PS" ali é o número de blocos: 720 = o alvo de 1280x720, 184 =
+o de 640x360). Por quadro, no console: 1 conversão do alvo inteiro (720 blocos) em cópia de cor e 4-5 pequenas em
+desenhos; no PC, o relatório de pares mostra `C000/f3 -> C000/f2` (o alvo 7e3 lido como 10 bits, os bits crus do
+HDR) duas vezes por quadro e `C000/f0 -> C000/f3` uma. Todas rodavam como **compute shader**: o sa2-nx tem o mesmo
+trabalho como passe de fragmento (`ds2_native_conversion_frag`, "same words bit for bit", sem tráfego de imagem de
+armazenamento nem troca de motor 3D <-> compute), desligado por padrão.
+
+Ligado no PC (540p, Majula, com o save do console): `color conversions as fragment passes: 6 done, 0 declined` por
+janela, nenhum erro novo de validação, imagem certa (`out/pc/captures/frag1.png`) e a cadeia HDR com valores
+coerentes no despejo do quadro (`12366000`, `117AC000`). Vai ligado no `ds2.toml` do pacote;
+`configs/ds2_teste_conversao_compute.toml` volta ao caminho antigo. O ganho só o console mede (a categoria
+`edram_alias` do log).
+
+**Miniaturas erradas na lista de saves (em aberto).** Foto do console: dos três retratos da tela "Data List", o do
+meio sai certo e os outros dois são ruído. Os arquivos de slot (`USER_DATA01`..`0a`, 111.308 bytes) não guardam
+imagem: os dos dois primeiros saves têm a mesma estrutura (dados, zeros, dados) e o terceiro tem conteúdo de alta
+entropia com ponteiros e floats, o que precisa ser conferido (o jogo carrega os três normalmente). No log do console,
+ao abrir o menu o jogo cria quatro texturas de cópia de 1280x720 (`158B4000`, `15C4C000`, `15FE4000`, `1551C000`):
+candidatas a retrato. No PC a lista aparece por poucos segundos antes de o jogo carregar o save e os retratos não
+chegam a ser desenhados nesse tempo, então não foi reproduzido. Próximo passo barato: abrir a lista no console com
+`configs/ds2_melhorias_desligadas.toml`; se os retratos saírem certos, é um dos atalhos de cópia herdados.
