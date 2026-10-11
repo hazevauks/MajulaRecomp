@@ -1090,3 +1090,12 @@ altura de render do modo em uso entre 540 e 720 (`ds2::render::ToggleHeight`; o 
 `OnPresented`). O renderizador já refazia as imagens quando a escala muda (dock/undock do sa2-nx); aqui nunca tinha
 sido exercitado. No PC (`ds2_render_test_height_at`): 540 → 720 nos menus e 720 → 540 no meio da floresta, imagem
 certa nas duas (`out/pc/captures/t720.png`, `t540.png`), sem erro novo de validação.
+
+**Build PGO + LTO** (`out
+x_rel`, `-Lto -Pgo use -LtoJobs 4`, com o perfil de uma sessão de 6,5 min): 84,6 min
+(o SDK já estava compilado; o link com 4 LTRANS é bem mais curto que com 2), NRO de 121,3 MB, `.text` 119,2 MB contra
+115,7 do LTO sozinho e 103,5 do build normal. Conferido que o perfil é lido: o comando de `ds2_recomp.7.cpp` refeito
+com `-Wmissing-profile -Wcoverage-mismatch` não avisa nada. `tools/check_switch_build.py` passa (3 laços sem fim
+conhecidos, nenhum fmla vetorial; os fmadd escalares sobem de 10.499 para 13.650, cópias dos `std::fma` do próprio
+jogo por inlining). ELF em `out/switch_elf/pgo_lto_1/`; o do LTO sozinho em `out/switch_elf/lto_only/`. Nenhum dos
+dois foi rodado no console ainda.
