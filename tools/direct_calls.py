@@ -8,7 +8,7 @@
 # and not with LTO. This step changes `sub_X(ctx, base);` into `__imp__sub_X(ctx, base);` when sub_X has no
 # hook, which is exactly the same function, but can now be inlined.
 #
-# Any 82xxxxxx address that appears in the code of the app or SDK sources (comments and __imp__sub_X references
+# Any 82xxxxxx or 83xxxxxx address that appears in the code of the app or SDK sources (comments and __imp__sub_X references
 # left out, see CodeOnly) or in the toml / txt files counts as hooked (the D3D trace builds its hooks with
 # sub_##addr). That is slightly more than needed and safe.
 #
@@ -56,7 +56,9 @@ def hooked():
                 continue
             if path.endswith(CODE_SUFFIXES):
                 text = CodeOnly(text)
-            for m in re.findall(r'(?<![0-9A-Fa-f])(82[0-9A-Fa-f]{6})(?![0-9A-Fa-f])', text):
+            # ds2-nx: Dark Souls II's code runs from 0x82240000 to 0x83402474, so 83xxxxxx addresses count too (the
+            # pattern was 82xxxxxx only: a hook on a function above 0x83000000 would have been called around).
+            for m in re.findall(r'(?<![0-9A-Fa-f])(8[23][0-9A-Fa-f]{6})(?![0-9A-Fa-f])', text):
                 names.add('sub_' + m.upper())
     return names
 
