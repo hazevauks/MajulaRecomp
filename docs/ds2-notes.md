@@ -985,3 +985,41 @@ Aqui a conta é outra:
 Conclusão registrada: deko3d não é o próximo passo para este jogo; fica como opção para quando o renderizador e o
 código do jogo estiverem enxutos e o driver passar a pesar. Ordem atual: índices (feito), vértices/`memmove`,
 constantes, depois PGO/LTO do código recompilado.
+
+## Décimo segundo build no console: índices mais baratos e a primeira função não registrada (2026-10-10)
+
+`out/switch_logs/013/ds2_019.log` (4,5 min, 540p, sem overclock): de Majula até a Forest of Fallen Giants, onde o
+jogo fechou e voltou ao menu do console pouco antes da primeira fogueira. Nenhuma geometria errada relatada, nenhum
+desenho rejeitado.
+
+**Rodada 5 medida.** A thread do anel caiu de 58-60 para 39-45 µs por desenho (`ring thread:` do log); o cache de
+índices passou a acertar: `ME index cache: 600000 hits, 1845 MB neither converted nor copied` na sessão.
+
+**A queda.** `logs/rex/rex_crash.log` é um `abort()` nosso, e a última linha do log do jogo diz por quê:
+
+    [FATAL] Call to invalid or unregistered function at guest address 0x82C883C8
+
+É uma função do jogo que o recompilador não descobriu: `tools/find_gaps.py --check 0x82C883C8` mostra o endereço
+num buraco de 48 bytes entre `sub_82C883A0` e `sub_82C883F8`. O buraco tem dois thunks de 6 instruções
+(`lwz r3,0(r4); mr r4,r5; lwz r11,0(r3); lwz r10,36(r11); mtctr r10; bctr` em 0x82C883C8 e o irmão em 0x82C883E0,
+slot 40 da vtable), da mesma família dos vizinhos já registrados. Ninguém os chama por `bl` nem os guarda em dados:
+o jogo monta os endereços em código, em 0x82C88578-0x82C885C0, com seis `lis` seguidos e os `addi` até 12 instruções
+depois. `tools/pointer_fixpoint.py` procura esse padrão, mas só olhava 8 instruções depois do `lis`: pegou os dois
+vizinhos e perdeu estes.
+
+**Correção.** A janela passou a 64 instruções (`BUILT_WINDOW`; a sequência continua terminando num desvio ou quando
+o registrador é reescrito). A varredura refeita achou 20 candidatos e aceitou exatamente esses dois (os outros 18
+são os mesmos rejeitados de antes: fragmentos que leem registrador indefinido, desvios para dentro de outra função,
+sem código ou sem terminador). Entraram em `app/overrides.toml`; o código regenerado mudou só em `ds2_funcs.h`,
+`ds2_init.cpp`, `ds2_register.cpp` e nos dois arquivos que receberam as funções (101 e 236), então a recompilação
+foi de minutos.
+
+Pegadinha desta máquina: `tools/codegen.ps1` chama `python`, que aqui é o atalho da loja do Windows, e o passo
+`tools/post_codegen.py` falha; rodá-lo à mão com o Python real depois de cada codegen.
+
+**O que ainda pode haver do mesmo tipo.** O relatório de buracos lista 902 trechos de 8 bytes ou mais sem função
+(343 de 8, 118 de 12, 214 de 16-63, 227 de 64-1023). A maioria é preenchimento, dados no meio do código ou funclets
+de exceção; os que forem funções chamadas só por ponteiro montado de um jeito que a varredura não vê vão aparecer
+como esta queda, um por vez. A varredura estrutural (`tools/gap_fixpoint.py`, que declara todo buraco que seja uma
+folha completa, com ou sem referência) ainda não foi rodada neste jogo; ela pode mexer em muitos arquivos gerados,
+então fica para junto da recompilação completa do PGO/LTO.

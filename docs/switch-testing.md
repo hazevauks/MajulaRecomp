@@ -4,6 +4,17 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo terceiro build (2026-10-10): a queda na Forest of Fallen Giants
+
+Copie por cima: `ds2.nro`.
+
+O jogo fechou porque chamou uma função dele mesmo que o recompilador não tinha encontrado (ela só é chamada por um
+ponteiro montado em código). Essa e a irmã dela foram adicionadas. Pode haver outras do mesmo tipo em áreas ainda não
+visitadas: se o jogo fechar de novo e voltar ao menu do console, mande a pasta `logs/` (o `logs/rex/rex_crash.log` e
+o fim do `ds2_NNN.log` dizem qual foi).
+
+Continue de onde parou (o save fica antes da primeira fogueira da floresta) e siga jogando normalmente.
+
 ## Décimo segundo build (2026-10-10): rodada 5, CPU do renderizador (índices)
 
 Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/` (o `ds2.toml` volta a não amostrar pilhas).

@@ -75,8 +75,15 @@ def read_gaps(scratch):
     return sorted(gaps)
 
 
+# ds2-nx: how many instructions after the `lis` the scan looks for its addi/ori. It was 8; Dark Souls II fills a
+# callback structure with six `lis` in a row and their `addi` up to 12 instructions later (0x82C88578-0x82C885C0),
+# and the two thunks past the old window (0x82C883C8, 0x82C883E0) stopped the game in Forest of Fallen Giants with
+# "Call to invalid or unregistered function". The sequence still ends at a branch or when the register is written.
+BUILT_WINDOW = 64
+
+
 def built_addresses(image, lo, hi):
-    """Code addresses the code builds as constants: `lis rX,hi` followed (within 8 instructions, before rX is written
+    """Code addresses the code builds as constants: `lis rX,hi` followed (within BUILT_WINDOW instructions, before rX is written
     again) by `addi rY,rX,lo` or `ori rY,rX,lo`. That is how a function pointer is passed as a callback or stored in
     a table at run time; no data word holds it, so the plain pointer scan misses it (SA2's sub_829427B8: built at
     0x82942810, the 2-minute recording stopped at its first call). Yields (value, address of the addi/ori)."""
@@ -85,7 +92,7 @@ def built_addresses(image, lo, hi):
         if x >> 26 != 15 or (x >> 16) & 31:  # lis rX,imm is addis rX,0,imm
             continue
         rx, upper = (x >> 21) & 31, (x & 0xFFFF) << 16
-        for k in range(1, 9):
+        for k in range(1, BUILT_WINDOW + 1):
             y = struct.unpack_from('>I', image, off + 4 * k)[0]
             op, rt, ra, imm = y >> 26, (y >> 21) & 31, (y >> 16) & 31, y & 0xFFFF
             if op in (14, 24) and ra == rx:  # addi / ori from rX
