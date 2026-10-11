@@ -42,6 +42,14 @@ REXCVAR_DEFINE_INT32(ds2_msaa, 0, "DS2",
                      "at start")
     .range(0, 4)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_render_height_combo, true, "DS2",
+                    "Switch: holding both sticks pressed (L3 + R3) for one second switches the render height of the "
+                    "current mode between 540 and 720 while the game runs (a line in the log says when), to compare "
+                    "the two at the same spot. It lasts until the game is closed; ds2.toml keeps its value");
+REXCVAR_DEFINE_INT32(ds2_render_test_height_at, 0, "DS2",
+                     "Test (PC): switch the render height between 540 and 720, as the Switch's L3 + R3 does, after "
+                     "this presented swap and every that many swaps after it (0 = never)")
+    .range(0, 2000000000);
 REXCVAR_DEFINE_INT32(ds2_render_test_toggle_at, 0, "DS2",
                      "Test (PC): toggle the simulated docked mode after this presented swap (0 = never)")
     .range(0, 2000000000);
@@ -64,6 +72,8 @@ namespace {
 std::atomic<bool> g_docked_pc{false};
 std::atomic<bool> g_docked_pc_set{false};
 std::atomic<uint32_t> g_last_logged_q{0};
+// ds2-nx: the height chosen with L3 + R3 (ds2_render_height_combo), 0 = the configuration's.
+std::atomic<int32_t> g_height_override{0};
 
 // q = height / 180, from 3 (540p) to 12 (2160p); other heights go to the nearest multiple of 180.
 // ds2-nx: nothing below 540p. Dark Souls II draws into targets one row high (its 256x1 tone map table) and 1x1; the
@@ -99,7 +109,9 @@ bool Docked() {
 uint32_t WantedScaleQuarters() {
   if (!g_render_scale.active) return 4;
   const bool docked = Docked();
-  const int32_t height = docked ? REXCVAR_GET(ds2_render_height_docked) : REXCVAR_GET(ds2_render_height_handheld);
+  const int32_t chosen = g_height_override.load(std::memory_order_relaxed);
+  const int32_t height = chosen ? chosen
+      : docked ? REXCVAR_GET(ds2_render_height_docked) : REXCVAR_GET(ds2_render_height_handheld);
   const uint32_t q = QuartersOf(height);
   if (g_last_logged_q.exchange(q | (docked ? 0x100u : 0u), std::memory_order_relaxed) != (q | (docked ? 0x100u : 0u))) {
     REXLOG_INFO("[res] {} mode: render {}x{} (ds2_render_height_{} = {}{})", docked ? "docked" : "handheld",
@@ -123,7 +135,52 @@ void ToggleDocked() {
 #endif
 }
 
+// ds2-nx: 540 <-> 720 for the mode in use. The renderer asks WantedScaleQuarters() every frame and rescales its
+// images when the answer changes, as it does when the console is docked or undocked.
+void ToggleHeight(const char* by) {
+  const bool docked = Docked();
+  const int32_t chosen = g_height_override.load(std::memory_order_relaxed);
+  const int32_t now = chosen ? chosen
+      : docked ? REXCVAR_GET(ds2_render_height_docked) : REXCVAR_GET(ds2_render_height_handheld);
+  const int32_t next = QuartersOf(now) == 3 ? 720 : 540;
+  g_height_override.store(next, std::memory_order_relaxed);
+  REXLOG_INFO("[res] render height switched by {}: {} -> {} (until the game is closed)", by, 180 * int32_t(QuartersOf(now)),
+              next);
+}
+
 void OnPresented(uint64_t presented) {
+#if REX_PLATFORM_SWITCH
+  // ds2_render_height_combo: both sticks held for a second. The pad is read here, on its own PadState (HID's shared
+  // memory; the game's input driver is not involved), once per presented frame.
+  if (REXCVAR_GET(ds2_render_height_combo)) {
+    static PadState pad;
+    static bool started = false;
+    static u64 held_since = 0;
+    static bool fired = false;
+    if (!started) {
+      padInitializeAny(&pad);
+      started = true;
+    }
+    padUpdate(&pad);
+    const u64 both = HidNpadButton_StickL | HidNpadButton_StickR;
+    if ((padGetButtons(&pad) & both) == both) {
+      const u64 now = armGetSystemTick();
+      if (!held_since) held_since = now;
+      if (!fired && armTicksToNs(now - held_since) >= 1000000000ull) {
+        fired = true;
+        ToggleHeight("L3 + R3");
+      }
+    } else {
+      held_since = 0;
+      fired = false;
+    }
+  }
+#endif
+  {
+    const int32_t height_at = REXCVAR_GET(ds2_render_test_height_at);
+    if (height_at > 0 && presented >= uint64_t(height_at) && (presented - uint64_t(height_at)) % uint64_t(height_at) == 0)
+      ToggleHeight("ds2_render_test_height_at");
+  }
 #if !REX_PLATFORM_SWITCH
   const int32_t at = REXCVAR_GET(ds2_render_test_toggle_at);
   if (at <= 0 || presented < uint64_t(at)) return;

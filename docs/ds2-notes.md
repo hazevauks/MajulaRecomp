@@ -1065,3 +1065,28 @@ de um jeito que nenhuma das varreduras vê, ainda apareceria como `Call to inval
 Sobre o LTO neste jogo: no codegen clássico as chamadas entre funções do jogo passam por símbolos fracos
 (`sub_X` é um apelido fraco de `__imp__sub_X`), então o ganho de inlining entre arquivos pode ser pequeno; no sa2-nx
 ele vem junto do codegen "optimised" (chamadas diretas), que aqui ainda não foi feito. Fica medido, não presumido.
+
+**Builds longos nesta máquina** (i5-3210M, 2 núcleos / 4 threads, `-j4`; `out/build_switch_all.log`):
+
+| build | pasta | tempo | NRO |
+|---|---|---|---|
+| do dia a dia depois da varredura (210 passos) | `out\nx` | 39,7 min | 105,6 MB |
+| instrumentado (`-Pgo generate`), do zero, com o SDK | `out\nx_pgo` | 115,8 min | 132,1 MB |
+| LTO sem PGO, do zero | `out\nx_rel` | 122,5 min (compilar ~48, link ~74 com 2 LTRANS) | 117,8 MB |
+
+O link do LTO usa 512 partições e ~120 MB por `lto1`; cabe com 4 em paralelo. `tools/check_switch_build.py` passa
+nos três (no instrumentado apareceram dois laços sem fim do próprio jogo que o build normal compila de outro jeito:
+`sub_8285E1D0` e `sub_82B482D8`, anotados em `KNOWN_HALTS`).
+
+**Décimo quarto build no console** (`out/switch_logs/015/`): `ds2_021` com o `ds2.nro` (7,5 min, Majula e floresta)
+e `ds2_022` com o `ds2-pgo.nro` (6,5 min). Nenhum `FATAL`, nenhum desenho rejeitado. No `ds2.nro`: média de 11,7
+quadros/s em 39 janelas, com 42,7 ms de GPU parada por quadro (`gap`) e CPU total de 279-280 %: o jogo está preso
+na CPU. O perfil: `ds2_pgo_1.stream`, 6,4 MB → 354 `.gcda` em `pgo\` (fora do git; `sum_max` 1.629.423.073).
+
+A "aura branca" da foto enviada é a mira de trava do jogo (o ponto luminoso sobre o inimigo travado).
+
+**Troca de resolução ao vivo** (`ds2_render_height_combo`, ligado): no Switch, L3 + R3 por um segundo alterna a
+altura de render do modo em uso entre 540 e 720 (`ds2::render::ToggleHeight`; o pad é lido num `PadState` próprio em
+`OnPresented`). O renderizador já refazia as imagens quando a escala muda (dock/undock do sa2-nx); aqui nunca tinha
+sido exercitado. No PC (`ds2_render_test_height_at`): 540 → 720 nos menus e 720 → 540 no meio da floresta, imagem
+certa nas duas (`out/pc/captures/t720.png`, `t540.png`), sem erro novo de validação.

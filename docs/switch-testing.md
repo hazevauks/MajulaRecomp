@@ -4,6 +4,32 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo quinto build (2026-10-11): PGO + LTO e a troca de resolução ao vivo
+
+Copie por cima `ds2.nro` e `ds2-opt.nro` (o `ds2-pgo.nro` do build anterior pode ficar: serve para novas coletas).
+
+| arquivo | o que é |
+|---|---|
+| `ds2.nro` | o build normal (sem LTO, sem PGO), a referência |
+| `ds2-opt.nro` | o build otimizado: LTO + PGO com o perfil da sua sessão de 6,5 minutos |
+
+**Trocar entre 540p e 720p sem fechar o jogo:** segure os dois analógicos pressionados (**L3 + R3**) por um
+segundo. A resolução de render alterna entre 960x540 e 1280x720 na hora (a imagem pisca um quadro) e o log anota o
+momento. Vale nos dois programas e dura até fechar o jogo; ao abrir de novo vale o que está no `ds2.toml` (540).
+Dentro do jogo o R3 também trava a mira e o L3 também faz a ação dele, então use num lugar tranquilo.
+
+O teste, sem overclock, de preferência nos mesmos lugares com os dois programas:
+
+1. `ds2-opt.nro`, sessão longa (20-30 minutos), jogando normalmente. No meio dela, num ponto parado, deixe ~30 s a
+   540p, aperte L3 + R3, deixe ~30 s a 720p e volte com L3 + R3.
+2. `ds2.nro`, uns minutos no mesmo ponto parado (30 s a 540p, L3 + R3, 30 s a 720p), para a comparação.
+
+O que observar no `ds2-opt.nro`: qualquer coisa diferente do `ds2.nro` além da velocidade (comportamento de
+inimigos, física, colisão, som, travamentos). Este build reorganiza o código do jogo inteiro; se algo sair errado,
+o `ds2.nro` continua sendo o de confiança.
+
+Depois a pasta `logs/` (diga a ordem das sessões).
+
 ## Décimo quarto build (2026-10-11): funções preventivas e o início do PGO
 
 Na pasta do pacote há agora até três programas. Todos usam o mesmo `ds2.toml`, os mesmos arquivos do jogo e os
