@@ -343,6 +343,11 @@ REXCVAR_DEFINE_INT32(ds2_native_resolved_read_texels, 4096, "SA2 renderer",
                      "Native renderer: resolved textures of up to this many texels are also copied "
                      "to guest memory, which the game reads for its exposure (0 = "
                      "none; 4096 = 64x64, the ones exposure uses; 57600 = 320x180)");
+REXCVAR_DEFINE_BOOL(ds2_native_other_pitch_fetch_not_resolved, true, "DS2",
+                    "A texture fetch at the address of a resolved texture whose row pitch is not the resolve's is read "
+                    "from guest memory: its rows cannot be the ones the resolve wrote, so the memory was reused (Dark "
+                    "Souls II's save list: a 128x76 portrait the CPU fills where a 256x152 one had been resolved). "
+                    "false = the draw is rejected (cause 109), as sa2-nx");
 REXCVAR_DEFINE_BOOL(ds2_native_conversion_frag_identity, true, "DS2",
                     "ds2_native_conversion_frag: when both views have the same tile pitch, sample layout and first "
                     "tile and the run is whole tile rows, each destination texel reads its own position (no "
@@ -350,11 +355,17 @@ REXCVAR_DEFINE_BOOL(ds2_native_conversion_frag_identity, true, "DS2",
 REXCVAR_DEFINE_INT32(ds2_native_resolved_read_rare_texels, 65536, "DS2",
                      "Native renderer: a resolved texture larger than ds2_native_resolved_read_texels and of up to "
                      "this many texels is also copied to guest memory when it is resolved rarely (its first copy, or "
-                     "none in the last 30 frames), and the copy is finished before the game goes on. Dark Souls II "
-                     "draws each save's portrait (256x152, then 128x76) once when the save list opens and reads the "
-                     "pixels with the CPU; without this it read whatever the memory held (blank or noise "
-                     "portraits). 0 = off")
+                     "none in the last ds2_native_resolved_read_rare_frames frames), and the copy is finished before "
+                     "the game goes on. Dark Souls II draws each save's portrait (256x152, then 128x76) once when the "
+                     "save list opens and reads the pixels with the CPU; without this it read whatever the memory "
+                     "held (blank or noise portraits). 0 = off")
     .range(0, 1048576);
+REXCVAR_DEFINE_INT32(ds2_native_resolved_read_rare_frames, 8, "DS2",
+                     "ds2_native_resolved_read_rare_texels: a copy is rare when the same address and size had none in "
+                     "this many frames. The save list draws its portraits 23 to 29 frames apart and reuses the "
+                     "addresses of freed ones (measured two portraits apart; one apart would be inside the first "
+                     "value used here, 30); the post-processing targets are copied every frame")
+    .range(2, 600);
 REXCVAR_DEFINE_BOOL(ds2_native_invalidate_textures_each_copy, false, "SA2 renderer",
                     "Native renderer: drop the texture caches on every copy (the old behavior). "
                     "Otherwise they are dropped only when a resolved texture is created, rebuilt, prepared or "
@@ -2939,7 +2950,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   }
 
   const ImageNative* ResolvedTextureForFetch(uint32_t address, const uint32_t fetch[6],
-                                              const ImageNative& source) override {
+                                              const ImageNative& source, bool* memory_reused) override {
     const uint32_t width = (fetch[2] & 0x1FFFu) + 1;
     const uint32_t height = ((fetch[2] >> 13) & 0x1FFFu) + 1;
     const auto failure = [&](const char* reason) -> const ImageNative* {
@@ -3005,6 +3016,19 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
     constexpr VkDeviceSize kMaxBytes = 128ull << 20;
     const auto plan = me::native::AnalyzeResolvedSampling(contract, kMaxBytes);
     if (plan.mode == me::native::ResolvedSamplingMode::Unsupported) {
+      // ds2-nx: every other condition of the contract holds (one level, 2D, tiled, at the resolve's own base, a
+      // compatible format) and only the row pitch differs: the fetch's rows are not the rows the resolve wrote.
+      if (plan.failure == me::native::ResolvedSamplingFailure::WrongPitch && memory_reused &&
+          REXCVAR_GET(ds2_native_other_pitch_fetch_not_resolved)) {
+        if (other_pitch_fetches_.size() < 32 && other_pitch_fetches_.insert(address).second)
+          REXLOG_INFO("[native] targets: fetch {:08X} {}x{} pitch {} at a resolved texture's address ({}x{}): another "
+                      "row pitch, so the memory was reused; read from guest memory "
+                      "(ds2_native_other_pitch_fetch_not_resolved)", address, width, height, contract.guest_pitch,
+                      canonical.width, canonical.height);
+        ++other_pitch_fetch_uses_;
+        *memory_reused = true;
+        return nullptr;
+      }
       if (clips_failures_ < 32)
         REXLOG_ERROR("[native] resolved crop contract failure {}: pitch {} backing {}x{} "
                      "guest formats {}/{} host {}", int(plan.failure), contract.guest_pitch,
@@ -10257,7 +10281,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       if (uint64_t(width) * height > uint64_t(std::max(max_rare, 0))) return;
       uint64_t& last = rare_read_last_frame_[(uint64_t(reg.rb_copy_dest_base) << 28) ^ (uint64_t(width) << 14) ^
                                              uint64_t(height)];
-      rare = !last || presented_ + 1 - last >= 30;
+      rare = !last || presented_ + 1 - last >= uint64_t(REXCVAR_GET(ds2_native_resolved_read_rare_frames));
       last = presented_ + 1;
       if (!rare) return;
     }
@@ -10360,6 +10384,8 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   }
   std::unordered_map<uint64_t, uint64_t> rare_read_last_frame_;  // ds2-nx: target -> frame + 1 of its last copy
   uint64_t conv_color_frag_identity_ = 0, conv_color_frag_identity_report_ = 0;  // ds2_native_conversion_frag_identity
+  std::unordered_set<uint32_t> other_pitch_fetches_;  // ds2_native_other_pitch_fetch_not_resolved: addresses logged
+  uint64_t other_pitch_fetch_uses_ = 0;
   uint64_t rare_reads_ = 0;
 
   // The submission finished: the submitted read-backs go to guest memory. Loaded with its fetch

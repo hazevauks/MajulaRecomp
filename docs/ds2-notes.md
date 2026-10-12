@@ -1254,7 +1254,8 @@ chegam a ser desenhados nesse tempo, então não foi reproduzido. Próximo passo
 ## Rodada 6 medida no console; rodada 7: retratos dos saves e a conversão texel a texel (2026-10-11)
 
 **Décimo sexto build no console** (`out/switch_logs/019/ds2_029.log`, `ds2-opt.nro` com o perfil das duas coletas e
-`ds2_native_conversion_frag`; nenhum `FATAL`, nenhum desenho rejeitado; `302 done, 0 declined` por janela). Nos três
+`ds2_native_conversion_frag`; nenhum `FATAL`; `302 done, 0 declined` por janela; 674 desenhos rejeitados, todos na
+lista de saves, o que só foi visto na rodada seguinte: ver "Rodada 7 medida"). Nos três
 pontos, contra a sessão `ds2_025` (build otimizado anterior, conversões por compute):
 
 | ponto | resolução | quadros/s antes → agora | `edram_alias` antes → agora | anel µs/desenho |
@@ -1297,3 +1298,50 @@ quadros), e nesse caso o trabalho é enviado e esperado ali mesmo, para os texel
 seguir (no console de origem um lock de textura espera a GPU). Os alvos do pós-processamento, copiados todo quadro,
 só passam pela regra na primeira cópia (no PC: 12 leituras ao entrar no 3D, nenhuma depois). A lista de saves não
 foi reproduzida no PC ("Continue" carrega direto o save mais recente), então a confirmação é do console.
+
+## Rodada 7 medida no console; o desenho rejeitado da lista de saves (2026-10-11)
+
+**Décimo sétimo build no console** (`out/switch_logs/020/ds2_032.log`, `ds2-opt.nro`, 17:28-17:39, seis trocas de
+resolução, nenhum `FATAL`; os quatro retratos aparecem na lista de saves, foto do console). Nos três pontos, contra a
+sessão `ds2_029` (décimo sexto build):
+
+| ponto | resolução | quadros/s antes → agora | `edram_alias` antes → agora | GPU ociosa por quadro |
+|---|---|---|---|---|
+| 1 matagal | 540p | 16,5 → 16,6 | 10,7 → 3,1 ms | 11,7 ms |
+| 1 matagal | 720p | 12,6 → 15,4 | 18,6 → 5,1 ms | |
+| 2 casa | 540p | 15,1 → 17,0 | 10,9 → 3,5 ms | 9,5 ms |
+| 2 casa | 720p | 11,8 → 15,4 | 18,8 → 5,6 ms | |
+| 3 vista de Majula | 540p | 16,9 → 18,1 | 13,2 → 3,5 ms | 16,9 ms |
+| 3 vista de Majula | 720p | 13,7 → 17,2 | 22,9 → 5,9 ms | |
+
+A conversão texel a texel tirou 7-10 ms de GPU por quadro a 540p e 13-17 ms a 720p. A 720p isso virou 2,8 a 3,6
+quadros/s; a 540p quase nada, porque ali a GPU já fica parada 9 a 17 ms por quadro esperando a CPU (anel: 36,6 a
+42,3 µs por desenho). O limite a 540p voltou a ser a CPU; o código gerado é o próximo passo.
+
+**5.873 desenhos rejeitados nessa sessão** (`resolved logical crop rejected 14AE9000 128x76: unproven logical fetch
+layout`, causa 109), um por quadro enquanto a lista de saves fica aberta. Não é novo: as sessões `ds2_028` a
+`ds2_031` têm o mesmo (1.175, 674, 962 e 609), e eu tinha escrito "nenhum desenho rejeitado" olhando só as janelas do
+jogo. O que acontece: o jogo copia o retrato de cada save para uma textura de 256x152, reduz para 128x76, lê os
+pixels pela CPU, libera as duas e cria a textura que a interface desenha (128x76, preenchida pela CPU). A do
+primeiro save cai no endereço `14AE9000`, onde tinha estado a cópia de 256x152; o renderizador ainda tinha a entrada
+da cópia naquele endereço, viu um tamanho que não é um recorte dela (passo de linha 128 contra 256) e descartou o
+desenho. É o terceiro caso de memória reaproveitada (os outros: busca linear, busca comprimida).
+
+Correção (`ds2_native_other_pitch_fetch_not_resolved`, padrão `true`): quando todas as outras condições do contrato
+valem (um nível, 2D, em blocos, na base da cópia, formato compatível) e só o passo de linha difere, as linhas da
+busca não podem ser as que a cópia escreveu: a busca é lida da memória do jogo, como textura comum. Uma linha de log
+por endereço (`another row pitch, so the memory was reused`).
+
+**A lista de saves no PC.** O menu do título é `New Game / Continue / Information / Go Online`; "Continue" abre a
+lista. O roteiro de botões do `guided_session.ps1` aperta START três vezes e A a cada 6 s, e os tempos das telas
+variam de uma execução para outra, por isso a lista "carregava direto": era o roteiro confirmando. Com
+`-Pad "16-16.6:a,30-30.6:start,42-42.6:start"` e `-Extra "REX_DS2_DIAG_DRAW_EVERY=1"`, e daí à mão com
+`tools/live.py` (START no título, A nos avisos "No Ethernet cable" e "Starting in offline mode", A em "Continue"), a
+lista abre e fica. No lavapipe cada retrato leva ~40 s (um único passe de 37 s). Resultado
+(`out/pc/captures/x6.png`): os quatro retratos, 8 leituras raras, a linha do passo de linha diferente para
+`14AE9000`, nenhum desenho rejeitado.
+
+**Folga da regra das cópias raras** (`ds2_native_resolved_read_rare_frames`, padrão 8; era 30 fixo). O jogo desenha
+os retratos com 23 a 29 quadros de intervalo e reaproveita os endereços dos já liberados (`14AE9000`, `15436000`,
+`14AF5000`, `15436000`: no console e no PC o reaproveitamento foi a dois retratos de distância, 58 quadros). Com o
+limite em 30, um reaproveitamento a um retrato de distância ficaria de fora e o retrato sairia vazio.

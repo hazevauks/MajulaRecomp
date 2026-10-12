@@ -162,12 +162,16 @@ class ContextTargets {
   virtual const ImageNative* ResolvedTexture(uint32_t address) = 0;
   // A known resolve may have a pitch-sized backing, unlike the fetch's logical size.
   // Called outside the current draw's pass, after ResolvedTexture accounted/materialized the read.
-  // nullptr means an unsupported/failed resolved fetch, NOT permission to read stale guest RAM.
+  // nullptr means an unsupported/failed resolved fetch, NOT permission to read stale guest RAM; except when
+  // *memory_reused comes back true (ds2-nx, ds2_native_other_pitch_fetch_not_resolved): the fetch's row pitch is not
+  // the resolve's, so it describes other data at a freed resolve's address and is read from guest memory.
   virtual const ImageNative* ResolvedTextureForFetch(uint32_t address,
                                                      const uint32_t fetch[6],
-                                                     const ImageNative& source) {
+                                                     const ImageNative& source,
+                                                     bool* memory_reused = nullptr) {
     (void)address;
     (void)fetch;
+    (void)memory_reused;
     return &source;
   }
   // Submits what was recorded and continues in the other slot, with its upload buffer empty.

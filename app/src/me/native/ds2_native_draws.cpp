@@ -8898,14 +8898,21 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (TextureFormatFor(f[1] & 0x3F, fetched) && fetched.block > 1) may_be_resolved = false;
     }
     if (!cube && !volume && may_be_resolved) {
-      if (const ImageNative* resolved = context_->ResolvedTexture(base & 0x1FFFFFFF)) {
+      const ImageNative* resolved = context_->ResolvedTexture(base & 0x1FFFFFFF);
+      if (resolved) {
         AuditFetchResolved(base & 0x1FFFFFFF, f, *resolved);
-        resolved = context_->ResolvedTextureForFetch(base & 0x1FFFFFFF, f, *resolved);
-        if (!resolved) {
+        // ds2-nx: memory_reused = the fetch has another row pitch than the resolve (Dark Souls II's save list: each
+        // save's portrait is resolved at 256x152, freed, and a 128x76 texture the CPU fills takes its address). It
+        // goes on to the ordinary texture path below.
+        bool memory_reused = false;
+        resolved = context_->ResolvedTextureForFetch(base & 0x1FFFFFFF, f, *resolved, &memory_reused);
+        if (!resolved && !memory_reused) {
           me_resolved_fetch_failed_this_draw_ = true;
           Reject(109, "resolved logical-size fetch unsupported or GPU copy failed");
           return;
         }
+      }
+      if (resolved) {
         if (!me::native::IsSingleSample(uint32_t(resolved->sample_count))) {
           me_resolved_fetch_failed_this_draw_ = true;
           Reject(109, "ordinary resolved texture fetch cannot bind a multisample image");
