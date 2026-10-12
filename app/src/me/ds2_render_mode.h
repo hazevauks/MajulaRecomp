@@ -9,8 +9,14 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace ds2::render {
+
+// The process's memory on the Switch, for the renderer's memory lines in the log: what the kernel says the process
+// uses and may use, and the state of the heap (where NVK takes GPU memory from too). Empty on the PC. It lives here
+// because this file already includes the console's headers.
+std::string ProcessMemoryText();
 
 // The render scale for the current mode, in quarters of the game's 1280x720 (q = height / 180: 4 = 720p, 6 = 1080p).
 // 4 when ds2_gpu_render_scale (or the non-CPU master) is off. Cheap: called once per Swap.

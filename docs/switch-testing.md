@@ -4,6 +4,37 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo nono build (2026-10-12): memória para sessões longas e o novo programa otimizado
+
+Copie por cima: `ds2.nro` e `ds2-opt.nro`. Pode apagar do cartão o `ds2-pgo.nro` (não é preciso coletar de novo
+agora) e a pasta `pgo/` (os arquivos dela já foram usados).
+
+O que muda:
+
+- **A queda aos 28 minutos era falta de memória**, não o código novo: cada thread do jogo reservava 16 MB de pilha
+  (umas 50 threads, 800 MB), e com o cache de texturas crescendo ao longo da sessão a memória do processo acabava.
+  As pilhas agora têm o tamanho que cada thread precisa. Vale para os dois programas.
+- `ds2-opt.nro` agora é o **código novo com LTO + PGO**, feito com o perfil da sua coleta (os 26 minutos antes da
+  queda foram aproveitados).
+
+| arquivo | o que é |
+|---|---|
+| `ds2-opt.nro` | o programa a usar: código otimizado + LTO + PGO |
+| `ds2.nro` | o mesmo código sem LTO/PGO (reserva, e para comparar) |
+
+**Teste, com o `ds2-opt.nro`:**
+
+1. Os três pontos parados de sempre (matagal, casa das firekeepers, vista de Majula), ~30 s a 540p, L3 + R3,
+   ~30 s a 720p.
+2. Uma **sessão longa, de 40 minutos ou mais**, passando por várias áreas, e trocando de resolução algumas vezes
+   pelo caminho (foi o que derrubou da outra vez). É o teste da correção de memória.
+
+Se alguma thread do jogo precisar de mais pilha do que recebeu, o programa fecha de repente (sem imagem estranha
+antes). Se isso acontecer, mande os logs e, para continuar jogando, crie na pasta do jogo um `ds2.toml` com a linha
+`switch_guest_host_stack_mb = 16` no fim (volta ao comportamento antigo).
+
+Depois a pasta `logs/`.
+
 ## Décimo oitavo build (2026-10-12): código do jogo recompilado de outro jeito
 
 Copie por cima: `ds2.nro`, `ds2-pgo.nro` e `ds2-opt.nro` (o `ds2.toml` e a pasta `configs/` não mudaram).

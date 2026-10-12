@@ -9251,8 +9251,8 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
               vulkan_device_, info, rex::ui::vulkan::util::MemoryPurpose::kDeviceLocal, image.image,
               image.memory)) {
         REXLOG_ERROR("[native] targets: out of GPU memory for a {}x{} target (format {}) and dropping the cache "
-                     "was not enough",
-                     info.extent.width, info.extent.height, uint32_t(format));
+                     "was not enough ({})",
+                     info.extent.width, info.extent.height, uint32_t(format), ds2::render::ProcessMemoryText());
         return false;
       }
     }

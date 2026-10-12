@@ -49,6 +49,37 @@ REXCVAR_DEFINE_BOOL(ignore_thread_priorities, true, "Kernel",
 REXCVAR_DEFINE_BOOL(ignore_thread_affinities, true, "Kernel",
                     "Ignores game-specified thread affinities");
 
+#if REX_PLATFORM_SWITCH
+// ds2-nx (2026-10-12). On Horizon the whole heap is committed memory, and a guest thread's host stack is a heap
+// block: 16 MB each, whatever the thread does. Dark Souls II keeps about 50 guest threads alive, so 800 MB of the
+// 3.2 GB the process has went to stacks that use a few hundred KB each; with the texture cache growing over a long
+// session the heap ran out after 28 minutes (NVK's "allocate memory failed: out of host memory", then render targets
+// that could not be created and a guest crash). The stack now follows the guest thread's own stack size.
+REXCVAR_DEFINE_INT32(switch_guest_host_stack_mb, 0, "Kernel",
+                     "Switch: host stack of each guest thread, in MB. 0 = automatic: 16 times the thread's guest "
+                     "stack, at least 4 MB and at most 16 MB. 16 = every thread gets 16 MB, as sa2-nx")
+    .range(0, 64);
+
+namespace {
+size_t SwitchHostStackFor(uint32_t guest_stack_size, uint32_t thread_id, bool main_thread) {
+  const int32_t fixed = REXCVAR_GET(switch_guest_host_stack_mb);
+  size_t bytes;
+  if (fixed > 0) {
+    bytes = size_t(fixed) << 20;
+  } else {
+    bytes = std::clamp((size_t(guest_stack_size) * 16 + 0xFFFFF) & ~size_t(0xFFFFF), size_t(4) << 20, size_t(16) << 20);
+    if (main_thread) bytes = size_t(16) << 20;
+  }
+  static std::atomic<uint32_t> logged{0};
+  if (logged.fetch_add(1, std::memory_order_relaxed) < 96) {
+    REXSYS_INFO("[threads] guest thread {}: guest stack {} KB, host stack {} MB{}", thread_id, guest_stack_size >> 10,
+                bytes >> 20, main_thread ? " (main thread)" : "");
+  }
+  return bytes;
+}
+}  // namespace
+#endif
+
 namespace rex::system {
 
 const uint32_t XAPC::kSize;
@@ -465,6 +496,9 @@ X_STATUS XThread::Create() {
 
   rex::thread::Thread::CreationParameters params;
   params.stack_size = 16_MiB;  // Allocate a big host stack.
+#if REX_PLATFORM_SWITCH
+  params.stack_size = SwitchHostStackFor(creation_params_.stack_size, thread_id_, main_thread_);  // ds2-nx
+#endif
   params.create_suspended = true;
   thread_ = rex::thread::Thread::Create(params, [this]() {
     rex::initialize_seh_thread();

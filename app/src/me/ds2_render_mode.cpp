@@ -17,6 +17,8 @@
 #include "cpu/ds2_enhancements.h"
 
 #if REX_PLATFORM_SWITCH
+#include <malloc.h>
+
 #include <switch.h>
 #endif
 
@@ -198,6 +200,20 @@ uint32_t MsaaSamples() {
   if (!g_msaa.active) return 1;
   const int32_t samples = REXCVAR_GET(ds2_msaa);
   return samples >= 4 ? 4u : samples >= 2 ? 2u : 1u;
+}
+
+std::string ProcessMemoryText() {
+#if REX_PLATFORM_SWITCH
+  u64 total = 0, used = 0;
+  svcGetInfo(&total, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+  svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+  const struct mallinfo heap = mallinfo();
+  return fmt::format("process memory {} of {} MB; heap: {} MB taken from the system, {} MB allocated, {} MB free "
+                     "inside it in {} pieces", used >> 20, total >> 20, size_t(heap.arena) >> 20,
+                     size_t(heap.uordblks) >> 20, size_t(heap.fordblks) >> 20, size_t(heap.ordblks));
+#else
+  return {};
+#endif
 }
 
 void NoteRescale() { g_render_scale.Use(); }

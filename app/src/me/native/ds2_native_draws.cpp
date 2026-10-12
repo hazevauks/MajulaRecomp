@@ -6069,6 +6069,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     REXLOG_INFO("[native] C3 GPU memory: {}{}; the texture cache holds {} MB of {} MB", text,
                 has_budget ? "" : " (no VK_EXT_memory_budget: sizes only)", bytes_textures_ >> 20,
                 textures_mb_max_);
+    // ds2-nx: on the Switch the GPU memory comes out of the process heap, so that is the number that runs out.
+    if (const std::string process = ds2::render::ProcessMemoryText(); !process.empty())
+      REXLOG_INFO("[native] C3 {}", process);
     // Without this line there is no way to know whether the pool is working or fragmenting. A vegetation
     // counter once existed and was never printed.
     if (pool_textures_.Active()) {

@@ -1443,3 +1443,60 @@ também sumiram: com as barreiras o GCC não os prova sem fim), nenhum multiplic
 `out/switch_elf/optimised_1/`. O perfil das coletas antigas (código clássico) foi para `out/pgo_classic`; o
 `out\nx_rel` continua com o programa antigo (clássico, LTO + PGO), que vai no pacote como `ds2-opt.nro` só para
 comparação até a coleta nova.
+
+## Décimo oitavo build no console: o código novo funciona; a memória acabou aos 28 minutos (2026-10-12)
+
+**Sessão normal** (`out/switch_logs/021/ds2_033.log`, `ds2.nro` com o código otimizado, sem LTO/PGO; 20 min, 11,8
+milhões de desenhos, nenhum rejeitado, nenhum `FATAL`, retratos certos). Nos três pontos, contra o `ds2-opt.nro`
+antigo (código clássico **com** LTO + PGO, sessão `ds2_032`):
+
+| ponto | 540p antigo → novo | 720p antigo → novo | anel µs/desenho (540p) |
+|---|---|---|---|
+| 1 matagal | 16,6 → 19,5 | 15,4 → 15,3 | 36,6 → 51,1 |
+| 2 casa | 17,0 → 17,6 | 15,4 → 15,9 | 42,3 → 50,9 |
+| 3 vista de Majula | 18,1 → 19,4 | 17,2 → 17,8 | 38,9 → 50,5 |
+
+O código do jogo otimizado, sozinho, já passa o clássico com LTO + PGO a 540p. A thread do anel ficou mais lenta
+porque este programa não tem LTO/PGO (o renderizador é o mesmo código de antes); o próximo `ds2-opt.nro` junta as
+duas coisas. A 720p o limite continua sendo a GPU.
+
+**Sessão de coleta** (`ds2_034.log`, `ds2-pgo.nro`, 12:31 a 12:59 no relógio do PC): aos 28 minutos imagem
+"fantasma", tela laranja ao trocar para 720p e o programa fechou (`rex_crash.log`: `abort()` vindo de
+`Memory::AccessViolationCallback`, um acesso inválido do jogo). A ordem no log:
+
+- 12:55:01, :15, :28 (a 540p, sem trocar nada): `nvkmd-switch: allocate memory failed: out of host memory`;
+- 12:59:13, L3 + R3 para 720p: `targets: out of GPU memory for a 1040x1040 target ... dropping the cache was not
+  enough` (e 1600x1600, 1280x720): alvos que não existem, tela laranja;
+- 12:59:26, de volta a 540p: os alvos de 540p também não cabem, sobram alvos em escalas diferentes
+  (`targets at different render scales (cause 41)`, 11.516 desenhos rejeitados): a imagem fantasma;
+- 12:59:31: o jogo acessa memória inválida e o programa fecha.
+
+Não é o código gerado: é **memória**. No Switch a memória de GPU do NVK sai do heap do processo, e a linha
+`C3 GPU memory` dá o que o driver acha que ainda há: usado 664 → 759 → 852 MB, "orçamento" 1.092 → 1.052 → 1.133 MB,
+ou seja, só ~280 MB livres no processo inteiro às 12:58 (na sessão normal, 299 MB aos 13 min; na coleta clássica de
+27 min, 386 MB aos 15 min). O que cresce é o cache de texturas (151 → 252 → 330 MB, limite de 512), à medida que se
+anda pelo jogo; trocar de resolução precisa de mais ~100 MB de uma vez (alvos de 172,6 MB a 540p, 273,4 MB a 720p).
+Qualquer sessão longa chegaria lá, com qualquer um dos programas.
+
+Onde estava a memória: no Horizon o heap inteiro é memória comprometida, e a pilha de host de cada thread do jogo é
+um bloco do heap de **16 MB** (`params.stack_size = 16_MiB` em `sdk/src/system/xthread.cpp`). O DS2 mantém umas 50
+threads vivas (`stacks: 50 from the heap, 12 reused`; 61 threads no relatório de perfil): ~800 MB dos ~3,2 GB do
+processo em pilhas que usam algumas centenas de KB cada. No SA2, com poucas threads, isso não aparecia.
+
+Correção (`switch_guest_host_stack_mb`, quarta exceção `ds2-nx` do SDK; padrão 0 = automático): a pilha de host
+passa a ser 16 vezes a pilha de guest da própria thread, no mínimo 4 MB e no máximo 16 MB (a thread principal fica
+com 16 MB). As primeiras 96 threads criadas escrevem no log a pilha de guest e a de host
+(`[threads] guest thread N: guest stack X KB, host stack Y MB`), para ajustar depois com números. O log também ganha
+a memória do processo (`process memory A of B MB; heap: ...`, de `svcGetInfo` e `mallinfo`) junto da linha
+`C3 GPU memory` e na mensagem de falta de memória de GPU.
+
+**O perfil foi aproveitado.** A pasta `pgo/` do cartão tinha três arquivos: `ds2_pgo_1` e `_2` são os da coleta
+antiga (idênticos byte a byte aos de `out/switch_logs/017/pgo`, do código clássico: não servem) e `ds2_pgo_3.stream`
+é o último despejo completo desta sessão, escrito dois minutos antes da queda (o `.tmp` de 5 MB é o despejo que
+estava sendo escrito). Juntado sozinho em `pgo\`: 354 `.gcda`, maior contagem de arco 9.065.595.789.
+
+**Tropeço do build:** mexer num arquivo do SDK faz o build de PC religar o gerador e rodar o codegen de novo, que
+reescreve os 331 arquivos gerados (o conteúdo final é o mesmo depois dos passos pós-codegen, mas a data muda e todos
+os builds recompilam tudo; e o próprio build de PC falha uma vez, porque o `ds2_pch.h` muda depois de o cabeçalho
+pré-compilado ser feito). Conferi que dois dos arquivos compilam para objetos idênticos aos de `out\nx` e devolvi
+as datas antigas aos 331, para o `out\nx` recompilar só o que mudou.
