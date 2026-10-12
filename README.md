@@ -62,8 +62,9 @@ python tools\fetch_thirdparty.py
 powershell -File tools\win\run.ps1 out\host_configure.log "cmake -S sdk -B out/host -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2"
 powershell -File tools\win\run.ps1 out\host_build.log "cmake --build out/host --target rexglue"
 
-# 3. Traduzir o Default.xex para C++ (app\generated, ~350 MB; cerca de 7 min numa máquina de 4 threads)
-powershell -File tools\codegen.ps1
+# 3. Traduzir o Default.xex para C++ (app\generated, ~350 MB; cerca de 13 min numa máquina de 4 threads).
+#    -Flavor optimised é o código entregue (app\perf_overrides.toml); sem ele sai o código "clássico".
+powershell -File tools\codegen.ps1 -Flavor optimised
 
 # 4. Conferências depois de cada codegen (precisam de out\default_image.bin: rode o passo 3 uma vez com
 #    $env:REXGLUE_DUMP_IMAGE = "$PWD\out\default_image.bin")

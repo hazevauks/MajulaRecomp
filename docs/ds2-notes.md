@@ -1435,3 +1435,11 @@ autotestes é a de antes (`VS identity mismatch`, igual no clássico).
    `lldb.exe` do LLVM daqui não abre: falta a DLL do Python 3.10). Suspende cada uma das threads mais ocupadas por um
    instante, lê o ponteiro de instrução e os endereços de retorno do topo da pilha e dá nome a eles com o
    `llvm-symbolizer` e o `ds2.pdb` (`--all-modules` mostra também as DLLs).
+
+**Builds de Switch com o código otimizado** (2026-10-12, `out/build_switch_all.log`): `out\nx` em 58,1 min, NRO de
+80,8 MB (o clássico tinha 105,6 MB); `out\nx_pgo` (instrumentado) em 83,8 min, 105,7 MB. `tools/check_switch_build.py`
+passa nos dois: nenhum desvio para si mesmo no código recompilado (os cinco laços sem fim conhecidos do clássico
+também sumiram: com as barreiras o GCC não os prova sem fim), nenhum multiplica-e-soma vetorial. ELFs em
+`out/switch_elf/optimised_1/`. O perfil das coletas antigas (código clássico) foi para `out/pgo_classic`; o
+`out\nx_rel` continua com o programa antigo (clássico, LTO + PGO), que vai no pacote como `ds2-opt.nro` só para
+comparação até a coleta nova.

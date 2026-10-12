@@ -4,6 +4,40 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Décimo oitavo build (2026-10-12): código do jogo recompilado de outro jeito
+
+Copie por cima: `ds2.nro`, `ds2-pgo.nro` e `ds2-opt.nro` (o `ds2.toml` e a pasta `configs/` não mudaram).
+
+O que é cada programa agora:
+
+| arquivo | o que é |
+|---|---|
+| `ds2.nro` | **o novo**: o código do jogo traduzido com as opções de velocidade (registradores do PowerPC em variáveis locais, chamadas diretas entre funções). Ainda sem LTO/PGO |
+| `ds2-pgo.nro` | o mesmo código novo, instrumentado, para a coleta de perfil. É lento de propósito |
+| `ds2-opt.nro` | o **antigo** (décimo sétimo build: código clássico com LTO + PGO), só para comparar |
+
+Esta é a mudança mais funda desde o primeiro build: todas as 83 mil funções do jogo foram geradas de novo. No PC o
+jogo passou pelos menus, lista de saves, Majula e pelo vídeo de abertura de um jogo novo, mas o compilador do Switch
+é outro, então o primeiro teste é de estabilidade.
+
+**Teste 1, `ds2.nro` (estabilidade e velocidade):**
+
+1. Abra, entre na lista de saves (os quatro retratos têm de aparecer) e carregue um save.
+2. Os três pontos parados de sempre (matagal, casa das firekeepers, vista de Majula), ~30 s a 540p, L3 + R3,
+   ~30 s a 720p. É a comparação com o `ds2-opt.nro` antigo, que você já mediu; não precisa repetir com ele.
+3. Jogue uns 10 minutos normalmente: combate, uma fogueira, um carregamento de área.
+4. Se puder, comece um **jogo novo** e veja o vídeo de abertura por alguns segundos (o decodificador de vídeo foi
+   uma das partes que precisou de cuidado). Pode pular depois.
+
+Se o `ds2.nro` travar ou fechar em qualquer ponto, pare aí e mande a pasta `logs/` (e as pastas de relatório do
+Atmosphère, se houver): não adianta coletar perfil de um programa que não está certo.
+
+**Teste 2, `ds2-pgo.nro` (só se o teste 1 passou):** a coleta de perfil, como da outra vez: jogue 20 a 30 minutos
+de jogo variado (do início até onde der, com combate e carregamentos) e saia pelo menu HOME fechando o programa.
+O perfil antigo não serve para o código novo; é esta coleta que vai alimentar o próximo `ds2-opt.nro`.
+
+Depois: a pasta `logs/` e a pasta `pgo/` que aparece ao lado do programa.
+
 ## Décimo sétimo build (2026-10-11): retratos dos saves e mais um corte na GPU
 
 Copie por cima: `ds2-opt.nro` e `ds2.nro` (o `ds2.toml` e a pasta `configs/` são os do décimo sexto build; se o
