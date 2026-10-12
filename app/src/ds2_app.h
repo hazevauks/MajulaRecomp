@@ -13,6 +13,7 @@
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
 #include <rex/system/gpu_plugin.h>
+#include <rex/ui/overlay/achievement_notification.h>
 
 #include "cpu/ds2_enhancements.h"
 #include "ds2_capture.h"
@@ -25,6 +26,16 @@
 // Switch build has Vulkan only, so "vulkan" on the PC is the same code path the console's first frames use.
 REXCVAR_DEFINE_STRING(ds2_gpu_backend, "", "DS2",
                       "Host API of the emulated GPU (gpu_plugin = xenos): empty = the SDK's choice, d3d12 or vulkan");
+
+// The SDK shows an unlocked achievement as an ImGui dialog. A dialog registers a UI drawer for the rest of its life,
+// and with one drawer registered the presenter stops presenting from the game thread: frames are painted by the UI
+// thread on request (the SDK already creates the dialog only at the first achievement for this reason). On the console
+// (2026-10-12, a 46-minute session): from the first achievement on, 8 to 14 GPU submissions a frame instead of 2, the
+// presenter waiting 6-8 ms a frame for its send, the ring thread at 90-145 us a draw instead of 45-50, and 12 frames a
+// second where there had been 20, until the game was closed. The achievement is recorded either way.
+REXCVAR_DEFINE_BOOL(ds2_achievement_toast, false, "DS2",
+                    "Show the on-screen notification when an achievement unlocks. false = none: the notification "
+                    "dialog, once created, keeps the presenter on its slow path for the rest of the session");
 
 class Ds2App : public rex::ReXApp {
  public:
@@ -108,6 +119,18 @@ class Ds2App : public rex::ReXApp {
     });
     // The PGO-instrumented build (DS2_PGO=generate) saves its counts to pgo/ every 2 minutes (nothing otherwise).
     ds2::pgo::Start();
+  }
+
+  std::unique_ptr<rex::ui::AchievementNotificationDialog> CreateAchievementNotificationDialog() override {
+    if (!REXCVAR_GET(ds2_achievement_toast)) {
+      static bool said = false;
+      if (!said) {
+        said = true;
+        REXLOG_INFO("[app] achievement unlocked: no on-screen notification (ds2_achievement_toast = false)");
+      }
+      return nullptr;
+    }
+    return rex::ReXApp::CreateAchievementNotificationDialog();
   }
 
   // The PGO-instrumented build saves its counts when the game loses focus (HOME menu): it may be closed from there.

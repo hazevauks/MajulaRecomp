@@ -1507,3 +1507,65 @@ casa com o código (um arquivo recompilado com `-fdump-ipa-profile-blocks`: cont
 divergência). ELFs em `out/switch_elf/optimised_2/`. Um dado do perfil para depois: o arco mais executado do programa
 inteiro (9.065.595.789 vezes em 26 min) é o laço de espera de `sub_829B9C60`, a função do Direct3D que gira
 esperando o anel da GPU andar: a thread principal queima CPU ali enquanto o renderizador está atrasado.
+
+## Décimo nono build no console: memória resolvida; a notificação de conquista derruba o apresentador (2026-10-12)
+
+Sessão de 46 minutos com o `ds2-opt.nro` novo (código otimizado + LTO + PGO; `out/switch_logs/022/ds2_035.1.log` e
+`ds2_035.log`, 15:06 a 15:56 no relógio do PC). Nenhum `FATAL`, nenhuma falha de memória, 12 trocas de resolução.
+
+**Os três pontos** (antes dos 21 minutos), contra o `ds2-opt.nro` antigo (clássico + LTO + PGO) e o `ds2.nro` do
+décimo oitavo build (otimizado sem LTO/PGO):
+
+| ponto | 540p: antigo → sem LTO/PGO → novo | 720p: antigo → novo | GPU ociosa a 540p |
+|---|---|---|---|
+| 1 matagal | 16,6 → 19,5 → **20,3** | 15,4 → 15,3 | 1,9 ms |
+| 2 casa | 17,0 → 17,6 → **20,1** | 15,4 → 16,1 | 1,4 ms |
+| 3 vista de Majula | 18,1 → 19,4 → **22,0** | 17,2 → 18,8 | 6,3 ms |
+
+A 540p são +18 a +22 % sobre o programa antigo, e a GPU deixou de ficar parada: com 45 a 50 ms de GPU por quadro
+(cena 25 a 32 ms), o limite a 540p voltou a ser a GPU. A etapa 3 (corte por alfa nos shaders) é a próxima.
+
+**Memória.** As pilhas: 68 threads com pilha de guest de 16 KB, 8 de 128 KB, 7 de 64 KB, 6 de 256 KB, 6 menores, todas
+com 4 MB de host; a principal (256 KB) com 16 MB. Nenhuma estourou em 46 minutos. O log novo:
+
+| hora | heap pego do sistema | alocado | livre dentro | pedaços livres | GPU | cache de texturas |
+|---|---|---|---|---|---|---|
+| 15:14 | 2.154 MB | 1.948 | 205 | 43.656 | 664 MB | 149 MB |
+| 15:24 | 2.518 | 2.257 | 260 | 94.148 | 931 | 382 |
+| 15:44 | 2.858 | 2.345 | 512 | 169.932 | 927 | 382 |
+
+O cache de texturas parou em 382-386 MB (o gotejamento das frias começa a 75 % do limite de 512) e a GPU em ~930 MB.
+Fora a GPU, o processo usa 1,3 a 1,4 GB e cresce devagar (+134 MB em 30 min); o heap fragmenta (170 mil pedaços
+livres) e o que ele pega do sistema continua subindo (2.858 de ~3.190 MB aos 38 min). Sobrou margem nesta sessão, mas
+uma sessão de várias horas ainda pode chegar ao teto: fica na lista (o pool de texturas está em 16 blocos de 32 MB,
+86 % fragmentado, e 1.273 das 2.891 texturas do cache têm o mesmo conteúdo de outra).
+
+**A perda de desempenho "ao longo do tempo" começa num instante exato: 15:28:29.**
+
+    15:28:29.497 Achievement unlocked: 00000026
+    15:28:29.552 Presenter: paint mode -> on the UI thread, on request (implicit vsync no, UI drawers 1)
+
+O SDK mostra a conquista num diálogo ImGui. Um diálogo registra um "UI drawer" enquanto existe, e com um drawer
+registrado o apresentador deixa de apresentar pela thread do jogo: quem pinta é a thread de interface, a pedido. O
+sa2-nx já tinha medido isso (de ~18 para ~9 imagens por segundo) e por isso cria o diálogo só na primeira conquista;
+mas, criado, ele fica até o programa fechar. Daquele segundo em diante, nesta sessão:
+
+| | antes | depois |
+|---|---|---|
+| envios à GPU por quadro (kickoffs) | 2 | 8 a 14 |
+| consultas de fence por segundo | 25 a 40 | 450 a 790 |
+| tempo esperando fences, por segundo | 2 a 70 ms | 550 a 980 ms |
+| apresentador: espera pelo envio de 3 quadros atrás | 0,03 ms | 6 a 8 ms (pior: 40) |
+| thread do anel, µs por desenho | 45 a 50 | 90 a 145 |
+| quadros/s (média de 10 min) | 19,5 a 21,3 | 12,3 a 13,8 |
+
+e as janelas de 1 a 4 quadros/s que o usuário viu (15:32:37, 15:34:34, 15:44:07: 190 a 210 ms de "GPU por quadro"
+com só ~20 ms de cena) são do mesmo regime. A sessão clássica de 27 minutos (`ds2_027`) também teve uma conquista,
+mas era o programa instrumentado e ninguém mediu.
+
+Correção (`ds2_achievement_toast`, padrão `false`): o app sobrepõe `CreateAchievementNotificationDialog()`, o ponto
+de extensão que o SDK documenta ("returning nullptr disables notifications"), e não cria o diálogo. A conquista é
+gravada do mesmo jeito; só não aparece o aviso na tela.
+
+Outro dado do perfil de threads no fim da sessão: thread do anel a 78-83 % de um núcleo e a principal do jogo a
+62 %, com 266-280 % de CPU total nos três núcleos.

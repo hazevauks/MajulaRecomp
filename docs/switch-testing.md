@@ -4,6 +4,20 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Vigésimo build (2026-10-12): a queda de desempenho depois de uma conquista
+
+Copie por cima: `ds2-opt.nro` e `ds2.nro`.
+
+O que muda: na sessão de 46 minutos o desempenho caiu de ~20 para ~12 quadros/s num instante exato, o da primeira
+conquista desbloqueada. O aviso de conquista na tela deixava o programa num modo de apresentação mais lento até ser
+fechado (e era dele que vinham os trechos a 1-3 quadros/s). O aviso foi desligado; a conquista é gravada igual.
+
+**Teste, com o `ds2-opt.nro`:** jogue normalmente por 40 minutos ou mais, de preferência passando por um ponto que
+dê conquista (por exemplo acender a primeira fogueira num save novo, ou derrotar um chefe), e repare se o
+desempenho se mantém do começo ao fim. Trocar de resolução continua valendo (L3 + R3).
+
+Depois a pasta `logs/`.
+
 ## Décimo nono build (2026-10-12): memória para sessões longas e o novo programa otimizado
 
 Copie por cima: `ds2.nro` e `ds2-opt.nro`. Pode apagar do cartão o `ds2-pgo.nro` (não é preciso coletar de novo
