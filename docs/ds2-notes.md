@@ -1569,3 +1569,6 @@ gravada do mesmo jeito; só não aparece o aviso na tela.
 
 Outro dado do perfil de threads no fim da sessão: thread do anel a 78-83 % de um núcleo e a principal do jogo a
 62 %, com 266-280 % de CPU total nos três núcleos.
+
+**Vigésimo build** (2026-10-12): `out\nx` em 0,8 min (80,9 MB) e `out\nx_rel` em 41,8 min (90,5 MB), os dois com
+`ds2_achievement_toast`; `tools/check_switch_build.py` passa nos dois. ELFs em `out/switch_elf/optimised_3/`.
