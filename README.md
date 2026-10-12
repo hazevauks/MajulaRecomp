@@ -1,12 +1,9 @@
-# MajulaRecomp — Dark Souls II (Xbox 360) no Nintendo Switch
+# MajulaRecomp — Dark Souls II on Nintendo Switch
 
-Porte nativo de **Dark Souls II** (FromSoftware, 2014, versão de Xbox 360, title ID `465307E4`) para o Nintendo Switch
-por **recompilação estática**: o código PowerPC do `Default.xex` é traduzido para C++ com o
-[ReXGlue](https://github.com/rexglue/rexglue-sdk) e compilado para o Switch com o devkitA64. Não é um emulador.
+**Dark Souls II (2014)** from Xbox 360 statically recompiled for the Nintendo Switch.
+A native port, unlike certain "ports" that are disguised emulators.
 
-> Repositório privado e em desenvolvimento. **Nenhum arquivo do jogo entra aqui**: nem a ISO, nem o código gerado a
-> partir do `Default.xex`, nem os shaders traduzidos, nem binários compilados. Cada um gera tudo a partir da própria
-> cópia.
+
 
 ## De onde vem a base
 
