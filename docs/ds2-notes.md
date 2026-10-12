@@ -1500,3 +1500,10 @@ reescreve os 331 arquivos gerados (o conteúdo final é o mesmo depois dos passo
 os builds recompilam tudo; e o próprio build de PC falha uma vez, porque o `ds2_pch.h` muda depois de o cabeçalho
 pré-compilado ser feito). Conferi que dois dos arquivos compilam para objetos idênticos aos de `out\nx` e devolvi
 as datas antigas aos 331, para o `out\nx` recompilar só o que mudou.
+
+**Décimo nono build** (2026-10-12): `out\nx` com a correção de memória em 3,7 min (80,9 MB); `out\nx_rel` com o
+código otimizado, LTO e o perfil novo em 68,7 min (90,5 MB). `tools/check_switch_build.py` passa nos dois. O perfil
+casa com o código (um arquivo recompilado com `-fdump-ipa-profile-blocks`: contagens lidas, nenhum aviso de
+divergência). ELFs em `out/switch_elf/optimised_2/`. Um dado do perfil para depois: o arco mais executado do programa
+inteiro (9.065.595.789 vezes em 26 min) é o laço de espera de `sub_829B9C60`, a função do Direct3D que gira
+esperando o anel da GPU andar: a thread principal queima CPU ali enquanto o renderizador está atrasado.
