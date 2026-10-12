@@ -1,2 +1,47 @@
-# classic codegen: no extra options (tools\codegen.ps1 -Flavor classic writes this file; -Flavor optimised
-# copies perf_overrides.toml here). Included by ds2_manifest.toml.
+# optimised codegen: written by tools\codegen.ps1 -Flavor optimised from perf_overrides.toml.
+# Code generation options for speed: the "optimised codegen" flavour (tools\codegen.ps1 -Flavor optimised copies this
+# file to codegen_flavor.toml, which ds2_manifest.toml includes; -Flavor classic writes an empty one). Root keys: they
+# must stay outside any table. Build-time: the classic and the optimised code are two different programs.
+#
+# The options only change how the C++ is written, so the compiler can keep guest state in host registers and drop dead
+# stores; the guest-visible result is the same. From sa2-nx's perf_overrides.toml (which took masseffect-nx's measured
+# set; UnleashedRecomp-NX and MarathonRecomp-NX ship the first group too):
+#   - cr0-cr7, ctr, xer and the lwarx reservation as C++ locals;
+#   - skip_msr: no mfmsr/mtmsrd fences, ctx.msr stores or global lock around the guest atomic sequences (a stwcx. is
+#     already a compare-and-swap);
+#   - dform_disp_split: D-form loads/stores as base + zext(reg) + disp (differs only when reg + disp crosses 2^32, a
+#     guest fault either way);
+#   - fctiwz_inline: fctiwz as fcvtzs + NaN select;
+#   - non_volatile_as_local: r14-r31, f14-f31 and v14-v31/v64-v127 as C++ locals, so the __savegprlr / __restgprlr
+#     helpers and the guest-stack traffic for those registers disappear;
+#   - elide_lr_stores: `ctx.lr = <return address>` is no longer stored before every call;
+#   - fp_moves_modeless (sa2-nx's own generator option): scalar float moves (lfd/stfd forms, stfiwx, fmr, fabs, fnabs,
+#     fneg) switch no host flush mode, and lfs/stfs in VMX code convert in either mode (on the A57 every switch is an
+#     `msr fpcr`, as expensive as dozens of instructions).
+#
+# NOT here: non_argument_as_local (r0, r2, r11, r12, f0, v32-v63 as locals). tools\non_argument_audit.py on Dark Souls
+# II's classic code (2026-10-11) lists 340 functions that take a value in one of those registers on entry besides the
+# save/restore helpers (250 in r12; chains of functions that pass v33-v63 and f0 along) and 329 reads after a call of
+# a value the callee may have written (277 in r11, after three helpers), against a handful in SA2. It needs its own
+# per-function work first (docs/ds2-notes.md).
+#
+# Audits for Dark Souls II (docs/ds2-notes.md, "CÃ³digo gerado otimizado"): tools\read_before_write.py on the
+# generated code; the readers of ctx.lr (only the Direct3D trace diagnostic, off, and the console profiler's caller
+# attribution); the guest setjmp and longjmp (the generator's setjmp_address / longjmp_address in overrides.toml).
+#
+# Post-codegen steps of the flavour (tools\post_codegen.py): tools\pch_no_volatile.py (guest memory without
+# volatile) with tools\loop_barriers.py (required with it), and tools\direct_calls.py (calls between unhooked
+# functions become direct, so GCC can inline them).
+#
+# No function address may be written in this file: tools\direct_calls.py takes every address it finds here for a
+# hooked function.
+cr_as_local = true
+ctr_as_local = true
+xer_as_local = true
+reserved_as_local = true
+skip_msr = true
+dform_disp_split = true
+fctiwz_inline = true
+non_volatile_as_local = true
+elide_lr_stores = true
+fp_moves_modeless = true

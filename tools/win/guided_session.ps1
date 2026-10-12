@@ -31,10 +31,12 @@ foreach ($pair in ($Extra -split ';')) {
     if ($pair -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] }
 }
 # A at the warning, START through the title screens, then A every 6 s: "Continue" and whatever asks for confirmation.
-$pad = '16-16.6:a,30-30.6:start,42-42.6:start,54-54.6:start'
-for ($t = 62; $t -le 160; $t += 6) { $pad += ",$t-$($t + 0.6):a" }
+# (PowerShell names are case-insensitive: this variable used to be $pad, the same one as the -Pad parameter, which it
+# overwrote, so -Pad never replaced anything.)
+$presses = '16-16.6:a,30-30.6:start,42-42.6:start,54-54.6:start'
+for ($t = 62; $t -le 160; $t += 6) { $presses += ",$t-$($t + 0.6):a" }
 # -Pad replaces the scripted presses (to stop at a menu and drive it with tools\live.py pad).
-if ($Pad) { $pad = $Pad }
+if ($Pad) { $presses = $Pad }
 $p = Start-Process powershell -WindowStyle Hidden -PassThru `
-    -ArgumentList "-NoProfile -File tools\win\boot_test.ps1 -Seconds $Seconds -Pad $pad"
+    -ArgumentList "-NoProfile -File tools\win\boot_test.ps1 -Seconds $Seconds -Pad $presses"
 "started $($p.Id) at $(Get-Date -Format HH:mm:ss)"

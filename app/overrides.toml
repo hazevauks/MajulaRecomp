@@ -8,7 +8,43 @@
 #
 # Root keys (setjmp_address, longjmp_address, ...) must stay above the first table.
 
+# The CRT's setjmp / longjmp (2026-10-11). With the addresses the generator emits host setjmp/longjmp keyed by the
+# guest jmp_buf; recompiled as plain calls, a longjmp restores r1 from the jmp_buf and then returns to its own caller,
+# which goes on with a foreign stack frame.
+#   setjmp   0x82FB8A30: the only function of the program with mfcr; stores cr at 304, lr at 308, r1 at 144, 0 at 312
+#            and v64-v127 (stvlx128) into the buffer, returns 0. 68 call sites.
+#   longjmp  0x82FB78D0: the mirror image (lfd f14-f31, ld r14-r31, lvx128, mtlr, ld r1,144, mtcr, blr). 433 call
+#            sites (an error path used all over one library).
+# The PGO profile of 33 minutes of play (two sessions, up to the Last Giant) has setjmp entered 3,920 times and
+# every arc of longjmp at 0: no longjmp has run on the console so far.
+setjmp_address = 0x82FB8A30
+longjmp_address = 0x82FB78D0
+
 [functions]
+# share_registers (2026-10-11, for the optimised codegen's non_volatile_as_local; no effect on the classic code): these
+# functions keep r14-r31, f14-f31 and v14-v31/v64-v127 in ctx instead of C++ locals, and a caller that reaches one
+# with a direct branch hands its own over and takes them back. From tools/read_before_write.py --noreturn=82FBF820,
+# 8266B030,82AB5F50 (the C++ throw and the two "fatal error" printers the compiler ends functions with): 27 functions
+# read one of those registers before writing it. Eight of them are real and are marked here, with the two functions
+# that load the registers those read (docs/ds2-notes.md has the other 19 and why they are left alone).
+#
+# The WMV decoder (movie/prologue.wmv) keeps its constants in v64-v127 across C functions: sub_8338E090 stores
+# v64-v127 into one buffer and loads all of them from another, sub_8338DD48 does the same and loads v64-v72 back, and
+# seven hand-written leaves read v64, v65, v69 or v72 without ever writing them. None of the nine calls a save/restore
+# helper or writes r14-r31; the leaves use v14-v31 as scratch, as they do on the console.
+"0x8338DD48" = { share_registers = true }  # stvx128 v127..v64 to (r4), lvx128 v64..v72 from (r3)
+"0x8338E090" = { share_registers = true }  # stvx128 v127..v64 to (r4), lvx128 v127..v64 from (r3)
+"0x831452E0" = { share_registers = true }  # vor128 v14,v69,v69; vor128 v15,v72,v72
+"0x83145918" = { share_registers = true }  # the same two
+"0x833A91A0" = { share_registers = true }  # the same two
+"0x833A9548" = { share_registers = true }  # vor128 v16,v69,v69
+"0x833A9808" = { share_registers = true }  # vor128 v14,v69,v69; vor128 v15,v72,v72
+"0x833A9A70" = { share_registers = true }  # vor128 v1,v69,v69
+"0x833AAB98" = { share_registers = true }  # vor128 v30,v64,v64; vor128 v29,v65,v65 (its first instructions)
+# A ten-instruction tail of the heap function sub_829A2DF0 (reached with beq/bne from it): it reads the owner's frame
+# pointer r31 (addi r12,r31,320 ... addi r1,r31,320) and leaves through the owner's __restgprlr.
+# "0x829A3604": the mark is on its own entry further down (pointer scan).
+
 # Structural gap scan, fixpoint pass 2 (tools/gap_fixpoint.py).
 "0x826EF510" = { }
 "0x82C4B570" = { }
@@ -621,7 +657,7 @@
 "0x8294B960" = { }  # 4 instructions, built at 0x8294EE24
 "0x8294B970" = { }  # 4 instructions, built at 0x8294E9B0 (+1 more)
 "0x8294B980" = { }  # 4 instructions, built at 0x8294BAD0
-"0x829A3604" = { }  # 4 instructions, pointer at 0x821C9D08
+"0x829A3604" = { share_registers = true }  # 4 instructions, pointer at 0x821C9D08; reads its owner's r31 (see the top)
 "0x82A256D8" = { }  # 4 instructions, pointer at 0x82082338 (+2 more)
 "0x82A25900" = { }  # 10 instructions, pointer at 0x820824FC (+2 more)
 "0x82A25928" = { }  # 10 instructions, pointer at 0x82082500 (+2 more)

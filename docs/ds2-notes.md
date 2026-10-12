@@ -1345,3 +1345,93 @@ lista abre e fica. No lavapipe cada retrato leva ~40 s (um único passe de 37 s)
 os retratos com 23 a 29 quadros de intervalo e reaproveita os endereços dos já liberados (`14AE9000`, `15436000`,
 `14AF5000`, `15436000`: no console e no PC o reaproveitamento foi a dois retratos de distância, 58 quadros). Com o
 limite em 30, um reaproveitamento a um retrato de distância ficaria de fora e o retrato sairia vazio.
+
+## Código gerado otimizado (2026-10-11 e 12)
+
+Etapa 2 da ordem combinada (custo fixo da GPU, código gerado, corte por alfa nos shaders). O código gerado "clássico"
+guarda todo o estado do PowerPC na estrutura `ctx`, na memória; como qualquer escrita na memória do jogo pode, para o
+compilador, ser uma escrita em `ctx`, quase todo uso de registrador vira uma leitura ou escrita de memória. O sabor
+"otimizado" do sa2-nx muda como o C++ é escrito, sem mudar o que o jogo calcula. O arquivo novo
+`app/perf_overrides.toml` liga, para o DS2:
+
+- `cr_as_local`, `ctr_as_local`, `xer_as_local`, `reserved_as_local`: cr0-cr7, ctr, xer e a reserva do `lwarx` como
+  variáveis locais;
+- `skip_msr`, `dform_disp_split`, `fctiwz_inline`;
+- `non_volatile_as_local`: r14-r31, f14-f31, v14-v31 e v64-v127 como locais (somem as chamadas de
+  `__savegprlr`/`__restgprlr` e o tráfego de pilha desses registradores);
+- `elide_lr_stores` e `fp_moves_modeless`;
+- depois do gerador (`tools/post_codegen.py`): memória do jogo sem `volatile` (16 macros do `ds2_pch.h`), barreiras em
+  51.794 cabeças de laço (obrigatórias com a memória sem `volatile`) e **217.593 chamadas diretas** entre funções sem
+  hook (`tools/direct_calls.py`), que o GCC passa a poder embutir.
+
+Um codegen leva 10 min aqui, mais 3 min dos passos seguintes. `tools/codegen.ps1` agora acha o Python de verdade
+sozinho (o `python` do PATH desta máquina é o atalho da Microsoft Store).
+
+**`non_argument_as_local` ficou de fora.** `tools/non_argument_audit.py` no código clássico do DS2: 340 funções
+recebem um valor em r0/r11/r12/f0/v32-v63 na entrada (250 em r12; cadeias de funções que passam v33-v63 e f0 adiante),
+fora os auxiliares de salvar/restaurar, e 329 leituras depois de uma chamada de um valor que a função chamada pode
+ter escrito (277 em r11, depois de `sub_82FB2578`, `sub_82FB2540` e `sub_8266B030`). No SA2 eram meia dúzia. Precisa
+de um trabalho por função antes; fica para uma rodada própria.
+
+**setjmp / longjmp.** O DS2 tem o par do CRT: `sub_82FB8A30` (a única função do programa com `mfcr`; 68 chamadas) e
+`sub_82FB78D0` (433 chamadas: o caminho de erro de alguma biblioteca). Traduzido como chamada comum, um longjmp
+restaura r1 do `jmp_buf` e depois volta para quem o chamou, com a pilha de outra função. Com `setjmp_address` e
+`longjmp_address` no `overrides.toml` o gerador emite setjmp/longjmp do host, indexados pelo endereço do `jmp_buf`.
+O perfil de PGO dos 33 minutos de jogo (compilei de novo `ds2_recomp.46.cpp` e o `.20` com
+`-fdump-ipa-profile-blocks` e o perfil das duas coletas) tem o setjmp com 3.920 entradas e todos os arcos do longjmp
+em zero: nenhum longjmp rodou no console até aqui. Com os registradores em locais, depois de um longjmp os r14-r31 de
+quem chamou o setjmp ficam com o valor da hora da falha, não o da hora do setjmp (mesmo risco aceito no SA2).
+
+**Leituras antes de escrita** (`tools/read_before_write.py`, 4,6 min): uma função que lê um registrador não volátil
+antes de escrevê-lo esperava o valor de outra função, e com locais lê zero.
+
+- Sem sementes além do `throw` do C++ (`sub_82FBF820`, 35 chamadas, chama `RaiseException`): 70 funções. 43 delas
+  eram caminhos depois de uma chamada a `sub_8266B030` ou `sub_82AB5F50`, dois impressores de "erro fatal" com
+  argumentos variáveis: 23 funções *terminam* com `bl` para um deles, sem nada depois, então o compilador original
+  sabia que não voltam. Com as três como sementes: **27**.
+- 8 são reais, e mais duas que a ferramenta lista como "só escrita":
+  - **o decodificador de WMV** (`movie/prologue.wmv`, o vídeo de abertura) guarda constantes em v64-v127 através de
+    funções C: `sub_8338E090` grava v64-v127 num buffer e carrega os 64 de outro, `sub_8338DD48` faz o mesmo e
+    recarrega v64-v72, e sete folhas escritas à mão (`sub_831452E0`, `sub_83145918`, `sub_833A91A0`, `sub_833A9548`,
+    `sub_833A9808`, `sub_833A9A70`, `sub_833AAB98`) leem v64, v65, v69 ou v72 sem nunca escrevê-los. Com locais as
+    duas primeiras carregariam variáveis que somem no `return` e as folhas leriam zero. As nove ficam
+    `share_registers` (usam `ctx`); nenhuma chama auxiliar de salvar/restaurar nem escreve r14-r31, e nenhuma das
+    funções que as chamam entrega registrador vetorial (conferido no código gerado), então `ctx.v64`-`v127` guardam as
+    constantes do decodificador como os registradores de verdade guardavam;
+  - `sub_829A3604`: dez instruções no fim da função de heap `sub_829A2DF0`, alcançadas por `beq`/`bne` dela (e por
+    um ponteiro, da varredura antiga); lê o r31 da dona. `share_registers`.
+- As outras 19 ficam como estão: funções normais, com prólogo que salva o registrador antes de usá-lo, em que algum
+  caminho lê uma variável que o código original também não tinha inicializado (`sub_8235E600`, `sub_823C2660`,
+  `sub_824CB840`, `sub_8259D220`, `sub_8259DA80`, `sub_82B63548`, `sub_82C02E10`, `sub_82C9F088`, `sub_82EF1290`,
+  `sub_82F73DF0`, `sub_82F9B720`); idiomas que não dependem do valor (`xor r30,r30,r30` em `sub_829982F0` e
+  `sub_82998680`, `subfe rX,rY,rY` em `sub_83009D40` e `sub_830B12C8`); o setjmp do jogo, que não é mais chamado;
+  `sub_82FD0C54`, uma instrução solta que ninguém chama; e duas funções de compensação de movimento do
+  decodificador (`sub_83146E08`, `sub_831477A8`) em que v14-v24 são rascunho e as leituras ficam em caminhos que as
+  condições de entrada excluem (o resultado só é usado quando `r9 != 0`, e o caminho só existe com `r9 == 0`).
+- Quem lê `ctx.lr`: só o rastreador de Direct3D (desligado) e a atribuição de chamador do perfil do console. Nenhum
+  hook do app lê cr, xer, ctr ou registrador não volátil.
+
+**Conferido no PC** (`ds2_082`, `ds2_086`; a linha `[enh]` diz `optimised codegen (non-volatile locals, no lr
+stores, modeless fp moves)`): título, avisos, lista de saves com os quatro retratos, Majula em 3D (andar, girar a
+câmera, atacar, abrir o menu; `out/pc/captures/p3.png` a `p7.png`), "New Game" e o vídeo de abertura com imagem
+limpa e legendas (`z1.png` a `z4.png`: é o teste das marcas do decodificador). Nenhum `FATAL`; a única diferença dos
+autotestes é a de antes (`VS identity mismatch`, igual no clássico).
+
+### Três tropeços das ferramentas do PC, achados no caminho
+
+1. **65.535 arquivos `MEM*.tmp` na pasta temporária.** A primeira sessão com o código novo ficou 19 minutos sem
+   apresentar um quadro de 3D, com três threads a 85 %. Não era o código: cada pipeline nova levava exatos 46 s
+   (`PipelineFor 45898152 us`), e as do pré-aquecimento passaram de 0,35 s (às 19 h) para 1,6 s (20h50) e 48 s
+   (23h20). `tools/win/sample_threads.py` (novo, abaixo) mostrou a thread do driver dentro de `NtCreateFile`, e a
+   pilha dela apontava para `%TEMP%\MEMxxxx.tmp`: o Mesa no Windows cria um arquivo temporário para cada fluxo de
+   memória (aqui com `spec[0] = 0x0000a320`), `GetTempFileName` só tem 65.535 nomes, e as sessões de teste, paradas
+   por fora, tinham deixado todos lá em três dias. Apagados (eram 2 MB), e `tools/win/boot_test.ps1` agora dá a cada
+   sessão a própria pasta temporária (`out\pc\tmp`), esvaziada no início: 456 pipelines pré-aquecidas em 30 s.
+   Os tempos de PC medidos na tarde de 11/10 (os 37 s por retrato no lavapipe, por exemplo) estavam inflados por isso.
+2. **`guided_session.ps1 -Pad` nunca funcionou.** A variável interna `$pad` é a mesma que o parâmetro `-Pad`
+   (nomes do PowerShell não distinguem maiúsculas) e o sobrescrevia; o roteiro padrão (START três vezes, A a cada
+   6 s) rodava sempre. Era ele que "carregava o save sozinho" quando eu tentava parar na lista. Corrigido.
+3. **`tools/win/sample_threads.py`**: para uma sessão de PC que parou de andar, sem depurador instalado (o
+   `lldb.exe` do LLVM daqui não abre: falta a DLL do Python 3.10). Suspende cada uma das threads mais ocupadas por um
+   instante, lê o ponteiro de instrução e os endereços de retorno do topo da pilha e dá nome a eles com o
+   `llvm-symbolizer` e o `ds2.pdb` (`--all-modules` mostra também as DLLs).

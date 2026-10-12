@@ -56,10 +56,22 @@ if ($code -ne 0) { throw "codegen failed (exit $code), see out\codegen.log" }
 # The flavour's post-codegen steps (no-volatile pch, direct calls, localized natives, the build's name): the same script
 # the build appends to its own codegen command (app/CMakeLists.txt), so a codegen the build re-runs keeps them too.
 $env:REXSDK_DIR = Join-Path $root 'sdk'
-python (Join-Path $root 'tools\post_codegen.py')
+# The interpreter: DS2_PYTHON, a `python` on the PATH that is not the Windows Store alias (which only opens the
+# Store), or the newest one in the per-user install folder.
+$python = $env:DS2_PYTHON
+if (-not $python) {
+    $python = Get-Command python -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch 'WindowsApps' } |
+        Select-Object -First 1 -ExpandProperty Source
+}
+if (-not $python) {
+    $python = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs\Python\*\python.exe') -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $python) { throw 'python not found: install it or set DS2_PYTHON to python.exe' }
+& $python (Join-Path $root 'tools\post_codegen.py')
 if ($LASTEXITCODE -ne 0) { throw 'tools\post_codegen.py failed' }
 if ($DirectCalls -and $Flavor -eq 'classic') {
-    python (Join-Path $root 'tools\direct_calls.py') --gen (Join-Path $app 'generated\default')
+    & $python (Join-Path $root 'tools\direct_calls.py') --gen (Join-Path $app 'generated\default')
     if ($LASTEXITCODE -ne 0) { throw 'tools\direct_calls.py failed' }
 }
 Write-Host "done ($Flavor codegen): $app\generated"

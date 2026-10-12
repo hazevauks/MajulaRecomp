@@ -34,6 +34,15 @@ Get-CimInstance Win32_Process -Filter "Name='$(Split-Path $exePath -Leaf)'" -Err
         Wait-Process -Id $_.ProcessId -Timeout 20 -ErrorAction SilentlyContinue
     }
 $started = Get-Date
+# The software Vulkan driver (Mesa's memory streams on Windows) makes a MEMxxxx.tmp file in the temp folder for every
+# shader it compiles, and a run that is stopped from outside leaves them all there. GetTempFileName only has 65,535
+# names: on 2026-10-11 the user's temp folder held every one of them, and each new pipeline took 46 s to create (the
+# first 3D frame never came). Test runs get their own temp folder, emptied at every start.
+$tmp = Join-Path $dir 'tmp'
+New-Item -ItemType Directory -Force $tmp | Out-Null
+Get-ChildItem -LiteralPath $tmp -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+$env:TMP = $tmp
+$env:TEMP = $tmp
 # Test runs are always muted and minimized (environment beats ds2.toml), so they never take over the desktop.
 $env:REX_AUDIO_MUTE = 'true'
 $env:REX_WINDOW_START_MINIMIZED = 'true'
