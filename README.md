@@ -1,7 +1,10 @@
-# MajulaRecomp — Dark Souls II on Nintendo Switch
+## MajulaRecomp — Dark Souls II on Nintendo Switch
 
-**Dark Souls II (2014)** from Xbox 360 statically recompiled for the Nintendo Switch.
-A native port, unlike certain "ports" that are disguised emulators.
+![Banner](Banner.jpg)
+
+
+**Dark Souls II (2014)** from Xbox 360 statically recompiled for the Nintendo Switch.  
+A native port, unlike certain projects that are disguised emulators.
 
 
 
