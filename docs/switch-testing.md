@@ -12,9 +12,19 @@ O que muda: na sessão de 46 minutos o desempenho caiu de ~20 para ~12 quadros/s
 conquista desbloqueada. O aviso de conquista na tela deixava o programa num modo de apresentação mais lento até ser
 fechado (e era dele que vinham os trechos a 1-3 quadros/s). O aviso foi desligado; a conquista é gravada igual.
 
-**Teste, com o `ds2-opt.nro`:** jogue normalmente por 40 minutos ou mais, de preferência passando por um ponto que
-dê conquista (por exemplo acender a primeira fogueira num save novo, ou derrotar um chefe), e repare se o
-desempenho se mantém do começo ao fim. Trocar de resolução continua valendo (L3 + R3).
+**Teste, com o `ds2-opt.nro`:** jogue normalmente por 40 minutos ou mais e repare se o desempenho se mantém do
+começo ao fim. Trocar de resolução continua valendo (L3 + R3).
+
+As conquistas são do perfil, não do save: as que já saíram não saem de novo num save novo. Elas ficam no cartão em
+`switch/ds2-nx/ds2/achievements/465307E4.toml`. Para o teste passar por uma conquista de propósito, há dois jeitos:
+
+- jogar até uma que ainda não saiu (o próximo chefe, por exemplo); ou
+- antes de abrir o jogo, renomear esse arquivo para `465307E4.toml.bak`: o jogo passa a achar que nenhuma saiu, e as
+  do começo (num save novo) saem outra vez. Depois do teste, apague o `465307E4.toml` novo e devolva o nome ao
+  `.bak`, para ficar com as datas originais. Os saves não são tocados.
+
+Com a correção o aviso nem chega a ser criado, então mesmo uma sessão longa sem conquista já serve; passar por uma
+só confirma que o problema era esse.
 
 Depois a pasta `logs/`.
 
