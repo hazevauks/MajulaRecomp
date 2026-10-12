@@ -3,8 +3,8 @@
 ![Banner](Banner.jpg)
 
 
-**Dark Souls II (2014)** from Xbox 360 statically recompiled for the Nintendo Switch.  
-A native port, unlike certain projects that are disguised emulators.
+**Dark Souls II (2014)** from Xbox 360 statically recompiled for the handheld console.  
+A native port, unlike certain "ports" that are disguised emulators.
 
 
 
