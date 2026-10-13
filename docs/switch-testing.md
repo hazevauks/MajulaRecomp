@@ -4,6 +4,29 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Vigésimo primeiro build (2026-10-13): o som robótico e o registro das travadas
+
+Copie por cima: `ds2-opt.nro` e `ds2.nro`.
+
+O que muda:
+
+- **Som.** A thread que mistura o som do jogo (o mixer do FMOD) rodava na mesma prioridade das threads ocupadas do
+  jogo e esperava a vez delas; os blocos de som saíam atrasados (som robótico, arrastado), e piora mais adiante no
+  jogo, onde há mais vozes. Ela agora tem prioridade acima delas.
+- **Travadas.** Ainda sem correção: o log não registrava os quadros longos depois dos primeiros minutos. Agora
+  registra todo quadro de 0,4 s ou mais, com o que o renderizador fazia nele.
+
+**Teste, com o `ds2-opt.nro`:** jogue pelas áreas onde o som estava pior e passe por algumas transições de área onde
+travava. Repare (1) se o som melhorou e (2) mais ou menos em que momentos trava (não precisa anotar a hora: o log
+marca).
+
+Se o som piorar ou algo novo aparecer, a prioridade volta ao que era com esta linha no fim do `ds2.toml`:
+`ds2_audio_mixer_priority = 0`. Se a música ou as vozes ainda quebrarem, vale testar também
+`ds2_audio_stream_priority = 45`.
+
+Depois a pasta `logs/` (com a pasta `rex` dentro: o `rex_profile.log` é o da última sessão, então a sessão principal
+deve ser a última a rodar).
+
 ## Vigésimo build (2026-10-12): a queda de desempenho depois de uma conquista
 
 Copie por cima: `ds2-opt.nro` e `ds2.nro`.

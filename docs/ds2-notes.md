@@ -1572,3 +1572,85 @@ Outro dado do perfil de threads no fim da sessão: thread do anel a 78-83 % de u
 
 **Vigésimo build** (2026-10-12): `out\nx` em 0,8 min (80,9 MB) e `out\nx_rel` em 41,8 min (90,5 MB), os dois com
 `ds2_achievement_toast`; `tools/check_switch_build.py` passa nos dois. ELFs em `out/switch_elf/optimised_3/`.
+
+## Vigésimo build no console: desempenho estável; som "robótico" e a prioridade do mixer do FMOD (2026-10-13)
+
+Sessão de 48 minutos com o `ds2-opt.nro` (`out/switch_logs/023/ds2_036.1.log` e `ds2_036.log`), sem conquista nova.
+O apresentador ficou o tempo todo no modo da thread do jogo e o desempenho não caiu: 19,8 / 22,4 / 19,1 / 22,3 / 18,5
+quadros/s por faixas de dez minutos (na sessão anterior, 12 a 14 depois da conquista). A thread do anel ainda encarece
+com o cache de texturas perto do limite (42 → 54 → 75 µs por desenho). Nenhum `FATAL`.
+
+O usuário relata duas coisas: **som um pouco robótico e arrastado**, e **travadas em pontos-chave** (transições de
+área).
+
+**Som.** O FMOD pede dados ao decodificador XMA do SDK a cada bloco. Por janela de 10 s:
+
+| sessão | pedidos (kicks) | decodificação na thread do XMA | janelas com o dado pronto mais de 10,6 ms depois do pedido | pior |
+|---|---|---|---|---|
+| `ds2_032` (10 min, começo do jogo) | 9.391 | 0,58 s | 0 de 60 | 9,6 ms |
+| `ds2_035.1` (46 min) | 19.208 | 1,78 s | 49 de 161 | 52 ms |
+| `ds2_036.1` (primeira metade) | 19.641 | 1,55 s | 32 de 162 | 36 ms |
+| `ds2_036` (segunda metade) | 25.625 | 2,48 s | 64 de 122 | 51 ms |
+
+Mais adiante no jogo há o dobro ou mais de vozes, e o áudio passa a chegar atrasado em 20 a 50 % das janelas. O
+nfsmw-nx documenta o mesmo sintoma (`docs/audio-and-video.md`, "Robotic audio"): no Switch todas as threads do jogo
+rodam na prioridade 0x3B, a única que o Horizon reveza (fatias de 10 ms); a thread de áudio do jogo espera a vez
+atrás da principal e das outras ocupadas, o bloco de 256 amostras (5,33 ms) sai atrasado e o XAudio2 toca um buraco.
+A correção que mais ajudou lá foi subir a prioridade dessa thread para 0x2D.
+
+No DS2 a thread é a "FMOD mixer thread" do FMOD Ex 4.40. Achada pela string na imagem (`0x82047D1C`):
+
+- `sub_828478D0` chama `FMOD::Thread::initThread` (`sub_8282C1B0`) com esse nome; o `initThread` copia o nome para o
+  deslocamento 5 do objeto `Thread` e chama `FMOD_OS_Thread_Create` (`sub_82822F58`) com a rotina
+  `FMOD::Thread::callback` = `sub_8282BF30` (`lis r11,-32125; addi r4,r11,-16592`);
+- `FMOD_OS_Thread_Create` cria a thread suspensa, compara o nome com os seis nomes de threads do FMOD para escolher o
+  núcleo (`XSetThreadProcessor`) e chama `SetThreadPriority` com a prioridade que o FMOD pediu: o próprio jogo pede
+  prioridade alta para o mixer, e o SDK ignora (todas as threads de guest a 0x3B).
+
+`app/src/ds2_audio_threads.cpp`: um hook em `sub_8282BF30` lê o nome na própria thread nova e, se for o mixer, sobe a
+prioridade dela (`ds2_audio_mixer_priority`, 0x2D no Switch: abaixo do anel, 0x2C, e das threads de áudio do SDK,
+0x2B). O mixer bloqueia entre um bloco e outro, então não prende o núcleo. `ds2_audio_stream_priority` faz o mesmo
+para a "FMOD stream thread" e fica em 0 (desligado) até haver medida. O log diz cada thread do FMOD que nasce.
+
+**Travadas.** As janelas de 10 s do log não mostram travadas de poucos segundos, e o detalhe por quadro (`[hitch]`)
+tinha um teto de 1.000 linhas com limiar de 60 ms: a 20 quadros/s quase todo quadro de área pesada passa de 60 ms e o
+teto acabava nos primeiros minutos. Agora um quadro de 400 ms ou mais é sempre escrito (com a mesma decomposição:
+GPU, esperas, texturas, envios). O que se sabe: nas transições o jogo lê 60 a 80 MB do cartão em ~3 s (1.000 a 2.000
+leituras de 128 KB, ~21 MB/s) e cria 250 a 270 texturas em 10 s. O próximo log diz se o tempo vai no renderizador ou
+se é o jogo que para de mandar quadros.
+
+**Sessão com overclock** (`ds2_037`, 6 min, `ds2.nro`): o relatório de perfil leu CPU 1.020 MHz / GPU 460,8 MHz /
+memória 1.331 MHz em todos os 35 relatórios, isto é, os clocks de fábrica: o perfil de overclock não chegou a valer
+para este programa (ou não vale para o título pelo qual ele é aberto).
+
+**`-fno-trapping-math` saiu** dos builds otimizados (fica `-fno-math-errno`). A auditoria do sa2-nx
+(`docs/cpu-rounds.md`): a opção deixa o compilador adiantar uma operação de ponto flutuante para antes de uma troca do
+modo de flush do host, que ele não sabe que importa; rendia no máximo 0,5 % de um arquivo. Aqui havia mais um motivo:
+o build de coleta não tinha a opção e o de uso tinha, uma diferença antes da leitura do perfil.
+
+## Os repositórios de referência em 2026-10-13: o que há de novo
+
+`_ref/sa2-nx` foi de `fdd6f14` (2026-10-08) para `d2c6e15` (versão 1.0.2 de pré-lançamento): 11 commits, 279
+arquivos, 14 mil linhas. `_ref/nfsmw-nx`: 4 commits, só ferramentas de dublagem. `_ref/torchlight-nx` (novo): outro
+port ReXGlue (Torchlight da XBLA), com o renderizador nativo em Vulkan.
+
+O que serve ao DS2, por ordem de valor:
+
+1. **Sessões longas** (`sa2_native_resolved_retire_idle`, sa2-nx 1.0.2): as texturas copiadas (`resolved_`) nunca eram
+   liberadas; cada cena deixa as suas e depois de uma a duas horas a memória de GPU acaba (sombras erradas, depois
+   texturas pretas e geometria faltando; o nfsmw-nx tem o mesmo relato). Passam a ser liberadas depois de um minuto
+   sem cópia nem leitura. O DS2 usa o mesmo renderizador e a memória aqui já é apertada: é a primeira coisa a portar.
+2. **As três rodadas de CPU de 2026-10-12** (`docs/cpu-rounds.md`; o autor estima 15 % no console): menos trocas do
+   modo de ponto flutuante do host (`fp_compares_modeless`, `fp_mode_lookahead`, provas pelo fluxo de controle),
+   compare-and-swap do guest sem barreira, sem ponteiro de quadro, constantes da `.rdata` dobradas (16 mil cargas),
+   chamadas indiretas com um alvo usual viradas em chamadas diretas guardadas (81 a 85 % das que rodam), registradores
+   como locais em laços e em funções folha, formas NEON dos auxiliares de VMX, seções críticas sem a busca da thread,
+   `fctid`/`fctiw` arredondando como o PowerPC (uma correção, não só velocidade), e o limite de embutimento do link
+   de 30 para 64. Quase tudo depende do SDK e do gerador novos: é atualizar `sdk/` para o do sa2-nx (mantendo as
+   exceções `ds2-nx`), portar as ferramentas, gerar de novo, auditar e coletar perfil outra vez.
+3. **Áudio** (nfsmw-nx): além da prioridade, versões nativas das funções de áudio mais quentes (reamostradores,
+   filtro, soma com ganho: -17,5 % de CPU na thread de áudio de lá). No DS2 a thread do mixer do FMOD gasta 23 a 48 %
+   de um núcleo, então há o que ganhar; precisa do perfil com pilhas para achar as funções.
+4. O que **não** se aplica ou foi descartado lá: `-fno-trapping-math` (acima), a remoção das gravações mortas de
+   registradores não voláteis no prólogo (mudou a imagem no SA2: o jogo lê uma palavra de pilha nunca inicializada e
+   depende dos zeros) e do registrador de ligação.

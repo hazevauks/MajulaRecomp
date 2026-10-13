@@ -2595,7 +2595,12 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
          */
         // The cap is 1000 warnings so that a whole session fits; it only writes when there is a stutter, so it
         // costs nothing in the normal case.
-        if (ms > 60.0 && warnings_hitch_ < 1000) {
+        // ds2-nx: at 20 frames a second most frames of a heavy area are over 60 ms and the 1000 lines were gone in the
+        // first minutes; the hangs of several seconds at area transitions, 40 minutes in, left nothing in the log. A
+        // frame of 400 ms or more is always written (4000 of those would be a session of nothing else).
+        const bool hang = ms > 400.0 && warnings_hang_ < 4000;
+        if (hang) ++warnings_hang_;
+        if (hang || (ms > 60.0 && warnings_hitch_ < 1000)) {
           ++warnings_hitch_;
           /* gpu_ns_ are raw GPU timestamps: multiply by 1.627 to get real milliseconds (NVK timestamp scale). */
           const double gpu_ms = double(gpu_ns_ - hitch_gpu_ns_) / 1e6 * 1.627;
@@ -10960,6 +10965,7 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
   uint64_t hitch_gpu_ns_ = 0;      // GPU timestamps when the previous frame closed
   uint64_t hitch_ns_record_ = 0;   // ns recording when the previous frame closed
   uint32_t warnings_hitch_ = 0;
+  uint32_t warnings_hang_ = 0;  // ds2-nx: frames of 400 ms or more, written past the cap above
   uint64_t copies_ = 0;
   uint64_t converted_copies_ = 0;  // resolves with a format conversion (blit)
   std::unordered_set<uint64_t> recorded_conversions_;

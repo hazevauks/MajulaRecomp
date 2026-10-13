@@ -6,7 +6,7 @@ their stacks, and names them with llvm-symbolizer and out/pc/ds2.pdb. For a sess
   python tools/win/sample_threads.py [--exe ds2.exe] [--threads 4] [--samples 3] [--depth 10]
 
 Each sample suspends one thread for a moment (SuspendThread, GetThreadContext, a read of the top of its stack) and
-resumes it. The "stack" is every value in the first 4 KB above the stack pointer that points into the executable's
+resumes it. The "stack" is every value in the first --stack-kb (4) KB above the stack pointer that points into the executable's
 image: return addresses, plus the odd stale one. The guest function names (sub_XXXXXXXX) are the useful part.
 """
 import argparse
@@ -71,6 +71,8 @@ def main():
     ap.add_argument('--threads', type=int, default=4)
     ap.add_argument('--samples', type=int, default=3)
     ap.add_argument('--depth', type=int, default=10)
+    ap.add_argument('--stack-kb', type=int, default=4,
+                    help='how much of the stack above the stack pointer is scanned (a deep recursion needs more)')
     ap.add_argument('--all-modules', action='store_true',
                     help='list stack values that point into any module, not only into the executable')
     a = ap.parse_args()
@@ -106,7 +108,8 @@ def main():
     busy = sorted(((cpu_time(handles[t]) - c, t) for t, c in before.items()), reverse=True)[:a.threads]
     context = ctypes.create_string_buffer(1232 + 16)
     aligned = (ctypes.addressof(context) + 15) & ~15
-    stack = ctypes.create_string_buffer(4096)
+    stack_bytes = max(a.stack_kb, 4) * 1024
+    stack = ctypes.create_string_buffer(stack_bytes)
     read = ctypes.c_size_t()
     wanted = []
     for used, thread in busy:
@@ -121,7 +124,7 @@ def main():
                 rip = ctypes.c_uint64.from_address(aligned + 0xF8).value
                 rsp = ctypes.c_uint64.from_address(aligned + 0x98).value
                 frames.append(rip)
-                if k32.ReadProcessMemory(wt.HANDLE(process), ctypes.c_void_p(rsp), stack, 4096, ctypes.byref(read)):
+                if k32.ReadProcessMemory(wt.HANDLE(process), ctypes.c_void_p(rsp), stack, stack_bytes, ctypes.byref(read)):
                     for i in range(0, read.value - 7, 8):
                         value = int.from_bytes(stack.raw[i:i + 8], 'little')
                         if len(frames) < a.depth and (base <= value < base + size or (

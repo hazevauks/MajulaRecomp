@@ -61,6 +61,8 @@ set(DS2_SOURCES
     src/me/native/ds2_native_glue.cpp
     # This game's D3D addresses (draw-time shader load, Draw*).
     src/me/ds2_me_hooks.cpp
+    # The Horizon priority of FMOD's mixer thread (ds2_audio_mixer_priority): late blocks are the "robotic" sound.
+    src/ds2_audio_threads.cpp
     # Render resolution per console mode (docked / handheld, live) and MSAA: ds2_render_height_*, ds2_msaa.
     src/me/ds2_render_mode.cpp
     # Switchable enhancements: masters ds2_cpu_enhancements / ds2_noncpu_enhancements, one key each, a startup line
@@ -200,7 +202,12 @@ if(REXGLUE_PLATFORM_SWITCH)
     # branch into libm to set errno; the guest never sees the host's errno or floating-point exception flags (nothing
     # under sdk/include/rex/ppc reads them). No value changes: nothing that reassociates or contracts is enabled.
     # Only in the optimised builds, so the everyday build stays the reference these are compared with.
-    option(DS2_SWITCH_MATH_FLAGS "-fno-math-errno -fno-trapping-math for the recompiled code (with LTO or PGO)" ON)
+    # 2026-10-13: -fno-trapping-math is no longer passed. sa2-nx's audit (docs/cpu-rounds.md, "The audit", item 3): it
+    # lets the compiler run a float operation earlier than the code does (out of a branch or a loop), and the
+    # recompiled code changes the host's flush mode in between, which the compiler does not know the operation
+    # depends on; it bought at most 0.5 % of one file there. It also made the PGO "use" build differ from the
+    # instrumented one before the profile is read.
+    option(DS2_SWITCH_MATH_FLAGS "-fno-math-errno for the recompiled code (with LTO or PGO)" ON)
     option(DS2_SWITCH_LTO "Link-time optimisation of the game code and the app (Switch)" OFF)
     set(DS2_SWITCH_LTO_JOBS "2" CACHE STRING "Parallel LTRANS jobs of the Switch LTO link")
     option(DS2_SWITCH_IPA_PTA "-fipa-pta at the Switch LTO link" ON)
@@ -211,7 +218,7 @@ if(REXGLUE_PLATFORM_SWITCH)
         target_compile_definitions(ds2 PRIVATE XXH_FORCE_MEMORY_ACCESS=0)
     endif()
     if(DS2_SWITCH_MATH_FLAGS AND (DS2_SWITCH_LTO OR DS2_PGO STREQUAL "use") AND TARGET ds2_recomp)
-        target_compile_options(ds2_recomp PRIVATE -fno-math-errno -fno-trapping-math)
+        target_compile_options(ds2_recomp PRIVATE -fno-math-errno)
     endif()
     if(DS2_SWITCH_LTO)
         set(_ds2_lto_compile -flto -fno-fat-lto-objects)
