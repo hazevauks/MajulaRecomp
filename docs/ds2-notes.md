@@ -1654,3 +1654,10 @@ O que serve ao DS2, por ordem de valor:
 4. O que **não** se aplica ou foi descartado lá: `-fno-trapping-math` (acima), a remoção das gravações mortas de
    registradores não voláteis no prólogo (mudou a imagem no SA2: o jogo lê uma palavra de pilha nunca inicializada e
    depende dos zeros) e do registrador de ligação.
+
+**Vigésimo primeiro build** (2026-10-13): `out\nx` em 3,3 min (80,9 MB) e `out\nx_rel` em 68,1 min (90,3 MB, todo o
+código do jogo recompilado sem `-fno-trapping-math`); `tools/check_switch_build.py` passa nos dois. No PC o gancho
+reconhece as quatro threads do FMOD (`FMOD mixer thread`, `FMOD stream thread`, `FMOD nonblocking thread (0)`,
+`FMOD file thread`), e uma amostragem da thread que mistura confirmou a cadeia `FMOD::Thread::callback` →
+`sub_82847B18` (a função de thread do mixer, vizinha de quem o cria) → ... → `sub_8283AD00` (a rede de DSP). ELFs em
+`out/switch_elf/optimised_4/`.
