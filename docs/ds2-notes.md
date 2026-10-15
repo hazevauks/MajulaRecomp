@@ -1705,3 +1705,8 @@ travadas repentinas; as travadas de transição de área continuam; na área da 
   macros novas no `ds2_pch.h` (`REX_RO_U32`, `REX_LOAD_D_F32`, `REX_LEAF_LOCAL`, `REX_LOOP_IN`,
   `REX_CALL_INDIRECT_FUNC_AT`, `REX_PROMOTED_IS`...) e da conferência do lado do PC (`RexRoMismatch`, o censo de
   chamadas indiretas). Como a área dos cavaleiros mostra, é a CPU que falta.
+
+**Vigésimo segundo build** (2026-10-15): `out
+x` (80,9 MB) e `out
+x_rel` em 43,4 min (90,3 MB); `tools/check_switch_build.py` passa
+nos dois. ELFs em `out/switch_elf/optimised_5/`.
