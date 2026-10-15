@@ -160,6 +160,9 @@ class ContextTargets {
   virtual ImageNative* TargetDepth(uint32_t base, uint32_t format, uint32_t pitch) = 0;
   // Texture resolved by the render target code at that physical address, or nullptr.
   virtual const ImageNative* ResolvedTexture(uint32_t address) = 0;
+  // ds2_native_resolved_retire_idle: a texture did not fit in GPU memory. The render target code releases its idle
+  // resolved textures at the next Swap (they are the other large user of GPU memory).
+  virtual void GpuMemoryIsShort() {}
   // A known resolve may have a pitch-sized backing, unlike the fetch's logical size.
   // Called outside the current draw's pass, after ResolvedTexture accounted/materialized the read.
   // nullptr means an unsupported/failed resolved fetch, NOT permission to read stale guest RAM; except when

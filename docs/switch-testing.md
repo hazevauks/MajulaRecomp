@@ -4,6 +4,25 @@ Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro map
 Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
 logs de volta.
 
+## Vigésimo segundo build (2026-10-15): sessões longas e as travadas de área
+
+Copie por cima: `ds2-opt.nro` e `ds2.nro`.
+
+O que muda:
+
+- **Sessões longas.** O renderizador guardava para sempre as imagens que o jogo copia dos alvos de renderização
+  (sombras, efeitos), uma por endereço; em jogos com o mesmo renderizador isso acaba com a memória depois de uma a
+  duas horas (sombras erradas, texturas pretas). Agora as que ficam um minuto sem uso são liberadas.
+- **Travadas de área.** Em cada uma o jogo para de mandar quadros enquanto cria cinco threads seguidas. As pilhas
+  dessas threads passam a ser reaproveitadas em vez de pedidas de novo à memória, e o log passa a dizer quanto tempo
+  cada criação leva.
+
+**Teste, com o `ds2-opt.nro`:** uma sessão longa (uma hora ou mais, se der), passando por várias transições de área.
+Repare se as travadas de área mudaram e se algo estranho aparece com o tempo (sombras, texturas pretas, coisas
+faltando).
+
+Depois a pasta `logs/` (com `rex` dentro).
+
 ## Vigésimo primeiro build (2026-10-13): o som robótico e o registro das travadas
 
 Copie por cima: `ds2-opt.nro` e `ds2.nro`.

@@ -1661,3 +1661,47 @@ reconhece as quatro threads do FMOD (`FMOD mixer thread`, `FMOD stream thread`, 
 `FMOD file thread`), e uma amostragem da thread que mistura confirmou a cadeia `FMOD::Thread::callback` →
 `sub_82847B18` (a função de thread do mixer, vizinha de quem o cria) → ... → `sub_8283AD00` (a rede de DSP). ELFs em
 `out/switch_elf/optimised_4/`.
+
+## Vigésimo primeiro build no console; sessões longas e a criação de threads (2026-10-15)
+
+Sessão de 9 minutos com o `ds2-opt.nro` (`out/switch_logs/024/ds2_040.log`). O usuário: menos som robótico e menos
+travadas repentinas; as travadas de transição de área continuam; na área da água com os cavaleiros, 13-15 quadros/s.
+
+- **Mixer:** `[audio] FMOD mixer thread: Horizon priority 0x2d set`.
+- **Quadros longos** (o registro novo, de 400 ms ou mais sempre, e o de 60 ms com teto que agora não se esgotou):
+  só 7 quadros acima de 250 ms em 9 minutos, os maiores de 652 e 446 ms na entrada no jogo. Os das transições
+  (15:26:15, 278 ms; 15:27:14, 268 ms; também 120 e 203 ms logo antes) têm **GPU 1,4 ms, uma cópia, nenhum Swap**:
+  o renderizador esperava o jogo, que parou de mandar quadros. E dentro de cada um o jogo cria **cinco threads
+  seguidas** (`[threads] guest thread 49` a `53` às 15:26:15,33-15,57; `54` a `58` às 15:27:14,39-14,61).
+- **Área dos cavaleiros:** GPU 58-62 ms por quadro, dos quais 26 ms parada (`gap`), cena 20 ms; anel 35-37 ms. O
+  limite ali é a CPU (o jogo), não a GPU.
+
+**O que muda neste build:**
+
+- **Sessões longas** (portado do sa2-nx 1.0.2, `3aff36c`, `ds2_native_resolved_retire_idle`): as texturas copiadas
+  (`resolved_`) eram guardadas a sessão inteira, uma por endereço que já recebeu uma cópia; o jogo libera a textura
+  de um alvo quando a cena acaba e a próxima nasce noutro endereço, e elas se acumulam até a memória de GPU acabar
+  (no SA2 e no NFSMW: sombras erradas, depois texturas pretas e geometria faltando depois de uma a duas horas). Agora
+  uma que não recebe cópia nem é lida por `ds2_native_resolved_idle_frames` quadros (3.600) é liberada, e se a GPU
+  ficar sem memória as paradas há 120 quadros saem no Swap seguinte. Relatório a cada 600 quadros
+  (`targets: N resolved textures and P parked hold X MB; R released ...`). No PC, com 120 quadros para forçar:
+  24 liberadas (43 MB) em 5 minutos, nenhuma busca num endereço liberado, nenhum `FATAL`.
+- **Criação de threads** (SDK, `threading_posix.cpp`, exceção `ds2-nx`): as pilhas de 4 MB das threads do jogo
+  passam a usar o pool de pilhas do sa2-nx (era só para as de 16 MB: mínimo 8 MB, quatro blocos), com até dezesseis
+  blocos; antes cada thread nova pedia 4 MB a um heap com 170 mil pedaços livres e os devolvia um segundo depois de
+  acabar. E cada criação de 4 ms ou mais vai para o log (`[threads] creating a thread ... took X ms`): o próximo log
+  diz se a travada é o custo das cinco criações ou outra coisa que o jogo faz no mesmo momento.
+
+**As referências, 2026-10-15.** O `torchlight-nx` saiu em 1.0.1 e 1.0.2:
+
+- 1.0.1: um travamento "device lost" em cenas cheias (a fila de comandos do NVK cheia na submissão), corrigido com um
+  patch do Mesa (`switch/patches/mesa-switch-gpfifo-reserve.patch`). O DS2 usa o mesmo driver: vale portar se um dia
+  aparecer um `device lost`.
+- 1.0.2: portou as ferramentas da segunda e terceira rodadas de CPU do sa2-nx como passos sobre o código gerado,
+  sem trocar o SDK inteiro: chamadas indiretas promovidas a diretas com guarda (a partir de um censo feito no PC),
+  constantes de leitura dobradas, cargas de ponto flutuante mais rápidas, registradores como locais em funções folha
+  e em laços sem chamada. É o caminho para o DS2 também: as ferramentas do sa2-nx (`tools/ro_constants.py`,
+  `float_loads.py`, `leaf_locals.py`, `loop_locals.py`, `indirect_calls.py`, `indirect_promotions.py`) precisam das
+  macros novas no `ds2_pch.h` (`REX_RO_U32`, `REX_LOAD_D_F32`, `REX_LEAF_LOCAL`, `REX_LOOP_IN`,
+  `REX_CALL_INDIRECT_FUNC_AT`, `REX_PROMOTED_IS`...) e da conferência do lado do PC (`RexRoMismatch`, o censo de
+  chamadas indiretas). Como a área dos cavaleiros mostra, é a CPU que falta.

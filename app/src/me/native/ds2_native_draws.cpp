@@ -6172,6 +6172,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
    * the game.
    */
   bool DropTexturesPerMissingOfMemory() override {
+    if (context_) context_->GpuMemoryIsShort();  // ds2_native_resolved_retire_idle: its share goes at the next Swap
     if (textures_.empty() || bytes_textures_ == 0 || releasing_per_missing_of_memory_) {
       return false;  // the guard keeps an allocation inside the cleanup itself from re-entering here
     }

@@ -14,6 +14,7 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
 #include <signal.h>
 
 #include <atomic>
+#include <chrono>
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -876,9 +877,12 @@ bool g_joining = false;             // Loop has taken an item and not joined it 
  */
 // Only the guest threads' 16 MB stacks. The SDK's own threads (4 MB by default, long-lived) stay with libnx as
 // before, and their blocks never take the pool's places.
-constexpr size_t kPoolMinStack = size_t(8) << 20;
-constexpr size_t kPoolMaxBlocks = 4;
-constexpr size_t kPoolMaxBytes = size_t(80) << 20;  // four guest stacks (16 MB each, with their TLS)
+// ds2-nx (2026-10-15): Dark Souls II's guest threads get 4 MB stacks now (switch_guest_host_stack_mb in
+// xthread.cpp), and the game starts them in batches of five at area transitions, where the console log shows its
+// frames stopping for 200-650 ms. They are pooled too (2 MB and up), and the pool keeps up to sixteen blocks.
+constexpr size_t kPoolMinStack = size_t(2) << 20;
+constexpr size_t kPoolMaxBlocks = 16;
+constexpr size_t kPoolMaxBytes = size_t(96) << 20;  // sixteen 4 MB stacks, or five of 16 MB (with their TLS)
 struct Stack {
   void* base;
   size_t bytes;
@@ -1135,7 +1139,19 @@ class PosixCondition<Thread> : public PosixConditionBase {
       }
       return result;
     };
+    // ds2-nx: how long a creation takes (the game creates threads in batches at area transitions, inside its
+    // longest frames). The first 64 creations of 4 ms or more are logged.
+    const auto creation_started = std::chrono::steady_clock::now();
     int created = create(nullptr);
+    {
+      static std::atomic<uint32_t> slow_logged{0};
+      const double ms =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - creation_started).count();
+      if (ms >= 4.0 && slow_logged.fetch_add(1, std::memory_order_relaxed) < 64) {
+        REXSYS_INFO("[threads] creating a thread with a {} KB stack took {:.1f} ms ({}, stack {})", params.stack_size >> 10,
+                    ms, created == 0 ? "created" : "failed", pooled_bytes ? "from the pool or the heap" : "by libnx");
+      }
+    }
     if (created != 0) {
       /*
        * sa2-nx: what is missing is usually held by finished threads the reaper has not joined yet. Each keeps its
