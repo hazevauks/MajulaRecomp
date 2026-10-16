@@ -14,6 +14,8 @@
 
 #include <imgui.h>
 
+#include <cstdio>
+
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/platform.h>
@@ -26,6 +28,8 @@
 #if REX_PLATFORM_SWITCH
 #include <switch.h>
 #endif
+
+REXCVAR_DECLARE(uint32_t, user_language);  // sdk/src/kernel/xam/xam_user.cpp
 
 REXCVAR_DEFINE_BOOL(ds2_trophy_notices, true, "DS2",
                     "Show a notice in the corner when a trophy unlocks (it closes itself after a few seconds; while "
@@ -57,14 +61,92 @@ const ImU32 kPlatinumLight = IM_COL32(236, 238, 242, 255);
 const ImU32 kPlatinumMid = IM_COL32(170, 176, 188, 255);
 const ImU32 kPlatinumDark = IM_COL32(96, 102, 116, 255);
 
-const char* const kPlatinumName = "Portador da Maldição";
+// The screen's own words follow the language the game runs in (user_language, the same choice that picks the
+// achievement names from the XDBF): the eight languages of Dark Souls II, English for any other.
+struct Words {
+  const char* unlocked;          // notice title
+  const char* platinum_title;    // notice title of the platinum
+  const char* platinum_name;
+  const char* platinum_got;      // what it is for
+  const char* platinum_hint;     // how to get it
+  const char* platinum_notice;   // under the name in its notice
+  const char* screen_title;
+  const char* platinum_on;       // "%s" = the date
+  const char* platinum_count;    // "%d", "%d" = unlocked, total
+  const char* footer;
+  const char* date_format;       // strftime
+};
+
+constexpr Words kEnglish = {
+    "Trophy unlocked", "PLATINUM TROPHY", "Bearer of the Curse", "Every trophy in Dark Souls II: 1000G.",
+    "Unlock every other trophy in the game.", "1000G: every trophy in Dark Souls II", "TROPHIES", "Platinum on %s",
+    "%d of %d trophies", "D-pad: browse     B: close     L + Minus: open / close", "%m/%d/%Y"};
+constexpr Words kJapanese = {
+    "トロフィー獲得", "プラチナトロフィー", "呪いを受けし者", "DARK SOULS II のすべてのトロフィー：1000G",
+    "ほかのすべてのトロフィーを獲得する", "1000G：DARK SOULS II のすべてのトロフィー", "トロフィー", "%s にプラチナ獲得",
+    "%d / %d トロフィー", "十字ボタン：選択　　B：閉じる　　L + −：開く / 閉じる", "%Y/%m/%d"};
+constexpr Words kGerman = {
+    "Trophäe freigeschaltet", "PLATIN-TROPHÄE", "Träger des Fluchs", "Alle Trophäen von Dark Souls II: 1000G.",
+    "Schalte alle anderen Trophäen des Spiels frei.", "1000G: alle Trophäen von Dark Souls II", "TROPHÄEN",
+    "Platin am %s", "%d von %d Trophäen", "Steuerkreuz: blättern     B: schließen     L + Minus: öffnen / schließen",
+    "%d.%m.%Y"};
+constexpr Words kFrench = {
+    "Trophée débloqué", "TROPHÉE PLATINE", "Porteur de la Malédiction", "Tous les trophées de Dark Souls II : 1000G.",
+    "Débloquez tous les autres trophées du jeu.", "1000G : tous les trophées de Dark Souls II", "TROPHÉES",
+    "Platine obtenu le %s", "%d trophées sur %d", "Croix : parcourir     B : fermer     L + Moins : ouvrir / fermer",
+    "%d/%m/%Y"};
+constexpr Words kSpanish = {
+    "Trofeo desbloqueado", "TROFEO DE PLATINO", "Portador de la Maldición", "Todos los trofeos de Dark Souls II: 1000G.",
+    "Desbloquea todos los demás trofeos del juego.", "1000G: todos los trofeos de Dark Souls II", "TROFEOS",
+    "Platino el %s", "%d de %d trofeos", "Cruceta: navegar     B: cerrar     L + Menos: abrir / cerrar", "%d/%m/%Y"};
+constexpr Words kItalian = {
+    "Trofeo sbloccato", "TROFEO DI PLATINO", "Portatore della Maledizione", "Tutti i trofei di Dark Souls II: 1000G.",
+    "Sblocca tutti gli altri trofei del gioco.", "1000G: tutti i trofei di Dark Souls II", "TROFEI", "Platino il %s",
+    "%d di %d trofei", "Croce direzionale: scorri     B: chiudi     L + Meno: apri / chiudi", "%d/%m/%Y"};
+constexpr Words kPolish = {
+    "Trofeum odblokowane", "PLATYNOWE TROFEUM", "Nosiciel Klątwy", "Wszystkie trofea Dark Souls II: 1000G.",
+    "Odblokuj wszystkie pozostałe trofea w grze.", "1000G: wszystkie trofea Dark Souls II", "TROFEA",
+    "Platyna zdobyta %s", "%d z %d trofeów", "Krzyżak: przeglądaj     B: zamknij     L + Minus: otwórz / zamknij",
+    "%d.%m.%Y"};
+constexpr Words kRussian = {
+    "Трофей получен", "ПЛАТИНОВЫЙ ТРОФЕЙ", "Носитель проклятия", "Все трофеи Dark Souls II: 1000G.",
+    "Получите все остальные трофеи игры.", "1000G: все трофеи Dark Souls II", "ТРОФЕИ", "Платина получена %s",
+    "%d из %d трофеев", "Крестовина: листать     B: закрыть     L + Минус: открыть / закрыть", "%d.%m.%Y"};
+
+// XLanguage numbers (the SDK's user_language): 1 English, 2 Japanese, 3 German, 4 French, 5 Spanish, 6 Italian,
+// 11 Polish, 12 Russian.
+const Words& T() {
+  switch (REXCVAR_GET(user_language)) {
+    case 2: return kJapanese;
+    case 3: return kGerman;
+    case 4: return kFrench;
+    case 5: return kSpanish;
+    case 6: return kItalian;
+    case 11: return kPolish;
+    case 12: return kRussian;
+    default: return kEnglish;
+  }
+}
+
+std::string Format(const char* format, int a, int b) {
+  char text[160];
+  std::snprintf(text, sizeof(text), format, a, b);
+  return text;
+}
+
+std::string Format(const char* format, const std::string& value) {
+  char text[160];
+  std::snprintf(text, sizeof(text), format, value.c_str());
+  return text;
+}
+
 
 AchievementInfo PlatinumInfo() {
   AchievementInfo info;
   info.id = kPlatinumId;
-  info.label = kPlatinumName;
-  info.description = "Todos os troféus de Dark Souls II: 1000G.";
-  info.unachieved_description = "Desbloqueie todos os outros troféus do jogo.";
+  info.label = T().platinum_name;
+  info.description = T().platinum_got;
+  info.unachieved_description = T().platinum_hint;
   info.gamerscore = 0;  // the game's 1000G stay the total
   return info;
 }
@@ -119,7 +201,7 @@ std::string DateOf(uint64_t filetime) {
   localtime_r(&t, &local);
 #endif
   char text[32];
-  std::strftime(text, sizeof(text), "%d/%m/%Y", &local);
+  std::strftime(text, sizeof(text), T().date_format, &local);
   return text;
 }
 
@@ -236,14 +318,14 @@ class Notice final : public rex::ui::ImGuiDialog {
       const float tx = icon_min.x + icon + 16.0f * scale;
       PushFont(16.0f * scale);
       dl->AddText(ImVec2(tx, a.y + 14.0f * scale), faded(platinum ? kPlatinumLight : kGold),
-                  platinum ? "TROFÉU DE PLATINA" : "Troféu desbloqueado");
+                  platinum ? T().platinum_title : T().unlocked);
       ImGui::PopFont();
       PushFont((platinum ? 24.0f : 20.0f) * scale);
       dl->AddText(ImVec2(tx, a.y + 38.0f * scale), faded(kText), item.info.label.c_str());
       ImGui::PopFont();
       PushFont(15.0f * scale);
       const std::string detail =
-          platinum ? std::string("1000G: todos os troféus de Dark Souls II") : fmt_g(item.info.gamerscore);
+          platinum ? std::string(T().platinum_notice) : fmt_g(item.info.gamerscore);
       dl->AddText(ImVec2(tx, a.y + (platinum ? 76.0f : 66.0f) * scale), faded(kTextDim), detail.c_str());
       ImGui::PopFont();
     }
@@ -287,7 +369,11 @@ class Screen final : public rex::ui::ImGuiDialog {
     AchievementManager& store = *g_hooks.achievements;
 #if REX_PLATFORM_SWITCH
     padUpdate(&pad_);
-    if (!close_requested_ && (padGetButtonsDown(&pad_) & (HidNpadButton_B | HidNpadButton_Minus))) RequestClose();
+    // B closes; Minus closes too, but not while L is held: L + Minus is the shortcut (ds2_render_mode.cpp), which
+    // toggles the screen by itself. Both at once closed it and opened it again in the same instant.
+    const u64 down = padGetButtonsDown(&pad_);
+    const bool with_l = (padGetButtons(&pad_) & HidNpadButton_L) != 0;
+    if (!close_requested_ && ((down & HidNpadButton_B) || ((down & HidNpadButton_Minus) && !with_l))) RequestClose();
 #endif
     if (!close_requested_ && ImGui::IsKeyPressed(ImGuiKey_Escape)) RequestClose();
 
@@ -314,7 +400,7 @@ class Screen final : public rex::ui::ImGuiDialog {
       DrawList(store, scale, size.y);
       PushFont(14.0f * scale);
       ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kTextDim));
-      ImGui::TextUnformatted("Direcional: navegar     B: fechar     L + Menos: abrir / fechar");
+      ImGui::TextUnformatted(T().footer);
       ImGui::PopStyleColor();
       ImGui::PopFont();
     }
@@ -336,7 +422,7 @@ class Screen final : public rex::ui::ImGuiDialog {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     PushFont(30.0f * scale);
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(kGold));
-    ImGui::TextUnformatted("TROFÉUS");
+    ImGui::TextUnformatted(T().screen_title);
     ImGui::PopStyleColor();
     ImGui::PopFont();
     ImGui::SameLine();
@@ -367,14 +453,14 @@ class Screen final : public rex::ui::ImGuiDialog {
       DrawPlatinumEmblem(dl, ImVec2(card_min.x + 16.0f * scale + r, card_min.y + card_h * 0.5f), r, got);
       const float tx = card_min.x + 32.0f * scale + r * 2.0f;
       PushFont(24.0f * scale);
-      dl->AddText(ImVec2(tx, card_min.y + 16.0f * scale), got ? kPlatinumLight : kTextDim, kPlatinumName);
+      dl->AddText(ImVec2(tx, card_min.y + 16.0f * scale), got ? kPlatinumLight : kTextDim, T().platinum_name);
       ImGui::PopFont();
       PushFont(16.0f * scale);
       dl->AddText(ImVec2(tx, card_min.y + 50.0f * scale), got ? kText : kTextDim,
-                  got ? "Todos os troféus de Dark Souls II: 1000G." : "Desbloqueie todos os outros troféus do jogo.");
+                  got ? T().platinum_got : T().platinum_hint);
       const std::string status =
-          got ? "Platina em " + DateOf(store.GetUnlockTime(kPlatinumId))
-              : std::to_string(p.unlocked) + " de " + std::to_string(p.total) + " troféus";
+          got ? Format(T().platinum_on, DateOf(store.GetUnlockTime(kPlatinumId)))
+              : Format(T().platinum_count, p.unlocked, p.total);
       dl->AddText(ImVec2(tx, card_min.y + 76.0f * scale), got ? kPlatinumMid : kGoldDim, status.c_str());
       ImGui::PopFont();
       ImGui::Dummy(ImVec2(card_w, card_h + 10.0f * scale));
@@ -497,6 +583,12 @@ void RequestToggle() {
 void ConfigureFonts(ImFontAtlas* atlas) {
   ImFontConfig config;
   config.FontDataOwnedByAtlas = false;
+  // The SDK's ImGui builds a static atlas (no dynamic glyphs): the ranges of the game's language. Latin with its
+  // extended block (Polish), Cyrillic for Russian, ImGui's common Japanese set for Japanese.
+  static const ImWchar kLatin[] = {0x0020, 0x00FF, 0x0100, 0x017F, 0x2000, 0x206F, 0x2212, 0x2212, 0};
+  static const ImWchar kCyrillic[] = {0x0020, 0x00FF, 0x0100, 0x017F, 0x0400, 0x04FF, 0x2000, 0x206F, 0};
+  const uint32_t language = REXCVAR_GET(user_language);
+  config.GlyphRanges = language == 2 ? atlas->GetGlyphRangesJapanese() : language == 12 ? kCyrillic : kLatin;
   config.OversampleH = 2;
   config.OversampleV = 1;
 #if REX_PLATFORM_SWITCH
