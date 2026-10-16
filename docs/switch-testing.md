@@ -1,473 +1,484 @@
-# Testando o Dark Souls II (MajulaRecomp) no Switch
+# Testing Dark Souls II (MajulaRecomp) on the Switch
 
-Este é o **primeiro build para o console**. No PC o jogo chegou ao primeiro mapa com a imagem certa, mas só pelo
-Vulkan por software; no Switch nada foi testado ainda. O objetivo deste teste é saber até onde ele vai e trazer os
-logs de volta.
+The builds below are newest first; each section says what to copy, what changed and what to test. The oldest one, at
+the end, is the **first build for the console**: at that point the game had reached the first map with the right
+picture on the PC, only through software Vulkan, and nothing had been tested on the Switch yet.
 
-## Vigésimo segundo build (2026-10-15): sessões longas e as travadas de área
+## Twenty-second build (2026-10-15): long sessions and the area hitches
 
-Copie por cima: `ds2-opt.nro` e `ds2.nro`.
+Copy over: `ds2-opt.nro` and `ds2.nro`.
 
-O que muda:
+What changes:
 
-- **Sessões longas.** O renderizador guardava para sempre as imagens que o jogo copia dos alvos de renderização
-  (sombras, efeitos), uma por endereço; em jogos com o mesmo renderizador isso acaba com a memória depois de uma a
-  duas horas (sombras erradas, texturas pretas). Agora as que ficam um minuto sem uso são liberadas.
-- **Travadas de área.** Em cada uma o jogo para de mandar quadros enquanto cria cinco threads seguidas. As pilhas
-  dessas threads passam a ser reaproveitadas em vez de pedidas de novo à memória, e o log passa a dizer quanto tempo
-  cada criação leva.
+- **Long sessions.** The renderer kept forever the images the game copies from its render targets (shadows,
+  effects), one per address; in games with the same renderer that runs out of memory after one to two hours (wrong
+  shadows, black textures). Now the ones left unused for a minute are released.
+- **Area hitches.** In each of them the game stops sending frames while it creates five threads in a row. The
+  stacks of those threads are now reused instead of being asked from memory again, and the log says how long each
+  creation takes.
 
-**Teste, com o `ds2-opt.nro`:** uma sessão longa (uma hora ou mais, se der), passando por várias transições de área.
-Repare se as travadas de área mudaram e se algo estranho aparece com o tempo (sombras, texturas pretas, coisas
-faltando).
+**Test, with `ds2-opt.nro`:** a long session (an hour or more, if you can), going through several area transitions.
+Watch whether the area hitches changed and whether anything odd shows up over time (shadows, black textures, things
+missing).
 
-Depois a pasta `logs/` (com `rex` dentro).
+Then the `logs/` folder (with `rex` inside).
 
-## Vigésimo primeiro build (2026-10-13): o som robótico e o registro das travadas
+## Twenty-first build (2026-10-13): the robotic sound and logging the hitches
 
-Copie por cima: `ds2-opt.nro` e `ds2.nro`.
+Copy over: `ds2-opt.nro` and `ds2.nro`.
 
-O que muda:
+What changes:
 
-- **Som.** A thread que mistura o som do jogo (o mixer do FMOD) rodava na mesma prioridade das threads ocupadas do
-  jogo e esperava a vez delas; os blocos de som saíam atrasados (som robótico, arrastado), e piora mais adiante no
-  jogo, onde há mais vozes. Ela agora tem prioridade acima delas.
-- **Travadas.** Ainda sem correção: o log não registrava os quadros longos depois dos primeiros minutos. Agora
-  registra todo quadro de 0,4 s ou mais, com o que o renderizador fazia nele.
+- **Sound.** The thread that mixes the game's sound (FMOD's mixer) ran at the same priority as the game's busy
+  threads and waited for its turn behind them; the sound blocks went out late (robotic, dragging sound), worse further
+  into the game, where there are more voices. It now has a priority above them.
+- **Hitches.** Not fixed yet: the log did not record long frames after the first minutes. Now it records every frame
+  of 0.4 s or more, with what the renderer was doing in it.
 
-**Teste, com o `ds2-opt.nro`:** jogue pelas áreas onde o som estava pior e passe por algumas transições de área onde
-travava. Repare (1) se o som melhorou e (2) mais ou menos em que momentos trava (não precisa anotar a hora: o log
-marca).
+**Test, with `ds2-opt.nro`:** play through the areas where the sound was worst and go through some area transitions
+where it hitched. Watch (1) whether the sound got better and (2) roughly when it hitches (no need to note the time:
+the log has it).
 
-Se o som piorar ou algo novo aparecer, a prioridade volta ao que era com esta linha no fim do `ds2.toml`:
-`ds2_audio_mixer_priority = 0`. Se a música ou as vozes ainda quebrarem, vale testar também
+If the sound gets worse or something new shows up, the priority goes back to what it was with this line at the end
+of `ds2.toml`: `ds2_audio_mixer_priority = 0`. If music or voices still break up, also try
 `ds2_audio_stream_priority = 45`.
 
-Depois a pasta `logs/` (com a pasta `rex` dentro: o `rex_profile.log` é o da última sessão, então a sessão principal
-deve ser a última a rodar).
+Then the `logs/` folder (with the `rex` folder inside: `rex_profile.log` is the last session's, so the main session
+should be the last one you run).
 
-## Vigésimo build (2026-10-12): a queda de desempenho depois de uma conquista
+## Twentieth build (2026-10-12): the performance drop after an achievement
 
-Copie por cima: `ds2-opt.nro` e `ds2.nro`.
+Copy over: `ds2-opt.nro` and `ds2.nro`.
 
-O que muda: na sessão de 46 minutos o desempenho caiu de ~20 para ~12 quadros/s num instante exato, o da primeira
-conquista desbloqueada. O aviso de conquista na tela deixava o programa num modo de apresentação mais lento até ser
-fechado (e era dele que vinham os trechos a 1-3 quadros/s). O aviso foi desligado; a conquista é gravada igual.
+What changes: in the 46-minute session performance fell from ~20 to ~12 frames a second at one exact moment, the
+first achievement unlocked. The on-screen achievement notice left the program in a slower presentation mode until it
+was closed (and the stretches at 1-3 frames a second came from it). The notice was turned off; the achievement is
+recorded the same way.
 
-**Teste, com o `ds2-opt.nro`:** jogue normalmente por 40 minutos ou mais e repare se o desempenho se mantém do
-começo ao fim. Trocar de resolução continua valendo (L3 + R3).
+**Test, with `ds2-opt.nro`:** play normally for 40 minutes or more and watch whether performance holds from start to
+end. Switching resolution still works (L3 + R3).
 
-As conquistas são do perfil, não do save: as que já saíram não saem de novo num save novo. Elas ficam no cartão em
-`switch/ds2-nx/ds2/achievements/465307E4.toml`. Para o teste passar por uma conquista de propósito, há dois jeitos:
+Achievements belong to the profile, not to the save: the ones already unlocked do not unlock again in a new save.
+They live on the SD card in `switch/ds2-nx/ds2/achievements/465307E4.toml`. To make the test go through an
+achievement on purpose, there are two ways:
 
-- jogar até uma que ainda não saiu (o próximo chefe, por exemplo); ou
-- antes de abrir o jogo, renomear esse arquivo para `465307E4.toml.bak`: o jogo passa a achar que nenhuma saiu, e as
-  do começo (num save novo) saem outra vez. Depois do teste, apague o `465307E4.toml` novo e devolva o nome ao
-  `.bak`, para ficar com as datas originais. Os saves não são tocados.
+- play until one that has not unlocked yet (the next boss, for example); or
+- before opening the game, rename that file to `465307E4.toml.bak`: the game then thinks none has unlocked, and the
+  early ones (in a new save) unlock again. After the test, delete the new `465307E4.toml` and give the `.bak` its
+  name back, to keep the original dates. The saves are not touched.
 
-Com a correção o aviso nem chega a ser criado, então mesmo uma sessão longa sem conquista já serve; passar por uma
-só confirma que o problema era esse.
+With the fix the notice is not even created, so even a long session without an achievement is enough; going through
+one only confirms that this was the problem.
 
-Depois a pasta `logs/`.
+Then the `logs/` folder.
 
-## Décimo nono build (2026-10-12): memória para sessões longas e o novo programa otimizado
+## Nineteenth build (2026-10-12): memory for long sessions and the new optimised program
 
-Copie por cima: `ds2.nro` e `ds2-opt.nro`. Pode apagar do cartão o `ds2-pgo.nro` (não é preciso coletar de novo
-agora) e a pasta `pgo/` (os arquivos dela já foram usados).
+Copy over: `ds2.nro` and `ds2-opt.nro`. You can delete `ds2-pgo.nro` from the card (no new collection is needed
+now) and the `pgo/` folder (its files were already used).
 
-O que muda:
+What changes:
 
-- **A queda aos 28 minutos era falta de memória**, não o código novo: cada thread do jogo reservava 16 MB de pilha
-  (umas 50 threads, 800 MB), e com o cache de texturas crescendo ao longo da sessão a memória do processo acabava.
-  As pilhas agora têm o tamanho que cada thread precisa. Vale para os dois programas.
-- `ds2-opt.nro` agora é o **código novo com LTO + PGO**, feito com o perfil da sua coleta (os 26 minutos antes da
-  queda foram aproveitados).
+- **The crash at 28 minutes was a lack of memory**, not the new code: each of the game's threads reserved 16 MB of
+  stack (about 50 threads, 800 MB), and with the texture cache growing over the session the process ran out of
+  memory. The stacks now have the size each thread needs. This applies to both programs.
+- `ds2-opt.nro` is now the **new code with LTO + PGO**, made with the profile of your collection (the 26 minutes
+  before the crash were used).
 
-| arquivo | o que é |
+| file | what it is |
 |---|---|
-| `ds2-opt.nro` | o programa a usar: código otimizado + LTO + PGO |
-| `ds2.nro` | o mesmo código sem LTO/PGO (reserva, e para comparar) |
+| `ds2-opt.nro` | the program to use: optimised code + LTO + PGO |
+| `ds2.nro` | the same code without LTO/PGO (a spare, and for comparison) |
 
-**Teste, com o `ds2-opt.nro`:**
+**Test, with `ds2-opt.nro`:**
 
-1. Os três pontos parados de sempre (matagal, casa das firekeepers, vista de Majula), ~30 s a 540p, L3 + R3,
-   ~30 s a 720p.
-2. Uma **sessão longa, de 40 minutos ou mais**, passando por várias áreas, e trocando de resolução algumas vezes
-   pelo caminho (foi o que derrubou da outra vez). É o teste da correção de memória.
+1. The usual three standing points (the thicket, the Fire Keepers' house, the view of Majula), ~30 s at 540p,
+   L3 + R3, ~30 s at 720p.
+2. A **long session, 40 minutes or more**, going through several areas and switching resolution a few times along
+   the way (that is what brought it down last time). This is the test of the memory fix.
 
-Se alguma thread do jogo precisar de mais pilha do que recebeu, o programa fecha de repente (sem imagem estranha
-antes). Se isso acontecer, mande os logs e, para continuar jogando, crie na pasta do jogo um `ds2.toml` com a linha
-`switch_guest_host_stack_mb = 16` no fim (volta ao comportamento antigo).
+If one of the game's threads needs more stack than it got, the program closes suddenly (with no odd picture before).
+If that happens, send the logs and, to keep playing, create a `ds2.toml` in the game's folder with the line
+`switch_guest_host_stack_mb = 16` at the end (back to the old behaviour).
 
-Depois a pasta `logs/`.
+Then the `logs/` folder.
 
-## Décimo oitavo build (2026-10-12): código do jogo recompilado de outro jeito
+## Eighteenth build (2026-10-12): the game's code recompiled another way
 
-Copie por cima: `ds2.nro`, `ds2-pgo.nro` e `ds2-opt.nro` (o `ds2.toml` e a pasta `configs/` não mudaram).
+Copy over: `ds2.nro`, `ds2-pgo.nro` and `ds2-opt.nro` (`ds2.toml` and the `configs/` folder did not change).
 
-O que é cada programa agora:
+What each program is now:
 
-| arquivo | o que é |
+| file | what it is |
 |---|---|
-| `ds2.nro` | **o novo**: o código do jogo traduzido com as opções de velocidade (registradores do PowerPC em variáveis locais, chamadas diretas entre funções). Ainda sem LTO/PGO |
-| `ds2-pgo.nro` | o mesmo código novo, instrumentado, para a coleta de perfil. É lento de propósito |
-| `ds2-opt.nro` | o **antigo** (décimo sétimo build: código clássico com LTO + PGO), só para comparar |
+| `ds2.nro` | **the new one**: the game's code translated with the speed options (the PowerPC registers in local variables, direct calls between functions). No LTO/PGO yet |
+| `ds2-pgo.nro` | the same new code, instrumented, for the profile collection. It is slow on purpose |
+| `ds2-opt.nro` | the **old one** (seventeenth build: classic code with LTO + PGO), for comparison only |
 
-Esta é a mudança mais funda desde o primeiro build: todas as 83 mil funções do jogo foram geradas de novo. No PC o
-jogo passou pelos menus, lista de saves, Majula e pelo vídeo de abertura de um jogo novo, mas o compilador do Switch
-é outro, então o primeiro teste é de estabilidade.
+This is the deepest change since the first build: all 83 thousand of the game's functions were generated again. On
+the PC the game went through the menus, the save list, Majula and the opening movie of a new game, but the Switch's
+compiler is another one, so the first test is about stability.
 
-**Teste 1, `ds2.nro` (estabilidade e velocidade):**
+**Test 1, `ds2.nro` (stability and speed):**
 
-1. Abra, entre na lista de saves (os quatro retratos têm de aparecer) e carregue um save.
-2. Os três pontos parados de sempre (matagal, casa das firekeepers, vista de Majula), ~30 s a 540p, L3 + R3,
-   ~30 s a 720p. É a comparação com o `ds2-opt.nro` antigo, que você já mediu; não precisa repetir com ele.
-3. Jogue uns 10 minutos normalmente: combate, uma fogueira, um carregamento de área.
-4. Se puder, comece um **jogo novo** e veja o vídeo de abertura por alguns segundos (o decodificador de vídeo foi
-   uma das partes que precisou de cuidado). Pode pular depois.
+1. Open it, go to the save list (the four portraits must show) and load a save.
+2. The usual three standing points (the thicket, the Fire Keepers' house, the view of Majula), ~30 s at 540p,
+   L3 + R3, ~30 s at 720p. This is the comparison with the old `ds2-opt.nro`, which you measured already; no need to
+   repeat it with that one.
+3. Play about 10 minutes normally: combat, a bonfire, an area load.
+4. If you can, start a **new game** and watch the opening movie for a few seconds (the video decoder was one of the
+   parts that needed care). You can skip it afterwards.
 
-Se o `ds2.nro` travar ou fechar em qualquer ponto, pare aí e mande a pasta `logs/` (e as pastas de relatório do
-Atmosphère, se houver): não adianta coletar perfil de um programa que não está certo.
+If `ds2.nro` freezes or closes at any point, stop there and send the `logs/` folder (and Atmosphère's report folders,
+if any): there is no point collecting a profile of a program that is not right.
 
-**Teste 2, `ds2-pgo.nro` (só se o teste 1 passou):** a coleta de perfil, como da outra vez: jogue 20 a 30 minutos
-de jogo variado (do início até onde der, com combate e carregamentos) e saia pelo menu HOME fechando o programa.
-O perfil antigo não serve para o código novo; é esta coleta que vai alimentar o próximo `ds2-opt.nro`.
+**Test 2, `ds2-pgo.nro` (only if test 1 passed):** the profile collection, as last time: play 20 to 30 minutes of
+varied play (from the start as far as you get, with combat and loads) and leave through the HOME menu, closing the
+program. The old profile does not fit the new code; this collection feeds the next `ds2-opt.nro`.
 
-Depois: a pasta `logs/` e a pasta `pgo/` que aparece ao lado do programa.
+Then: the `logs/` folder and the `pgo/` folder that appears next to the program.
 
-## Décimo sétimo build (2026-10-11): retratos dos saves e mais um corte na GPU
+## Seventeenth build (2026-10-11): the save portraits and another GPU cut
 
-Copie por cima: `ds2-opt.nro` e `ds2.nro` (o `ds2.toml` e a pasta `configs/` são os do décimo sexto build; se o
-`ds2.toml` do cartão ainda for o `ds2_melhorias_desligadas` do último teste, volte o do pacote).
+Copy over: `ds2-opt.nro` and `ds2.nro` (`ds2.toml` and the `configs/` folder are the sixteenth build's; if the card's
+`ds2.toml` is still `ds2_melhorias_desligadas` from the last test, put the package's back).
 
-O que muda:
+What changes:
 
-- **Retratos na lista de saves:** o jogo desenha cada retrato numa textura pequena e lê os pixels pela CPU; o
-  renderizador não devolvia essas texturas para a memória do jogo. Agora devolve.
-- **GPU:** a conversão de formato da imagem HDR que ainda sobrava (cerca de 5 ms por quadro a 540p) ganhou um atalho.
+- **Portraits in the save list:** the game draws each portrait into a small texture and reads its pixels with the
+  CPU; the renderer did not give those textures back to the game's memory. Now it does.
+- **GPU:** the format conversion of the HDR image that was still left (about 5 ms a frame at 540p) got a shortcut.
 
-O teste, com o `ds2-opt.nro`:
+The test, with `ds2-opt.nro`:
 
-1. Abra a lista de saves e veja os quatro retratos (uma foto ajuda). Entre num save, salve/saia para o título e
-   abra a lista de novo.
-2. Os três pontos parados de sempre (matagal, casa das firekeepers no mesmo lugar da primeira vez, vista de Majula),
-   ~30 s a 540p, L3 + R3, ~30 s a 720p.
+1. Open the save list and look at the four portraits (a photo helps). Load a save, save/quit to the title and open
+   the list again.
+2. The usual three standing points (the thicket, the Fire Keepers' house in the same spot as the first time, the
+   view of Majula), ~30 s at 540p, L3 + R3, ~30 s at 720p.
 
-Depois a pasta `logs/`.
+Then the `logs/` folder.
 
-## Décimo sexto build (2026-10-11): perfil completo e conversões mais baratas
+## Sixteenth build (2026-10-11): the full profile and cheaper conversions
 
-Copie por cima: `ds2-opt.nro`, `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+Copy over: `ds2-opt.nro`, `ds2.nro`, `ds2.toml` and the `configs/` folder.
 
-O que muda:
+What changes:
 
-- `ds2-opt.nro`: PGO com as duas coletas (6,5 + 27 minutos) e LTO;
-- `ds2.toml` (vale para os dois programas): as conversões de formato da imagem HDR, que custavam 14-17 ms de GPU por
-  quadro a 540p, passam por um caminho mais barato. No PC a imagem saiu igual.
+- `ds2-opt.nro`: PGO with both collections (6.5 + 27 minutes) and LTO;
+- `ds2.toml` (applies to both programs): the format conversions of the HDR image, which cost 14-17 ms of GPU a frame
+  at 540p, take a cheaper path. On the PC the picture came out the same.
 
-**Teste 1 (principal), `ds2-opt.nro`:** os mesmos três pontos parados da última vez (matagal do início, dentro da
-casa das firekeepers, vista de Majula), ~30 s a 540p, L3 + R3, ~30 s a 720p, L3 + R3. Não precisa repetir com o
-`ds2.nro`. Repare se a imagem tem algo estranho em cores, brilho ou neblina (é o que essas conversões tocam).
+**Test 1 (main), `ds2-opt.nro`:** the same three standing points as last time (the starting thicket, inside the Fire
+Keepers' house, the view of Majula), ~30 s at 540p, L3 + R3, ~30 s at 720p, L3 + R3. No need to repeat with
+`ds2.nro`. Watch for anything odd in colours, brightness or fog (that is what these conversions touch).
 
-**Teste 2 (as miniaturas dos saves):** apague o `ds2.toml`, copie `configs/ds2_melhorias_desligadas.toml` para a
-pasta do jogo, renomeie para `ds2.toml`, abra o `ds2.nro` e vá até a lista de saves. Os retratos saem certos ou
-continuam com ruído? Uma foto ajuda. Depois volte o `ds2.toml` do pacote.
+**Test 2 (the save thumbnails):** delete `ds2.toml`, copy `configs/ds2_melhorias_desligadas.toml` to the game's
+folder, rename it to `ds2.toml`, open `ds2.nro` and go to the save list. Do the portraits come out right or still
+noisy? A photo helps. Then put the package's `ds2.toml` back.
 
-Mande a pasta `logs/` das duas sessões.
+Send the `logs/` folder of both sessions.
 
-## Décimo quinto build (2026-10-11): PGO + LTO e a troca de resolução ao vivo
+## Fifteenth build (2026-10-11): PGO + LTO and switching resolution live
 
-Copie por cima `ds2.nro` e `ds2-opt.nro` (o `ds2-pgo.nro` do build anterior pode ficar: serve para novas coletas).
+Copy over `ds2.nro` and `ds2-opt.nro` (the previous build's `ds2-pgo.nro` can stay: it serves new collections).
 
-| arquivo | o que é |
+| file | what it is |
 |---|---|
-| `ds2.nro` | o build normal (sem LTO, sem PGO), a referência |
-| `ds2-opt.nro` | o build otimizado: LTO + PGO com o perfil da sua sessão de 6,5 minutos |
+| `ds2.nro` | the normal build (no LTO, no PGO), the reference |
+| `ds2-opt.nro` | the optimised build: LTO + PGO with the profile of your 6.5-minute session |
 
-**Trocar entre 540p e 720p sem fechar o jogo:** segure os dois analógicos pressionados (**L3 + R3**) por um
-segundo. A resolução de render alterna entre 960x540 e 1280x720 na hora (a imagem pisca um quadro) e o log anota o
-momento. Vale nos dois programas e dura até fechar o jogo; ao abrir de novo vale o que está no `ds2.toml` (540).
-Dentro do jogo o R3 também trava a mira e o L3 também faz a ação dele, então use num lugar tranquilo.
+**Switching between 540p and 720p without closing the game:** hold both sticks pressed (**L3 + R3**) for a second.
+The render resolution switches between 960x540 and 1280x720 at once (the picture flickers for a frame) and the log
+notes the moment. It works in both programs and lasts until the game is closed; when it opens again, what is in
+`ds2.toml` applies (540). In the game R3 also locks on and L3 also does its own action, so use it somewhere quiet.
 
-O teste, sem overclock, de preferência nos mesmos lugares com os dois programas:
+The test, without overclock, preferably in the same places with both programs:
 
-1. `ds2-opt.nro`, sessão longa (20-30 minutos), jogando normalmente. No meio dela, num ponto parado, deixe ~30 s a
-   540p, aperte L3 + R3, deixe ~30 s a 720p e volte com L3 + R3.
-2. `ds2.nro`, uns minutos no mesmo ponto parado (30 s a 540p, L3 + R3, 30 s a 720p), para a comparação.
+1. `ds2-opt.nro`, a long session (20-30 minutes), playing normally. Halfway through, at a standing point, leave
+   ~30 s at 540p, press L3 + R3, leave ~30 s at 720p and go back with L3 + R3.
+2. `ds2.nro`, a few minutes at the same standing point (30 s at 540p, L3 + R3, 30 s at 720p), for the comparison.
 
-O que observar no `ds2-opt.nro`: qualquer coisa diferente do `ds2.nro` além da velocidade (comportamento de
-inimigos, física, colisão, som, travamentos). Este build reorganiza o código do jogo inteiro; se algo sair errado,
-o `ds2.nro` continua sendo o de confiança.
+What to watch in `ds2-opt.nro`: anything different from `ds2.nro` besides speed (enemy behaviour, physics,
+collision, sound, freezes). This build rearranges the whole game's code; if something goes wrong, `ds2.nro` is still
+the trusted one.
 
-Depois a pasta `logs/` (diga a ordem das sessões).
+Then the `logs/` folder (say the order of the sessions).
 
-## Décimo quarto build (2026-10-11): funções preventivas e o início do PGO
+## Fourteenth build (2026-10-11): preventive functions and the start of PGO
 
-Na pasta do pacote há agora até três programas. Todos usam o mesmo `ds2.toml`, os mesmos arquivos do jogo e os
-mesmos saves; copie os três por cima (os que existirem):
+The package folder now has up to three programs. They all use the same `ds2.toml`, the same game files and the same
+saves; copy all three over (the ones that exist):
 
-| arquivo | o que é | para quê |
+| file | what it is | what for |
 |---|---|---|
-| `ds2.nro` | o build normal, com 368 funções pequenas do jogo declaradas de forma preventiva | jogar no dia a dia |
-| `ds2-pgo.nro` | o build **instrumentado**: conta quais trechos do código rodam | uma sessão de coleta (abaixo) |
-| `ds2-opt.nro` | o build com LTO (otimização em tempo de link), quando estiver na pasta | comparar com o `ds2.nro` |
+| `ds2.nro` | the normal build, with 368 small functions of the game declared preventively | everyday play |
+| `ds2-pgo.nro` | the **instrumented** build: it counts which parts of the code run | a collection session (below) |
+| `ds2-opt.nro` | the build with LTO (link-time optimisation), when it is in the folder | to compare with `ds2.nro` |
 
-No menu do homebrew, entre na pasta `ds2-nx` para escolher qual abrir.
+In the homebrew menu, go into the `ds2-nx` folder to choose which one to open.
 
 ### 1. `ds2.nro`
 
-Jogue normalmente. As 368 funções novas são do mesmo tipo da que derrubou o jogo na floresta (funções vazias,
-getters e atalhos de vtable que nada chama diretamente); foram declaradas antes de alguma fazer falta. Se o jogo
-fechar e voltar ao menu do console, a pasta `logs/` continua dizendo qual endereço faltou.
+Play normally. The 368 new functions are of the same kind as the one that brought the game down in the forest (empty
+functions, getters and vtable shortcuts that nothing calls directly); they were declared before any was missed. If
+the game closes and goes back to the console's menu, the `logs/` folder still says which address was missing.
 
-### 2. A sessão de coleta com o `ds2-pgo.nro`
+### 2. The collection session with `ds2-pgo.nro`
 
-Este build é **mais lento** (cada desvio do código é contado) e a cada 2 minutos dá uma engasgada de alguns segundos
-enquanto grava as contagens no cartão. É só para coletar; não serve para medir desempenho.
+This build is **slower** (every branch of the code is counted) and every 2 minutes it stalls for a few seconds while
+it writes the counts to the card. It is only for collecting; it is no good for measuring performance.
 
-- Abra o `ds2-pgo.nro` e jogue de 15 a 20 minutos do jeito mais variado que der: menus, uma fogueira, andar, lutar,
-  morrer, uma área aberta (Majula) e uma fechada (a floresta). O que não for exercitado não é otimizado.
-- Saia pelo menu do jogo ou pelo HOME (ele grava ao perder o foco e ao sair).
-- Mande a pasta `sdmc:/switch/ds2-nx/pgo/` (arquivos `ds2_pgo_<N>.stream`, um por sessão) junto com a `logs/`.
+- Open `ds2-pgo.nro` and play 15 to 20 minutes as varied as you can: menus, a bonfire, walking, fighting, dying, an
+  open area (Majula) and a closed one (the forest). What is not exercised is not optimised.
+- Leave through the game's menu or through HOME (it writes when it loses focus and when it quits).
+- Send the `sdmc:/switch/ds2-nx/pgo/` folder (files `ds2_pgo_<N>.stream`, one per session) with `logs/`.
 
-Com esses arquivos eu gero o build otimizado pelo perfil.
+With those files I make the profile-optimised build.
 
-### 3. `ds2-opt.nro` (se estiver na pasta)
+### 3. `ds2-opt.nro` (if it is in the folder)
 
-Mesmo roteiro de medição de sempre, sem overclock: ~30 s parado num ponto e um trecho andando, uma vez com o
-`ds2.nro` e uma com o `ds2-opt.nro`, no mesmo lugar. Diga qual sessão foi qual.
+The usual measuring routine, without overclock: ~30 s standing at one point and a stretch walking, once with
+`ds2.nro` and once with `ds2-opt.nro`, in the same place. Say which session was which.
 
-## Décimo terceiro build (2026-10-10): a queda na Forest of Fallen Giants
+## Thirteenth build (2026-10-10): the crash in the Forest of Fallen Giants
 
-Copie por cima: `ds2.nro`.
+Copy over: `ds2.nro`.
 
-O jogo fechou porque chamou uma função dele mesmo que o recompilador não tinha encontrado (ela só é chamada por um
-ponteiro montado em código). Essa e a irmã dela foram adicionadas. Pode haver outras do mesmo tipo em áreas ainda não
-visitadas: se o jogo fechar de novo e voltar ao menu do console, mande a pasta `logs/` (o `logs/rex/rex_crash.log` e
-o fim do `ds2_NNN.log` dizem qual foi).
+The game closed because it called one of its own functions that the recompiler had not found (it is only called
+through a pointer built in code). That one and its sibling were added. There may be others of the same kind in areas
+not visited yet: if the game closes again and goes back to the console's menu, send the `logs/` folder
+(`logs/rex/rex_crash.log` and the end of `ds2_NNN.log` say which one it was).
 
-Continue de onde parou (o save fica antes da primeira fogueira da floresta) e siga jogando normalmente.
+Carry on from where you stopped (the save is before the forest's first bonfire) and keep playing normally.
 
-## Décimo segundo build (2026-10-10): rodada 5, CPU do renderizador (índices)
+## Twelfth build (2026-10-10): round 5, the renderer's CPU (indices)
 
-Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/` (o `ds2.toml` volta a não amostrar pilhas).
+Copy over: `ds2.nro`, `ds2.toml` and the `configs/` folder (`ds2.toml` stops sampling stacks again).
 
-O perfil mostrou que a thread do renderizador gastava 28 % do tempo convertendo índices de geometria um por um,
-porque o jogo usa um formato (tiras com reinício) que o caminho rápido herdado não aceitava. Agora aceita.
+The profile showed the renderer's thread spending 28 % of its time converting geometry indices one by one, because
+the game uses a format (strips with restart) the inherited fast path did not accept. Now it does.
 
-Jogue normalmente, sem overclock; uns 30 s parado em algum ponto e o resto andando. O que observar: geometria
-faltando, triângulos esticados pela tela ou objetos deformados (seria sinal de erro nessa conversão).
+Play normally, without overclock; about 30 s standing somewhere and the rest walking. What to watch: missing
+geometry, triangles stretched across the screen or deformed objects (that would mean an error in this conversion).
 
-Depois a pasta `logs/`.
+Then the `logs/` folder.
 
-## Rodada de perfil de CPU (2026-10-10): só o `ds2.toml` muda
+## CPU profile round (2026-10-10): only `ds2.toml` changes
 
-Copie por cima **só o `ds2.toml`** (o `ds2.nro` é o mesmo do décimo primeiro build; não troque).
+Copy over **only `ds2.toml`** (`ds2.nro` is the same as in the eleventh build; do not replace it).
 
-Depois das últimas rodadas o limite passou a ser o processador: o jogo usa quase os 3 núcleos disponíveis. Este
-`ds2.toml` liga a amostragem das pilhas de CPU, que diz em quais funções o tempo vai. O jogo fica um pouco mais
-lento enquanto ela está ligada.
+After the last rounds the limit became the processor: the game uses almost all 3 available cores. This `ds2.toml`
+turns on sampling of the CPU stacks, which says in which functions the time goes. The game is a little slower while
+it is on.
 
-Uma sessão de ~3 minutos, sem overclock:
+One session of ~3 minutes, without overclock:
 
-1. ~1 minuto parado na fogueira;
-2. ~2 minutos na área do tutorial em que você esteve (andando e lutando normalmente).
+1. ~1 minute standing at the bonfire;
+2. ~2 minutes in the tutorial area you were in (walking and fighting normally).
 
-Depois a pasta `logs/` (o arquivo que importa é `logs/rex/rex_profile.log`).
+Then the `logs/` folder (the file that matters is `logs/rex/rex_profile.log`).
 
-Desde o décimo segundo build o `ds2.toml` normal já vem sem a amostragem; ela fica em `configs/ds2_perfil.toml`.
+Since the twelfth build the normal `ds2.toml` comes without sampling; it lives in `configs/ds2_perfil.toml`.
 
-## Décimo primeiro build (2026-10-10): depois da queda do sistema
+## Eleventh build (2026-10-10): after the system crash
 
-Copie por cima: `ds2.nro`.
+Copy over: `ds2.nro`.
 
-A tela de erro do Atmosphère do último teste veio de um módulo do próprio sistema (`pcv`, que cuida de clocks e
-tensões): ele ficou sem memória para sessões e derrubou outros três módulos junto, entre eles o seu sysmodule de
-clocks. Não dá para afirmar quem causou. O jogo era um dos programas com sessões abertas nesse módulo (só para
-anotar os clocks no log), então este build deixou de mantê-las abertas.
+The Atmosphère error screen of the last test came from one of the system's own modules (`pcv`, which handles clocks
+and voltages): it ran out of memory for sessions and brought three other modules down with it, among them your
+clock sysmodule. Who caused it cannot be said. The game was one of the programs with sessions open in that module
+(only to note the clocks in the log), so this build stopped keeping them open.
 
-- Jogue normalmente; se a tela de erro voltar, mande de novo as pastas `crash_reports` e `fatal_reports` e me diga
-  o que estava aberto (barra de status, menu do sysmodule de clocks).
-- Se voltar, vale um teste com a barra de status desligada para isolar.
-- As sombras perto da casa das firekeepers e da fogueira continuam valendo a conferida.
+- Play normally; if the error screen comes back, send the `crash_reports` and `fatal_reports` folders again and tell
+  me what was open (status bar, the clock sysmodule's menu).
+- If it comes back, a test with the status bar turned off would isolate it.
+- The shadows near the Fire Keepers' house and the bonfire are still worth checking.
 
-## Décimo build (2026-10-10): rodada 4 de desempenho (sombras das luzes)
+## Tenth build (2026-10-10): performance round 4 (the lights' shadows)
 
-Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` continuam os mesmos).
+Copy over: `ds2.nro` (`ds2.toml` and the `configs/` folder stay the same).
 
-O que muda: olhando para a casa das firekeepers o jogo caía para ~8 quadros/s porque, para cada luz com sombra, o
-renderizador convertia o buffer de sombras inteiro de ida e volta. Essas limpezas agora são reconhecidas e feitas
-direto. No PC as conversões nessa vista caíram de ~170 para ~25 pequenas por quadro.
+What changes: looking at the Fire Keepers' house the game dropped to ~8 frames a second because, for each light with
+a shadow, the renderer converted the whole shadow buffer there and back. Those clears are now recognised and done
+directly. On the PC the conversions in that view went from ~170 to ~25 small ones a frame.
 
-Mesmo roteiro do último teste, a 540p e sem overclock:
+The same routine as the last test, at 540p and without overclock:
 
-- ~30 s parado olhando para a casa das firekeepers e ~30 s olhando para a saída (as fogwalls);
-- repare nas **sombras** perto da casa e das tochas/fogueira: alguma sombra faltando, piscando ou no lugar errado?
+- ~30 s standing looking at the Fire Keepers' house and ~30 s looking at the exit (the fog walls);
+- watch the **shadows** near the house and the torches/bonfire: any shadow missing, flickering or in the wrong place?
 
-Depois a pasta `logs/`.
+Then the `logs/` folder.
 
-## Nono build (2026-10-10): correção dos "fantasmas" a 540p
+## Ninth build (2026-10-10): fixing the "ghosts" at 540p
 
-Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` continuam os mesmos).
+Copy over: `ds2.nro` (`ds2.toml` and the `configs/` folder stay the same).
 
-No oitavo build as cores voltaram, mas apareceu uma segunda silhueta do personagem deslocada e a cena com aspecto
-duplicado. Causa: a 540p os efeitos de tela cheia do jogo (sombras e luz) liam a posição do pixel na escala errada e
-saíam ampliados em 4/3. Corrigido; no PC a imagem a 540p agora bate com a de 720p.
+In the eighth build the colours came back, but a second, shifted silhouette of the character appeared and the scene
+looked doubled. The cause: at 540p the game's full-screen effects (shadows and light) read the pixel position at the
+wrong scale and came out magnified by 4/3. Fixed; on the PC the picture at 540p now matches the one at 720p.
 
-Na primeira vez o jogo pode engasgar um pouco mais nos primeiros minutos (os shaders são preparados de novo para
-540p; depois ficam guardados).
+The first time, the game may stutter a little more in the first minutes (the shaders are prepared again for 540p;
+then they are kept).
 
-O que observar, a 540p e sem overclock:
+What to watch, at 540p and without overclock:
 
-- o fantasma sumiu? As sombras do personagem e do cenário estão no lugar?
-- gire a câmera para os dois lados (casa das firekeepers e direção oposta) e fique uns 30 s parado em cada um.
+- is the ghost gone? Are the character's and the scenery's shadows in place?
+- turn the camera both ways (the Fire Keepers' house and the opposite direction) and stand about 30 s facing each.
 
-Depois a pasta `logs/`.
+Then the `logs/` folder.
 
-## Oitavo build (2026-10-10): correção da tela amarela a 540p
+## Eighth build (2026-10-10): fixing the yellow screen at 540p
 
-Copie por cima: `ds2.nro` (o `ds2.toml` e a pasta `configs/` são os mesmos do sétimo build).
+Copy over: `ds2.nro` (`ds2.toml` and the `configs/` folder are the seventh build's).
 
-No sétimo build a cena saiu amarela/verde no console, com o HUD certo: o driver de vídeo do Switch arredonda o
-tamanho do viewport para pixels inteiros, e o desenho de 1 linha da tabela de tone mapping (0,75 pixel de altura a
-540p) sumia. No PC isso não acontece, por isso passou no teste daqui. Agora o renderizador só envia viewports de
-pixels inteiros.
+In the seventh build the scene came out yellow/green on the console, with the HUD right: the Switch's video driver
+rounds the viewport size to whole pixels, and the one-line draw of the tone-mapping table (0.75 pixel high at 540p)
+vanished. On the PC that does not happen, which is why it passed the test here. The renderer now only sends viewports
+of whole pixels.
 
-Uma sessão: até a fogueira, ~1 minuto parado, sem overclock. As cores voltaram ao normal? O texto e o HUD a 540p
-incomodam? Depois a pasta `logs/`.
+One session: up to the bonfire, ~1 minute standing, without overclock. Are the colours back to normal? Do the text
+and the HUD at 540p bother you? Then the `logs/` folder.
 
-Se ainda sair amarelo, volte a 720p (abaixo) para continuar jogando e me mande o log mesmo assim.
+If it is still yellow, go back to 720p (below) to keep playing and send me the log anyway.
 
-## Sétimo build (2026-10-10): rodada 3, 540p no modo portátil
+## Seventh build (2026-10-10): round 3, 540p in handheld mode
 
-Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+Copy over: `ds2.nro`, `ds2.toml` and the `configs/` folder.
 
-O que muda: o `ds2.toml` deste pacote renderiza a **960x540** no modo portátil (56 % dos pixels de 720p) e amplia para
-a tela. No PC a imagem ficou certa depois de uma correção (a tabela de tone mapping não era desenhada a 540p); o
-ganho em quadros por segundo só o console diz. A interface também sai a 540p, então o texto fica um pouco menos
-nítido.
+What changes: this package's `ds2.toml` renders at **960x540** in handheld mode (56 % of 720p's pixels) and scales up
+to the screen. On the PC the picture came out right after a fix (the tone-mapping table was not drawn at 540p); only
+the console tells the gain in frames a second. The interface also comes out at 540p, so the text is a little less
+sharp.
 
-Uma sessão basta: com o `ds2.toml` do pacote, vá até a fogueira e fique ~1 minuto parado, sem overclock. Repare:
+One session is enough: with the package's `ds2.toml`, go to the bonfire and stand ~1 minute, without overclock.
+Watch:
 
-- as cores da cena estão normais (nada de tela amarela/verde ou escura demais)?
-- o texto e o HUD continuam legíveis? A perda de nitidez incomoda?
+- are the scene's colours normal (no yellow/green screen, nothing too dark)?
+- are the text and the HUD still readable? Does the loss of sharpness bother you?
 
-Para voltar a 720p: apague o `ds2.toml`, copie `configs/ds2_teste_720p.toml` para a pasta do jogo e renomeie para
+To go back to 720p: delete `ds2.toml`, copy `configs/ds2_teste_720p.toml` to the game's folder and rename it to
 `ds2.toml`.
 
-Depois a pasta `logs/`, como sempre.
+Then the `logs/` folder, as always.
 
-## Sexto build (2026-10-10): rodada 2 de desempenho
+## Sixth build (2026-10-10): performance round 2
 
-Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+Copy over: `ds2.nro`, `ds2.toml` and the `configs/` folder.
 
-O que muda: as limpezas de tela que o jogo faz por superfícies 4x "apelidadas" passam a ser feitas direto nos alvos
-normais, sem converter o alvo inteiro depois. No PC as conversões de profundidade do alvo inteiro caíram de ~6 para 2
-por quadro e a imagem ficou igual; o ganho em milissegundos só o console diz.
+What changes: the screen clears the game makes through "aliased" 4x surfaces are now done directly on the normal
+targets, without converting the whole target afterwards. On the PC the whole-target depth conversions went from ~6
+to 2 a frame and the picture stayed the same; only the console tells the gain in milliseconds.
 
-Duas sessões na fogueira, ~1 minuto parado cada, sem overclock:
+Two sessions at the bonfire, ~1 minute standing each, without overclock:
 
-1. **Sessão A:** com o `ds2.toml` do pacote. Repare na imagem: céu/fundo, sombras e neblina iguais a antes?
-2. **Sessão B:** apague o `ds2.toml`, copie `configs/ds2_teste_sem_atalho_clear.toml` para a pasta do jogo e renomeie
-   para `ds2.toml` (é o comportamento do build anterior, para comparar).
+1. **Session A:** with the package's `ds2.toml`. Watch the picture: sky/background, shadows and fog the same as before?
+2. **Session B:** delete `ds2.toml`, copy `configs/ds2_teste_sem_atalho_clear.toml` to the game's folder and rename
+   it to `ds2.toml` (the previous build's behaviour, for comparison).
 
-Depois a pasta `logs/`, como sempre.
+Then the `logs/` folder, as always.
 
-## Quinto build (2026-10-10)
+## Fifth build (2026-10-10)
 
-Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+Copy over: `ds2.nro`, `ds2.toml` and the `configs/` folder.
 
-- **ZCULL ligado por padrão** no alvo de profundidade da cena (o teste B da rodada anterior: 137,9 → 127,2 ms de GPU
-  por quadro, 7,3 → 7,9 quadros/s). Se na sessão B você viu algo errado na imagem, me diga.
-- **Corrigida a cópia rejeitada da área da fogueira:** a cópia da cena para uma textura de 8 bits (usada pelo efeito
-  de calor do fogo) não era feita. Repare se o ar em volta da fogueira agora ondula.
-- Teste: uma sessão na fogueira, ~1 minuto parado, sem overclock, e a pasta `logs/`.
+- **ZCULL on by default** for the scene's depth target (test B of the previous round: 137.9 → 127.2 ms of GPU a
+  frame, 7.3 → 7.9 frames a second). If you saw anything wrong in the picture in session B, tell me.
+- **Fixed the rejected copy in the bonfire area:** the copy of the scene into an 8-bit texture (used by the fire's
+  heat effect) was not made. Watch whether the air around the bonfire ripples now.
+- Test: one session at the bonfire, ~1 minute standing, without overclock, and the `logs/` folder.
 
-## Quarto build (2026-10-10): primeira rodada de desempenho
+## Fourth build (2026-10-10): the first performance round
 
-Copie por cima: `ds2.nro`, `ds2.toml` e a pasta `configs/`.
+Copy over: `ds2.nro`, `ds2.toml` and the `configs/` folder.
 
-Este build não fica mais rápido por si só: ele mede melhor e traz um teste. São **duas sessões no mesmo lugar** (a
-primeira fogueira; com o save, "Continue" já abre lá), sem overclock, cada uma com ~1 minuto parado olhando a cena:
+This build is not faster by itself: it measures better and brings a test. It is **two sessions in the same place**
+(the first bonfire; with the save, "Continue" opens there), without overclock, each with ~1 minute standing looking at
+the scene:
 
-1. **Sessão A:** com o `ds2.toml` deste pacote, como está.
-2. **Sessão B:** apague o `ds2.toml` da pasta do jogo, copie `configs/ds2_teste_zcull.toml` para lá e **renomeie a
-   cópia para `ds2.toml`**. (O jogo só lê o arquivo com esse nome.) Rode de novo no mesmo lugar. Repare também se a
-   imagem continua certa, principalmente sombras e bordas dos objetos.
+1. **Session A:** with this package's `ds2.toml`, as it is.
+2. **Session B:** delete `ds2.toml` from the game's folder, copy `configs/ds2_teste_zcull.toml` there and **rename the
+   copy to `ds2.toml`**. (The game only reads the file with that name.) Run again in the same place. Also watch
+   whether the picture stays right, especially shadows and object edges.
 
-Depois mande a pasta `logs/` e, se puder, a pasta de saves `switch/ds2-nx/ds2/` do cartão: com o seu save eu consigo
-abrir essa mesma área no PC para investigar.
+Then send the `logs/` folder and, if you can, the card's save folder `switch/ds2-nx/ds2/`: with your save I can open
+that same area on the PC to investigate.
 
-## Terceiro build (2026-10-10)
+## Third build (2026-10-10)
 
-Copie por cima dos antigos: `ds2.nro`, **`ds2.toml`** e a pasta `configs/`. O `game_root/` não muda.
+Copy over the old ones: `ds2.nro`, **`ds2.toml`** and the `configs/` folder. `game_root/` does not change.
 
-- **Teclado para o nome do personagem:** quando o jogo pedir um texto, abre o teclado do próprio Switch. Ainda não foi
-  testado em console: se o teclado não abrir, travar ou o nome não for aceito, me diga exatamente o que aconteceu.
-- **Ícone** novo no menu de homebrew.
-- **Medição ligada no `ds2.toml` normal:** o jogo só lê o arquivo chamado `ds2.toml`; um `ds2_perfil.toml` ao lado do
-  `.nro` é ignorado (pode apagar). Por isso o `ds2.toml` deste build já traz o tempo de GPU por categoria ligado. Basta
-  jogar: entre no mapa, ande um pouco, fique uns 30 s parado olhando a cena, e me mande a pasta `logs/`.
-- Sem overclock, por favor, para os números serem comparáveis (o primeiro log, com overclock leve, eu desconsiderei).
+- **Keyboard for the character's name:** when the game asks for text, the Switch's own keyboard opens. Not tested on
+  the console yet: if the keyboard does not open, freezes or the name is not accepted, tell me exactly what happened.
+- A new **icon** in the homebrew menu.
+- **Measuring on in the normal `ds2.toml`:** the game only reads the file named `ds2.toml`; a `ds2_perfil.toml` next to
+  the `.nro` is ignored (you can delete it). So this build's `ds2.toml` already has the GPU time per category on. Just
+  play: enter the map, walk a little, stand about 30 s looking at the scene, and send me the `logs/` folder.
+- No overclock, please, so the numbers are comparable (I disregarded the first log, with a light overclock).
 
-## Segundo build (2026-10-10)
+## Second build (2026-10-10)
 
-Só o `ds2.nro` e a pasta `configs/` mudaram: copie esses dois por cima (o `game_root/` não precisa ser copiado de novo).
+Only `ds2.nro` and the `configs/` folder changed: copy those two over (`game_root/` need not be copied again).
 
-- **Corrigido:** a caixa "Save and quit game" (e o HUD desenhado depois dela) saía roxa/rosa. Agora é cinza-escura, com
-  o botão YES azul e o NO laranja.
-- **Pedido de medição:** para eu saber onde o tempo da GPU vai no mapa (o primeiro teste ficou em 5–7 quadros/s, com a
-  GPU no limite), rode uma sessão com `configs/ds2_perfil.toml` copiado por cima do `ds2.toml`: entre no mapa, ande um
-  pouco e fique uns 30 s parado olhando para a cena. Depois me mande a pasta `logs/` de novo. Essa configuração roda um
-  pouco mais devagar que a normal.
+- **Fixed:** the "Save and quit game" box (and the HUD drawn after it) came out purple/pink. Now it is dark grey, with
+  the YES button blue and the NO one orange.
+- **A measuring request:** to know where the GPU's time goes in the map (the first test stayed at 5–7 frames a
+  second, with the GPU at its limit), run a session with `configs/ds2_perfil.toml` copied over `ds2.toml`: enter the
+  map, walk a little and stand about 30 s looking at the scene. Then send me the `logs/` folder again. This
+  configuration runs a little slower than the normal one.
 
-## O que vai no cartão SD
+## What goes on the SD card
 
-Copie a pasta `ds2-nx` inteira para `sdmc:/switch/` (fica `sdmc:/switch/ds2-nx/`):
+Copy the whole `ds2-nx` folder to `sdmc:/switch/` (it becomes `sdmc:/switch/ds2-nx/`):
 
 ```
-switch/ds2-nx/ds2.nro                  o jogo
-switch/ds2-nx/ds2.toml                 configuração (log ligado nestes testes)
-switch/ds2-nx/ds2_shaders.mesp         biblioteca de shaders do renderizador nativo
+switch/ds2-nx/ds2.nro                  the game
+switch/ds2-nx/ds2.toml                 the configuration (logging on in these tests)
+switch/ds2-nx/ds2_shaders.mesp         the native renderer's shader library
 switch/ds2-nx/ds2_shaders.mesp.idx
-switch/ds2-nx/game_root/               os arquivos do jogo, soltos (121 arquivos, ≈ 5,8 GB)
-switch/ds2-nx/configs/                 configurações alternativas (ver abaixo)
+switch/ds2-nx/game_root/               the game's files, loose (121 files, ≈ 5.8 GB)
+switch/ds2-nx/configs/                 alternative configurations (see below)
 ```
 
-O cartão é **FAT32**, que não aceita arquivo de 4 GB ou mais: por isso o jogo vai como pasta `game_root/` e não como
-pacote único. O maior arquivo (`GameData1.bdt`) tem 2,8 GB e cabe. A cópia leva um tempo; confira no fim se os 121
-arquivos chegaram (o Windows às vezes interrompe cópias grandes para cartões).
+The card is **FAT32**, which does not take files of 4 GB or more: that is why the game goes as the `game_root/` folder
+and not as one package. The biggest file (`GameData1.bdt`) is 2.8 GB and fits. The copy takes a while; check at the
+end that all 121 files arrived (Windows sometimes interrupts big copies to cards).
 
-## Como abrir
+## How to open it
 
-O jogo precisa de mais memória do que um homebrew recebe aberto pelo Álbum. Abra o menu de homebrew **segurando R
-enquanto inicia um jogo qualquer** (title override), e então escolha "Dark Souls II". Aberto pelo Álbum ele não deve
-passar do início.
+The game needs more memory than a homebrew opened from the Album gets. Open the homebrew menu **holding R while
+starting any game** (title override), then choose "Dark Souls II". Opened from the Album it should not get past the
+start.
 
-## O que observar
+## What to watch
 
-1. Abre? Aparece alguma imagem (avisos iniciais, logo da Havok, tela de título)?
-2. Na tela de título, START (botão +) e depois A avançam pelos menus. "Continue" não existe no console (o save do PC
-   não vai junto): escolha New Game.
-3. Tem som?
-4. Até onde chega: vídeo de abertura, primeiro mapa (um campo de capim escuro com pilares de pedra)?
-5. Se travar ou fechar: em que tela, e depois de quanto tempo.
+1. Does it open? Does any picture show (the opening warnings, the Havok logo, the title screen)?
+2. On the title screen, START (the + button) and then A go through the menus. "Continue" does not exist on the
+   console (the PC's save does not go along): choose New Game.
+3. Is there sound?
+4. How far does it get: the opening movie, the first map (a field of dark grass with stone pillars)?
+5. If it freezes or closes: on which screen, and after how long.
 
-Uma foto ou vídeo curto da tela ajuda muito, principalmente se a imagem sair errada.
+A photo or a short video of the screen helps a lot, especially if the picture comes out wrong.
 
-## O que me devolver
+## What to send back
 
-A pasta `sdmc:/switch/ds2-nx/logs/` inteira (ou só `logs/rex/`), depois de cada tentativa. Se o jogo fechar com erro,
-o arquivo `logs/rex/rex_crash.log` diz onde. Se ele gerar relatório de erro do Atmosphère
-(`sdmc:/atmosphere/crash_reports/`), o mais recente também serve.
+The whole `sdmc:/switch/ds2-nx/logs/` folder (or just `logs/rex/`), after each try. If the game closes with an
+error, the file `logs/rex/rex_crash.log` says where. If it makes an Atmosphère error report
+(`sdmc:/atmosphere/crash_reports/`), the most recent one helps too.
 
-## Configurações alternativas
+## Alternative configurations
 
-Na pasta `configs/`; para usar uma, copie por cima do `ds2.toml`:
+In the `configs/` folder; to use one, copy it over `ds2.toml`:
 
-- `ds2_padrao.toml`: a configuração normal (igual ao `ds2.toml` enviado).
-- `ds2_teste_720p.toml`: modo portátil a 1280x720, a resolução do próprio jogo (como nos builds até o sexto).
-- `ds2_melhorias_desligadas.toml`: desliga todos os atalhos de CPU e GPU herdados dos outros portes. Se o jogo travar
-  ou a imagem sair errada com a normal, tente esta e me diga se mudou.
-- `ds2_gpu_emulada.toml`: usa a GPU emulada no lugar do renderizador nativo. É lentíssima no console; só serve para
-  comparar a imagem numa tela parada.
+- `ds2_default.toml`: the normal configuration (the same as the `ds2.toml` shipped).
+- `ds2_test_720p.toml`: handheld mode at 1280x720, the game's own resolution (L3 + R3 held for a second also
+  switches live).
+- `ds2_enhancements_off.toml`: turns off all the CPU and GPU shortcuts inherited from the other ports. If the game
+  freezes or the picture comes out wrong with the normal one, try this one and tell me whether it changed.
+- `ds2_emulated_gpu.toml`: uses the emulated GPU instead of the native renderer. It is extremely slow on the console;
+  it is only for comparing the picture on a still screen.
+- `ds2_profile.toml`: samples the CPU stacks (`logs/rex/rex_profile.log`); a little slower.
+- `ds2_test_*.toml`: the A/B tests of earlier builds.
+
+Up to the twenty-second build these files had Portuguese names (`ds2_padrao`, `ds2_melhorias_desligadas`,
+`ds2_gpu_emulada`, `ds2_perfil`, `ds2_teste_*`), which the older sections below still use.

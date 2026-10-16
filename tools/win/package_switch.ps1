@@ -1,5 +1,5 @@
 # Lays out the Switch SD card folder in out\nx\sdcard\switch\ds2-nx: the NRO, its settings (app\ds2_switch.toml as
-# ds2.toml), the testing notes, the shader package and two fallback configurations. The game files are yours and stay
+# ds2.toml), the testing notes (README.md), the shader package and two fallback configurations. The game files are yours and stay
 # out of the repository:
 #   -IncludeGame              adds them as the asset cache (assets\game_root.nxpack + .nxidx, built here with
 #                             tools\build_asset_pack.py when missing or older than the folder);
@@ -23,7 +23,7 @@ foreach ($extra in @(@('out\nx_pgo\ds2.nro', 'ds2-pgo.nro'), @('out\nx_rel\ds2.n
     if (Test-Path $from) { Copy-Item -Force $from (Join-Path $dest $extra[1]) }
 }
 Copy-Item -Force (Join-Path $root 'app\ds2_switch.toml') (Join-Path $dest 'ds2.toml')
-Copy-Item -Force (Join-Path $root 'docs\switch-testing.md') (Join-Path $dest 'LEIA-ME.md')
+Copy-Item -Force (Join-Path $root 'docs\switch-testing.md') (Join-Path $dest 'README.md')
 # The shader package the PC build was verified with (out\pc), not a stale build output.
 foreach ($f in 'ds2_shaders.mesp', 'ds2_shaders.mesp.idx') {
     Copy-Item -Force (Join-Path $root "out\pc\$f") (Join-Path $dest $f)
@@ -34,31 +34,31 @@ New-Item -ItemType Directory -Force $configs | Out-Null
 $base = Get-Content (Join-Path $root 'app\ds2_switch.toml') -Raw -Encoding UTF8
 # Written without a byte order mark (Windows PowerShell's "utf8" adds one, which a TOML reader may not accept).
 $noBom = New-Object System.Text.UTF8Encoding($false)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_padrao.toml'), $base, $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_melhorias_desligadas.toml'), ($base +
-    "`n# Todos os atalhos de CPU e GPU herdados do sa2-nx desligados: os caminhos originais em tudo.`n" +
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_default.toml'), $base, $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_enhancements_off.toml'), ($base +
+    "`n# Every CPU and GPU shortcut inherited from sa2-nx turned off: the original paths everywhere.`n" +
     "ds2_cpu_enhancements = false`nds2_noncpu_enhancements = false`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_gpu_emulada.toml'), (
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_emulated_gpu.toml'), (
     ($base -replace 'ds2_renderer_native = true', 'ds2_renderer_native = false') +
-    "`n# A GPU emulada do SDK no lugar do renderizador nativo (muito lenta no console; serve para comparar a imagem).`n" +
+    "`n# The SDK's emulated GPU instead of the native renderer (very slow on the console; for comparing the picture).`n" +
     "ds2_gpu_backend = `"vulkan`"`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_perfil.toml'), ($base +
-    "`n# Medicao: tempo de GPU por categoria de passe e amostragem das pilhas de CPU (rex_profile.log). Roda um pouco`n" +
-    "# mais devagar; serve para saber onde o tempo vai.`n" +
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_profile.toml'), ($base +
+    "`n# Measuring: GPU time per pass category and sampling of the CPU stacks (rex_profile.log). It runs a little`n" +
+    "# slower; it is for finding where the time goes.`n" +
     "ds2_gpu_marks_categories = true`nswitch_profile_stacks = true`nswitch_profile_report = true`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_zcull.toml'), ($base +
-    "`n# Teste A/B: ZCULL tambem nos alvos de profundidade de 1 amostra (o principal do jogo). As importacoes de`n" +
-    "# stencil passam a usar passes mascarados em vez do motor de copia.`n" +
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_zcull.toml'), ($base +
+    "`n# A/B test: ZCULL on the single-sample depth targets too (the game's main one). The stencil imports then`n" +
+    "# use masked passes instead of the copy engine.`n" +
     "ds2_native_zcull_1x_depth = true`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_sem_atalho_clear.toml'), ($base +
-    "`n# Teste A/B: sem o atalho novo das limpezas por superficie 4x (rodada 2): como no build anterior.`n" +
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_no_clear_shortcut.toml'), ($base +
+    "`n# A/B test: without the shortcut for the clears through 4x surfaces (round 2): as in the build before it.`n" +
     "ds2_native_edram4_clear_color0_alias = false`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_conversao_compute.toml'), (
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_compute_conversion.toml'), (
     ($base -replace 'ds2_native_conversion_frag = true', 'ds2_native_conversion_frag = false') +
-    "`n# Teste A/B: conversoes de formato do alvo HDR por compute shader, como ate o decimo quinto build.`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_teste_720p.toml'), (
+    "`n# A/B test: the HDR target's format conversions by compute shader, as up to the fifteenth build.`n"), $noBom)
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_720p.toml'), (
     ($base -replace 'ds2_render_height_handheld = 540', 'ds2_render_height_handheld = 720') +
-    "`n# Teste A/B: modo portatil na resolucao do proprio jogo (1280x720), como nos builds anteriores.`n"), $noBom)
+    "`n# A/B test: handheld mode at the game's own resolution (1280x720), as in the earlier builds.`n"), $noBom)
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null
