@@ -63,6 +63,7 @@ set(DS2_SOURCES
     src/me/ds2_me_hooks.cpp
     # The Horizon priority of FMOD's mixer thread (ds2_audio_mixer_priority): late blocks are the "robotic" sound.
     src/ds2_audio_threads.cpp
+    src/ds2_button_icons.cpp
     # Trophies: the screen (L + Minus), the notices and our platinum (ds2_trophies.h).
     src/ds2_trophies.cpp
     # Render resolution per console mode (docked / handheld, live) and MSAA: ds2_render_height_*, ds2_msaa.

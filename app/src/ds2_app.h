@@ -19,6 +19,7 @@
 #include <rex/ui/virtual_key.h>
 
 #include "cpu/ds2_enhancements.h"
+#include "ds2_button_icons.h"
 #include "ds2_capture.h"
 #include "ds2_input_script.h"
 #include "ds2_pgo.h"
@@ -110,6 +111,8 @@ class Ds2App : public rex::ReXApp {
   // Recording of the game image for testing (ds2_video_s = N seconds after start; 0 = off). Taken from the
   // presenter's guest output, so it works minimized and nothing can cover it.
   void OnPostSetup() override {
+    // The button pictures in the Nintendo style (Switch): the game's font page redrawn before the game opens it.
+    ds2::button_icons::Install(runtime());
     // Unattended runs: a scripted pad (ds2_input_script) to get through the warnings and menus.
     ds2::input_script::Install(runtime());
     // Every 10 s: how often each active enhancement was used (a log shows they really ran).
