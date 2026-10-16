@@ -24,7 +24,7 @@
 # a value the callee may have written (277 in r11, after three helpers), against a handful in SA2. It needs its own
 # per-function work first (docs/ds2-notes.md).
 #
-# Audits for Dark Souls II (docs/ds2-notes.md, "Código gerado otimizado"): tools\read_before_write.py on the
+# Audits for Dark Souls II (docs/ds2-notes.md, "Optimised generated code"): tools\read_before_write.py on the
 # generated code; the readers of ctx.lr (only the Direct3D trace diagnostic, off, and the console profiler's caller
 # attribution); the guest setjmp and longjmp (the generator's setjmp_address / longjmp_address in overrides.toml).
 #
