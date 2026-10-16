@@ -43,7 +43,7 @@ names `sa2` became `ds2`; the tools that depend on the game's addresses need DS2
 | 8–11. Console measurements and CPU/GPU optimisations | **in progress**: handheld at 540p, stock clocks, 20–22 frames a second at the measuring points of the first areas (from 7.3 at 720p in the first build); 720p selectable live (L3 + R3). Sound, long sessions and area-transition hitches are being worked on; docked mode still to do |
 
 Feature branches: `trofeus` (a trophy screen on the console, unlock notices and our own platinum trophy;
-[docs/trofeus.md](docs/trofeus.md)).
+described in `docs/trophies.md` on that branch).
 
 ## Layout
 
