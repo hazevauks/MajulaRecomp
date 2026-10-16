@@ -8,105 +8,125 @@ A native port, unlike certain "ports" that are disguised emulators.
 
 
 
-## De onde vem a base
+## Where the base comes from
 
-O método e quase todo o código de infraestrutura vêm dos portes irmãos:
+The method and almost all of the infrastructure code come from the sibling ports:
 
-| Projeto | O que usamos |
+| Project | What we use |
 |---|---|
-| [ChanseyIsTheBest/sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx) | **Base deste repositório** (commit `fdd6f14`, 2026-10-08): `sdk/` (ReXGlue 0.10 com a camada Horizon), `tools/`, `shaders/` (XenosRecomp), e o guia [porting-guide.md](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/porting-guide.md), que é o roteiro que seguimos |
-| [StevensND/nfsmw-nx](https://github.com/StevensND/nfsmw-nx) | Camada do Switch, driver NVK (Mesa) com patch, PGO/LTO, vídeo WMV3, notas de plataforma |
-| [ChanseyIsTheBest/futari-nx](https://github.com/ChanseyIsTheBest/futari-nx) | Outro jogo de disco (ISO); caderno compartilhado de otimizações (`xbox360.md`) |
+| [ChanseyIsTheBest/sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx) | **The base of this repository** (commit `fdd6f14`, 2026-10-08): `sdk/` (ReXGlue 0.10 with the Horizon layer), `tools/`, `shaders/` (XenosRecomp), and the [porting-guide.md](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/porting-guide.md) guide, which is the roadmap we follow |
+| [StevensND/nfsmw-nx](https://github.com/StevensND/nfsmw-nx) | The Switch layer, the NVK (Mesa) driver with its patch, PGO/LTO, WMV3 video, platform notes |
+| [ChanseyIsTheBest/futari-nx](https://github.com/ChanseyIsTheBest/futari-nx) | Another disc game (ISO); a shared notebook of optimisations (`xbox360.md`) |
 
-`sdk/` está **idêntico** ao sa2-nx de propósito (cinco exceções, marcadas `ds2-nx`: a gravação do áudio com o som mudo, em `sdk/src/audio/sdl/sdl_audio_driver.cpp`; o teclado do sistema do Switch para `XamShowKeyboardUI`, em `sdk/src/kernel/xam/xam_ui.cpp`; a leitura dos clocks sem manter sessões `clkrst` abertas, em `sdk/src/ui/switch_perf.cpp`; e a pilha de host das threads do jogo proporcional à pilha de guest, em vez de 16 MB fixos, em `sdk/src/system/xthread.cpp`; e o reaproveitamento dessas pilhas, em `sdk/src/core/threading_posix.cpp`), para que as otimizações futuras desses repositórios possam ser
-trazidas com um diff simples. O que é específico do Dark Souls II fica em `app/` e `docs/`. Em `tools/`, `shaders/` e
-no renderizador (`app/src/me`, copiado do sa2-nx) os nomes `sa2` viraram `ds2`; as ferramentas que dependem de
-endereços do jogo ainda precisam dos dados do DS2.
+`sdk/` is kept **identical** to sa2-nx's on purpose, with five exceptions marked `ds2-nx`:
 
-## Estado
+- the audio dump with the sound muted (`sdk/src/audio/sdl/sdl_audio_driver.cpp`);
+- the Switch's system keyboard for `XamShowKeyboardUI` (`sdk/src/kernel/xam/xam_ui.cpp`);
+- reading the clocks without keeping `clkrst` sessions open (`sdk/src/ui/switch_perf.cpp`);
+- the host stack of the game's threads proportional to their guest stack instead of a fixed 16 MB
+  (`sdk/src/system/xthread.cpp`);
+- the reuse of those stacks (`sdk/src/core/threading_posix.cpp`).
 
-| Etapa (guia do sa2-nx) | Estado |
+This way the future optimisations of those repositories can be brought in with a plain diff. What is specific to Dark
+Souls II lives in `app/` and `docs/`. In `tools/`, `shaders/` and the renderer (`app/src/me`, copied from sa2-nx) the
+names `sa2` became `ds2`; the tools that depend on the game's addresses need DS2's own data.
+
+## Status
+
+| Step (sa2-nx's guide) | Status |
 |---|---|
-| 2. Arquivos do jogo extraídos e inspecionados | **feito** (ver [docs/ds2-notes.md](docs/ds2-notes.md)) |
-| 3. Tradução do código (`rexglue codegen`) | **feito**: 83.143 funções, 0 erros de validação; varreduras de ponteiros e de tabelas de salto limpas |
-| 4. Primeiro boot no PC com a GPU emulada | **feito**: menus, criação de save, vídeo de abertura e carregamento do primeiro mapa, sem crash do código do jogo; a GPU emulada não desenha o 3D no lavapipe (SPIR-V rejeitado) |
-| 5–6. Renderizador nativo Vulkan e biblioteca de shaders | em andamento: núcleo do sa2-nx portado e rodando no lavapipe; biblioteca com os 1.409 shaders do disco; **o jogo aparece certo no primeiro mapa 3D** (cena, HUD, tone mapping), a ~0,5 quadro/s por software, sem nenhum desenho rejeitado ou sem shader em 25 min na área inicial (morte e recarga incluídas); falta percorrer o resto do jogo, o que este PC sem GPU torna muito lento (ver as notas) |
-| 7. Build para o Switch (devkitA64 + NVK) | **roda no console** (codegen clássico, sem LTO/PGO; driver NVK do nfsmw-nx compilado aqui): menus, criação de personagem com o teclado do sistema, save, áudio e o primeiro mapa sem desenhos rejeitados ([docs/switch-testing.md](docs/switch-testing.md)) |
-| 8–11. Medição no console e otimizações de CPU/GPU | **em andamento**: na primeira fogueira, modo portátil a 720p sem overclock, de 7,3 para 12,7 quadros/s (GPU de 137,9 para 78,8 ms por quadro) em duas rodadas; 540p no portátil com imagem e sombras confirmadas no console, jogado do início até a Forest of Fallen Giants: 19 quadros/s parado na primeira fogueira, 12–16 na área do tutorial; o limite passou a ser a CPU (2,9 dos 3 núcleos ocupados; dois terços são o código do jogo, um quinto o renderizador, 4 % o driver Vulkan). Menus a 43–60. Falta CPU (perfil de pilhas), LTO/PGO e o modo TV |
+| 2. Game files extracted and inspected | **done** (see [docs/ds2-notes.md](docs/ds2-notes.md)) |
+| 3. Code translation (`rexglue codegen`) | **done**: 83,143 functions, 0 validation errors; pointer and jump-table scans clean. The delivered code is the "optimised" flavour (registers as C++ locals, direct calls between functions) |
+| 4. First PC boot with the emulated GPU | **done**: menus, save creation, the opening movie and the first map loading, with no crash in the game's code |
+| 5–6. Native Vulkan renderer and shader library | **done for the areas played so far**: sa2-nx's core ported, a library with the disc's 1,409 shaders; developed on software Vulkan (lavapipe) on the PC, then checked on the console |
+| 7. Switch build (devkitA64 + NVK) | **runs on the console**, with nfsmw-nx's NVK driver built here; LTO + PGO builds; played from the start past the Last Giant in long sessions ([docs/switch-testing.md](docs/switch-testing.md)) |
+| 8–11. Console measurements and CPU/GPU optimisations | **in progress**: handheld at 540p, stock clocks, 20–22 frames a second at the measuring points of the first areas (from 7.3 at 720p in the first build); 720p selectable live (L3 + R3). Sound, long sessions and area-transition hitches are being worked on; docked mode still to do |
 
-## Estrutura
+Feature branches: `trofeus` (a trophy screen on the console, unlock notices and our own platinum trophy;
+[docs/trofeus.md](docs/trofeus.md)).
+
+## Layout
 
 ```text
-app/      a aplicação do DS2: manifesto do codegen, correções de análise (overrides.toml), fontes próprias
-sdk/      ReXGlue SDK (fork do sa2-nx): runtime do Xbox 360 em C++, gerador de código, camada Horizon
-shaders/  XenosRecomp e as ferramentas da biblioteca de shaders
-tools/    extração, análise do código gerado, scripts de build (tools/win) e de medição
-mesa/     notas do driver NVK
-docs/     notas técnicas do Dark Souls II
+app/      the DS2 application: the codegen manifest, analysis corrections (overrides.toml), our own sources
+sdk/      ReXGlue SDK (sa2-nx's fork): the Xbox 360 runtime in C++, the code generator, the Horizon layer
+shaders/  XenosRecomp and the shader library tools
+tools/    extraction, analysis of the generated code, build scripts (tools/win) and measurement
+mesa/     notes on the NVK driver
+docs/     technical notes on Dark Souls II
 ```
 
-Fora do git (ver `.gitignore`): `assets/` (jogo extraído), `app/generated/` (C++ gerado), `out/` (builds), `_ref/`
-(clones dos repositórios de referência) e `_tools/` (ferramentas portáteis, como o LLVM).
+Outside git (see `.gitignore`): `assets/` (the extracted game), `app/generated/` (generated C++), `out/` (builds),
+`_ref/` (clones of the reference repositories) and `_tools/` (portable tools such as LLVM).
 
-## Como reproduzir o que já existe
+## How to reproduce what exists
 
-Pré-requisitos no Windows: VS 2022 Build Tools (workload C++; traz CMake e Ninja), LLVM clang 20 em `_tools\llvm`
-(ou `DS2_LLVM`), Python 3.12 e Git. Tudo roda do PowerShell, nunca do shell do MSYS2 do devkitPro.
+Prerequisites on Windows: VS 2022 Build Tools (C++ workload; it brings CMake and Ninja), LLVM clang 20 in
+`_tools\llvm` (or `DS2_LLVM`), Python 3.12 and Git. Everything runs from PowerShell, never from devkitPro's MSYS2 shell.
 
 ```powershell
-# 1. Extrair a ISO (só leitura) para assets\game_root e mostrar o cabeçalho do XEX
-python tools\extract_iso.py "<caminho>\Dark Souls II.iso"
+# 1. Extract the ISO (read only) to assets\game_root and show the XEX header
+python tools\extract_iso.py "<path>\Dark Souls II.iso"
 
-# 2. Fontes de terceiros do SDK e o gerador de código
+# 2. The SDK's third-party sources and the code generator
 python tools\fetch_thirdparty.py
 powershell -File tools\win\run.ps1 out\host_configure.log "cmake -S sdk -B out/host -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2"
 powershell -File tools\win\run.ps1 out\host_build.log "cmake --build out/host --target rexglue"
 
-# 3. Traduzir o Default.xex para C++ (app\generated, ~350 MB; cerca de 13 min numa máquina de 4 threads).
-#    -Flavor optimised é o código entregue (app\perf_overrides.toml); sem ele sai o código "clássico".
+# 3. Translate Default.xex to C++ (app\generated, ~350 MB; about 13 min on a 4-thread machine).
+#    -Flavor optimised is the delivered code (app\perf_overrides.toml); without it you get the "classic" code.
 powershell -File tools\codegen.ps1 -Flavor optimised
 
-# 4. Conferências depois de cada codegen (precisam de out\default_image.bin: rode o passo 3 uma vez com
+# 4. Checks after every codegen (they need out\default_image.bin: run step 3 once with
 #    $env:REXGLUE_DUMP_IMAGE = "$PWD\out\default_image.bin")
 python tools\switch_check.py
 python tools\pointer_audit.py
 
-# 5. Build de PC (39 min na primeira vez em 4 threads; depois só o que mudou) e teste de boot
+# 5. PC build (39 min the first time on 4 threads; then only what changed) and a boot test
 powershell -File tools/win/run.ps1 out/pc_configure.log "cmake --preset win-pc -S app"
 powershell -File tools/win/run.ps1 out/pc_build.log "cmake --build out/pc -- -j4"
 powershell -File tools/win/boot_test.ps1 -VideoAt 3 -VideoFrames 50 -VideoEvery 60
 ```
 
-O teste de boot roda o jogo mudo e minimizado, grava um quadro por segundo e gera
-`out/pc/captures/video_3s_sheet.png`. Num PC cuja GPU não tem Direct3D 12 (o de desenvolvimento, com Intel HD 4000),
-defina antes `$env:REX_D3D12_ADAPTER = '-2'` para usar o rasterizador por software da Microsoft (WARP).
+The boot test runs the game muted and minimised, records one frame a second and makes
+`out/pc/captures/video_3s_sheet.png`. On a PC whose GPU has no Direct3D 12 (the development one, an Intel HD 4000),
+set `$env:REX_D3D12_ADAPTER = '-2'` first to use Microsoft's software rasteriser (WARP).
 
-### Renderizador nativo no PC (Vulkan por software)
+### The native renderer on the PC (software Vulkan)
 
 ```powershell
-# glslangValidator (uma vez) e a biblioteca de shaders, feita dos arquivos do disco (~35 min em 4 threads)
+# glslangValidator (once) and the shader library, made from the disc's files (~35 min on 4 threads)
 powershell -File tools/win/build_glslang.ps1
-python tools/extract_shaders.py                        # out/shaders_game: 1.409 contêineres
+python tools/extract_shaders.py                        # out/shaders_game: 1,409 containers
 bash tools/build_shader_library.sh out/shaders_game    # out/shaders/ds2_shaders.mesp + .idx
 copy out/shaders/ds2_shaders.mesp* out/pc/
 
-# Rodar com o renderizador nativo sobre o lavapipe (Mesa em _tools/mesa; ver docs/ds2-notes.md)
+# Run with the native renderer on lavapipe (Mesa in _tools/mesa; see docs/ds2-notes.md)
 $icd = (Resolve-Path _tools/mesa/x64/lvp_icd.x86_64.json).Path
 $env:VK_DRIVER_FILES = $icd; $env:VK_ICD_FILENAMES = $icd
 $env:REX_DS2_RENDERER_NATIVE = 'true'
 powershell -File tools/win/boot_test.ps1 -VideoAt 3 -VideoFrames 60 -VideoEvery 60 -Pad '16-16.6:a,30-30.6:start'
 ```
 
-A biblioteca usada nos testes também leva os contêineres que o renderizador reconstrói das cargas imediatas do
-Direct3D (`$env:REX_DS2_SHADER_MISSES = 'shader_misses'` grava em `out/pc/shader_misses/missing`; passe essa pasta
-como segundo argumento do `build_shader_library.sh`). Ferramentas pedidas: DXC em `_tools/dxc` e o clang de
-`_tools/llvm`. Se o processo cair, `python tools/minidump_summary.py` diz em que módulo foi.
+The library used in the tests also carries the containers the renderer rebuilds from Direct3D's immediate loads
+(`$env:REX_DS2_SHADER_MISSES = 'shader_misses'` writes them to `out/pc/shader_misses/missing`; pass that folder as
+the second argument of `build_shader_library.sh`). Tools it needs: DXC in `_tools/dxc` and the clang in
+`_tools/llvm`. If the process crashes, `python tools/minidump_summary.py` tells which module it was in.
 
-O build do Switch segue
-[docs/building.md do sa2-nx](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/building.md), trocando `sa2`
-por `ds2`; entra aqui quando for validado neste jogo.
+### The Switch build
 
-## Licença
+```powershell
+$env:NVK_SDK = '<the NVK SDK built from nfsmw-nx\'s Mesa>'
+powershell -File tools\win\build_switch.ps1 -Jobs 4                          # out\nx\ds2.nro (everyday build)
+powershell -File tools\win\build_switch_all.ps1 -Steps "1,2,3"              # everyday, PGO-instrumented, LTO + PGO
+python tools\check_switch_build.py                                           # checks an NRO before it ships
+powershell -File tools\win\package_switch.ps1 -IncludeGame -LooseGame        # the SD card folder, out\nx\sdcard
+```
 
-GPL-3.0, como os projetos de origem (ver [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
-Dark Souls II é propriedade da FromSoftware / Bandai Namco; este projeto não distribui nada do jogo.
+It follows [sa2-nx's docs/building.md](https://github.com/ChanseyIsTheBest/sa2-nx/blob/main/docs/building.md), with
+`sa2` replaced by `ds2`; the details of this game are in [docs/ds2-notes.md](docs/ds2-notes.md).
+
+## License
+
+GPL-3.0, like the projects it comes from (see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+Dark Souls II is the property of FromSoftware / Bandai Namco; this project distributes nothing from the game.

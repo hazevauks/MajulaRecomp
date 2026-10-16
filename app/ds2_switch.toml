@@ -1,37 +1,37 @@
-# Dark Souls II no Switch: configuração dos primeiros testes em hardware (vai para o cartão como ds2.toml, ao lado do
-# ds2.nro). Qualquer cvar do ReXGlue ou do port pode ser posto aqui. Enquanto o port estiver em teste o log fica ligado:
-# é ele que diz o que aconteceu (logs/rex/ no cartão).
+# Dark Souls II on the Switch: the configuration of the hardware tests (it goes to the SD card as ds2.toml, next to
+# ds2.nro). Any cvar of ReXGlue or of the port can be set here. While the port is being tested, logging stays on: the
+# log is what says what happened (logs/rex/ on the card).
 
 gpu_plugin = "xenos"
 license_mask = 1
 
-# Renderizador nativo (app/src/me) com a biblioteca de shaders ds2_shaders.mesp ao lado do .nro.
+# The native renderer (app/src/me) with the shader library ds2_shaders.mesp next to the .nro.
 ds2_renderer_native = true
-# Em teste (rodada 3): 960x540 no modo portátil, ampliado para a tela de 720p; 56 % dos pixels de 720p. Para voltar à
-# resolução do jogo, 720 (configs/ds2_teste_720p.toml). Na TV, a resolução do próprio jogo; 1080p fica para depois.
+# 960x540 in handheld mode, scaled up to the 720p screen: 56 % of 720p's pixels. For the game's own resolution, 720
+# (configs/ds2_test_720p.toml; L3 + R3 held for a second switches live). Docked: the game's own resolution for now.
 ds2_render_height_handheld = 540
 ds2_render_height_docked = 720
 
-# Os arquivos do jogo vão soltos na pasta game_root/ (121 arquivos, o maior com 2,8 GB): o conjunto tem 5,8 GB e um
-# pacote único não cabe num cartão FAT32 (limite de 4 GB por arquivo). O SDK já recusa montar o pacote nesse caso.
+# The game's files go loose in the game_root/ folder (121 files, the biggest 2.8 GB): the set is 5.8 GB and a single
+# package does not fit on a FAT32 card (4 GB per file). The SDK already refuses to mount the package in that case.
 asset_pack = true
 asset_pack_build = false
 
-# Tempo de GPU por categoria de passe no log (linha "GPU per Swap"), enquanto se mede onde o tempo vai.
+# GPU time per pass category in the log (the "GPU per Swap" line), while measuring where the time goes.
 ds2_gpu_marks_categories = true
 
-# ZCULL tambem na profundidade de 1 amostra (a da cena deste jogo): medido no console, 137,9 -> 127,2 ms de GPU por
-# quadro na primeira fogueira.
+# ZCULL for the single-sample depth target too (this game's scene): measured on the console, 137.9 -> 127.2 ms of GPU
+# a frame at the first bonfire.
 ds2_native_zcull_1x_depth = true
 
-# Rodada 6 (2026-10-11): as conversoes de formato do alvo HDR (RGBA8 / 10 bits / 7e3, 4 a 6 por quadro) como passe
-# de fragmento em vez de compute shader. Mesmos bits; no console eram 14-17 ms de GPU por quadro a 540p.
-# Para comparar: configs/ds2_teste_conversao_compute.toml.
+# Round 6 (2026-10-11): the format conversions of the HDR target (RGBA8 / 10-bit / 7e3, 4 to 6 a frame) as fragment
+# passes instead of a compute shader. The same bits; on the console they were 14-17 ms of GPU a frame at 540p.
+# To compare: configs/ds2_test_compute_conversion.toml.
 ds2_native_conversion_frag = true
 
-# Relatorio de CPU por thread no rex_profile.log (sem amostrar pilhas: isso fica em configs/ds2_perfil.toml).
+# A per-thread CPU report in rex_profile.log (without sampling stacks: that is configs/ds2_profile.toml).
 switch_profile_report = true
 
-# Log completo em arquivo durante os testes.
+# The full log to a file during the tests.
 log_level = "info"
 log_to_file = true
