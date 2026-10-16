@@ -15,6 +15,7 @@
 #include <rex/ui/switch_saltynx.h>
 
 #include "cpu/ds2_enhancements.h"
+#include "ds2_trophies.h"
 
 #if REX_PLATFORM_SWITCH
 #include <malloc.h>
@@ -22,6 +23,9 @@
 #include <switch.h>
 #endif
 
+REXCVAR_DEFINE_INT32(ds2_trophy_test_at, 0, "DS2",
+                     "Test: at this presented frame the trophy notices show (platinum and the first trophy, nothing is "
+                     "unlocked); 600 frames later the trophy screen opens, 900 after that it closes. 0 = off");
 REXCVAR_DEFINE_INT32(ds2_render_height_handheld, 720, "DS2",
                      "Render height in handheld mode (the PC's starting mode unless ds2_render_docked): 720 = the "
                      "game's own 1280x720. Any multiple of 180 from 540 to 2160 (others are rounded to the nearest); "
@@ -151,7 +155,30 @@ void ToggleHeight(const char* by) {
 }
 
 void OnPresented(uint64_t presented) {
+  // Tests of the trophy screen and notices (ds2_trophy_test_at, ds2_trophies.cpp): at that presented frame the notices
+  // show, 600 frames later the screen opens and 900 frames later it closes.
+  if (const int32_t at = REXCVAR_GET(ds2_trophy_test_at); at > 0) {
+    if (presented == uint64_t(at)) ds2::trophies::TestNotices();
+    if (presented == uint64_t(at) + 600 || presented == uint64_t(at) + 1500) ds2::trophies::RequestToggle();
+  }
 #if REX_PLATFORM_SWITCH
+  // L + Minus: the trophy screen (ds2_trophies.cpp), once per press.
+  {
+    static PadState pad;
+    static bool started = false, was_down = false;
+    if (!started) {
+      padInitializeAny(&pad);
+      started = true;
+    }
+    padUpdate(&pad);
+    const u64 combo = HidNpadButton_L | HidNpadButton_Minus;
+    const bool down = (padGetButtons(&pad) & combo) == combo;
+    if (down && !was_down) {
+      REXLOG_INFO("[trophies] L + Minus");
+      ds2::trophies::RequestToggle();
+    }
+    was_down = down;
+  }
   // ds2_render_height_combo: both sticks held for a second. The pad is read here, on its own PadState (HID's shared
   // memory; the game's input driver is not involved), once per presented frame.
   if (REXCVAR_GET(ds2_render_height_combo)) {

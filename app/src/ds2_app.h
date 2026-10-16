@@ -13,12 +13,16 @@
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
 #include <rex/system/gpu_plugin.h>
+#include <rex/ui/keybinds.h>
 #include <rex/ui/overlay/achievement_notification.h>
+#include <rex/ui/ui_event.h>
+#include <rex/ui/virtual_key.h>
 
 #include "cpu/ds2_enhancements.h"
 #include "ds2_capture.h"
 #include "ds2_input_script.h"
 #include "ds2_pgo.h"
+#include "ds2_trophies.h"
 #include "me/ds2_render_mode.h"
 #include "me/me_native_system.h"
 
@@ -119,7 +123,25 @@ class Ds2App : public rex::ReXApp {
     });
     // The PGO-instrumented build (DS2_PGO=generate) saves its counts to pgo/ every 2 minutes (nothing otherwise).
     ds2::pgo::Start();
+    // Trophies (ds2_trophies.h): our notices, the platinum, and the screen's toggle (the SDK's bind_achievements).
+    ds2::trophies::Hooks hooks;
+    hooks.imgui = imgui_drawer();
+    hooks.immediate = immediate_drawer();
+    hooks.runtime = runtime();
+    hooks.achievements = runtime() && runtime()->kernel_state() ? &achievements() : nullptr;
+    hooks.on_ui_thread = [this](std::function<void()> f) { app_context().CallInUIThreadDeferred(std::move(f)); };
+    hooks.toggle_screen = [] {
+      rex::ui::KeyEvent keystroke(nullptr, rex::ui::VirtualKey::kF7, 1, false, false, false, false, false);
+      rex::ui::ProcessKeyEvent(keystroke);
+    };
+    ds2::trophies::Install(std::move(hooks));
   }
+
+  // The trophy screen (ds2_trophies.cpp) in place of the SDK's achievements list: L + Minus or L + R + Left on the
+  // Switch, F7 on the PC.
+  std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override { return ds2::trophies::CreateScreen(); }
+
+  void OnConfigureFonts(ImFontAtlas* atlas) override { ds2::trophies::ConfigureFonts(atlas); }
 
   std::unique_ptr<rex::ui::AchievementNotificationDialog> CreateAchievementNotificationDialog() override {
     if (!REXCVAR_GET(ds2_achievement_toast)) {
