@@ -50,7 +50,7 @@ bool build_fmr(BuilderContext& ctx) {
 }
 
 bool build_fcfid(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  ctx.emit_flush_mode_for_modeless();
   ctx.println("\t{}.f64 = double({}.s64);", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]));
   return true;
@@ -58,6 +58,11 @@ bool build_fcfid(BuilderContext& ctx) {
 
 bool build_fctid(BuilderContext& ctx) {
   ctx.emit_set_flush_mode(false);
+  if (ctx.config().fctiInline) {
+    ctx.println("\t{0}.s64 = rex::ppc::fctid({1}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]));
+    return true;
+  }
   ctx.println(
       "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x8000000000000000ULL) : "
       "({1}.f64 > double(LLONG_MAX)) ? LLONG_MAX : "
@@ -67,7 +72,12 @@ bool build_fctid(BuilderContext& ctx) {
 }
 
 bool build_fctidz(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  ctx.emit_flush_mode_for_modeless();
+  if (ctx.config().fctiInline) {
+    ctx.println("\t{0}.s64 = rex::ppc::fctidz({1}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]));
+    return true;
+  }
   ctx.println(
       "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x8000000000000000ULL) : "
       "({1}.f64 > double(LLONG_MAX)) ? LLONG_MAX : "
@@ -78,6 +88,11 @@ bool build_fctidz(BuilderContext& ctx) {
 
 bool build_fctiw(BuilderContext& ctx) {
   ctx.emit_set_flush_mode(false);
+  if (ctx.config().fctiInline) {
+    ctx.println("\t{0}.s64 = rex::ppc::fctiw({1}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]));
+    return true;
+  }
   ctx.println(
       "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x80000000U) : "
       "({1}.f64 >= double(INT_MAX)) ? INT_MAX : "
@@ -87,7 +102,7 @@ bool build_fctiw(BuilderContext& ctx) {
 }
 
 bool build_fctiwz(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  ctx.emit_flush_mode_for_modeless();
   if (ctx.config().fctiwzInline) {
     ctx.println("\t{0}.s64 = rex::ppc::fctiwz({1}.f64);", ctx.f(ctx.insn.operands[0]),
                 ctx.f(ctx.insn.operands[1]));
@@ -102,7 +117,11 @@ bool build_fctiwz(BuilderContext& ctx) {
 }
 
 bool build_frsp(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  if (ctx.compare_any_mode()) {
+    ctx.println("\t{}.f64 = rex::ppc::RoundToSingleAnyMode({}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]));
+    return true;
+  }
   ctx.println("\t{}.f64 = double(float({}.f64));", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]));
   return true;
@@ -113,7 +132,11 @@ bool build_frsp(BuilderContext& ctx) {
 //=============================================================================
 
 bool build_fcmpu(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  if (ctx.compare_any_mode()) {
+    ctx.println("\trex::ppc::CompareAnyMode({}, {}.f64, {}.f64);", ctx.cr(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
+    return true;
+  }
   ctx.println("\t{}.compare({}.f64, {}.f64);", ctx.cr(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
   return true;
@@ -138,7 +161,11 @@ bool build_fadd(BuilderContext& ctx) {
 }
 
 bool build_fadds(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  if (ctx.arithmetic_any_mode()) {
+    ctx.println("\t{}.f64 = rex::ppc::AddSingleAnyMode({}.f64, {}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
+    return true;
+  }
   ctx.println("\t{}.f64 = double(float({}.f64 + {}.f64));", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
   return true;
@@ -156,7 +183,11 @@ bool build_fsub(BuilderContext& ctx) {
 }
 
 bool build_fsubs(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  if (ctx.arithmetic_any_mode()) {
+    ctx.println("\t{}.f64 = rex::ppc::SubSingleAnyMode({}.f64, {}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
+    return true;
+  }
   ctx.println("\t{}.f64 = double(float({}.f64 - {}.f64));", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
   return true;
@@ -174,7 +205,11 @@ bool build_fmul(BuilderContext& ctx) {
 }
 
 bool build_fmuls(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  if (ctx.arithmetic_any_mode()) {
+    ctx.println("\t{}.f64 = rex::ppc::MulSingleAnyMode({}.f64, {}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
+    return true;
+  }
   ctx.println("\t{}.f64 = double(float({}.f64 * {}.f64));", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
   return true;
@@ -192,7 +227,11 @@ bool build_fdiv(BuilderContext& ctx) {
 }
 
 bool build_fdivs(BuilderContext& ctx) {
-  ctx.emit_set_flush_mode(false);
+  if (ctx.arithmetic_any_mode()) {
+    ctx.println("\t{}.f64 = rex::ppc::DivSingleAnyMode({}.f64, {}.f64);", ctx.f(ctx.insn.operands[0]),
+                ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
+    return true;
+  }
   ctx.println("\t{}.f64 = double(float({}.f64 / {}.f64));", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]));
   return true;
@@ -302,6 +341,13 @@ bool build_fsqrts(BuilderContext& ctx) {
 //=============================================================================
 
 bool build_fsel(BuilderContext& ctx) {
+  if (ctx.config().fpComparesModeless) {
+    // The test on the bits: the same truth table as `>= 0.0` with the flush mode off, in either mode.
+    ctx.println("\t{}.f64 = rex::ppc::GeZeroAnyMode({}.f64) ? {}.f64 : {}.f64;",
+                ctx.f(ctx.insn.operands[0]), ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]),
+                ctx.f(ctx.insn.operands[3]));
+    return true;
+  }
   ctx.emit_set_flush_mode(false);
   ctx.println("\t{}.f64 = {}.f64 >= 0.0 ? {}.f64 : {}.f64;", ctx.f(ctx.insn.operands[0]),
               ctx.f(ctx.insn.operands[1]), ctx.f(ctx.insn.operands[2]),

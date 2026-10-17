@@ -63,6 +63,8 @@ set(DS2_SOURCES
     src/me/ds2_me_hooks.cpp
     # The Horizon priority of FMOD's mixer thread (ds2_audio_mixer_priority): late blocks are the "robotic" sound.
     src/ds2_audio_threads.cpp
+    # The PC side of the post-codegen CPU rounds of sa2-nx 1.0.2 (self-checks, indirect call census, CAS key).
+    src/cpu/ds2_codegen_checks.cpp
     src/ds2_button_icons.cpp
     # Trophies: the screen (L + Minus), the notices and our platinum (ds2_trophies.h).
     src/ds2_trophies.cpp
@@ -222,6 +224,25 @@ if(REXGLUE_PLATFORM_SWITCH)
     endif()
     if(DS2_SWITCH_MATH_FLAGS AND (DS2_SWITCH_LTO OR DS2_PGO STREQUAL "use") AND TARGET ds2_recomp)
         target_compile_options(ds2_recomp PRIVATE -fno-math-errno)
+    endif()
+    # 2026-10-17, from sa2-nx 1.0.2 (its docs/cpu-rounds.md): the game code without the x29 frame chain (the crash
+    # log then lists the possible return addresses on the stack instead of a frame chain through guest code), and with
+    # a profile the inliner's size limit for the game code from 30 to 64 with the unit's growth capped at 12 %.
+    option(DS2_SWITCH_OMIT_FRAME_POINTER "Game code without the x29 frame chain (Switch)" ON)
+    set(DS2_SWITCH_INLINE_AUTO "64" CACHE STRING "max-inline-insns-auto of the game code with a profile (empty: GCC's)")
+    set(DS2_SWITCH_INLINE_UNIT_GROWTH "12" CACHE STRING "inline-unit-growth of the game code with a profile")
+    if(TARGET ds2_recomp)
+        if(DS2_SWITCH_OMIT_FRAME_POINTER)
+            target_compile_options(ds2_recomp PRIVATE -fomit-frame-pointer)
+        endif()
+        if(DS2_PGO STREQUAL "use")
+            if(DS2_SWITCH_INLINE_AUTO)
+                target_compile_options(ds2_recomp PRIVATE --param=max-inline-insns-auto=${DS2_SWITCH_INLINE_AUTO})
+            endif()
+            if(DS2_SWITCH_INLINE_UNIT_GROWTH)
+                target_compile_options(ds2_recomp PRIVATE --param=inline-unit-growth=${DS2_SWITCH_INLINE_UNIT_GROWTH})
+            endif()
+        endif()
     endif()
     if(DS2_SWITCH_LTO)
         set(_ds2_lto_compile -flto -fno-fat-lto-objects)

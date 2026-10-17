@@ -278,6 +278,15 @@ bool build_rotldi(BuilderContext& ctx) {
 
 bool build_rlwimi(BuilderContext& ctx) {
   const uint64_t mask = compute_mask(ctx.insn.operands[3] + 32, ctx.insn.operands[4] + 32);
+  if (ctx.config().rotateWordNarrow && ctx.insn.operands[3] <= ctx.insn.operands[4]) {
+    // rotate_word_narrow: the mask lies in the low word, where the 64-bit rotate of the duplicated word equals the
+    // 32-bit rotate. The kept bits of the destination (all of its upper word) are unchanged.
+    ctx.println("\t{}.u64 = (__builtin_rotateleft32({}.u32, {}) & 0x{:X}u) | ({}.u64 & 0x{:X});",
+                ctx.r(ctx.insn.operands[0]), ctx.r(ctx.insn.operands[1]), ctx.insn.operands[2],
+                static_cast<uint32_t>(mask), ctx.r(ctx.insn.operands[0]), ~mask);
+    emitRecordFormCompare(ctx);
+    return true;
+  }
   ctx.println(
       "\t{}.u64 = (__builtin_rotateleft64({}.u32 | ({}.u64 << 32), {}) & 0x{:X}) | ({}.u64 & "
       "0x{:X});",
@@ -288,6 +297,15 @@ bool build_rlwimi(BuilderContext& ctx) {
 }
 
 bool build_rlwinm(BuilderContext& ctx) {
+  if (ctx.config().rotateWordNarrow && ctx.insn.operands[3] <= ctx.insn.operands[4]) {
+    // rotate_word_narrow: see build_rlwimi. The u32 result is zero-extended, as the masked 64-bit form was.
+    ctx.println("\t{}.u64 = __builtin_rotateleft32({}.u32, {}) & 0x{:X}u;", ctx.r(ctx.insn.operands[0]),
+                ctx.r(ctx.insn.operands[1]), ctx.insn.operands[2],
+                static_cast<uint32_t>(
+                    compute_mask(ctx.insn.operands[3] + 32, ctx.insn.operands[4] + 32)));
+    emitRecordFormCompare(ctx);
+    return true;
+  }
   ctx.println("\t{}.u64 = __builtin_rotateleft64({}.u32 | ({}.u64 << 32), {}) & 0x{:X};",
               ctx.r(ctx.insn.operands[0]), ctx.r(ctx.insn.operands[1]), ctx.r(ctx.insn.operands[1]),
               ctx.insn.operands[2],
@@ -298,6 +316,14 @@ bool build_rlwinm(BuilderContext& ctx) {
 
 bool build_rlwnm(BuilderContext& ctx) {
   // Like rlwinm but shift amount comes from register, not immediate
+  if (ctx.config().rotateWordNarrow && ctx.insn.operands[3] <= ctx.insn.operands[4]) {
+    ctx.println("\t{}.u64 = __builtin_rotateleft32({}.u32, {}.u8 & 0x1F) & 0x{:X}u;",
+                ctx.r(ctx.insn.operands[0]), ctx.r(ctx.insn.operands[1]), ctx.r(ctx.insn.operands[2]),
+                static_cast<uint32_t>(
+                    compute_mask(ctx.insn.operands[3] + 32, ctx.insn.operands[4] + 32)));
+    emitRecordFormCompare(ctx);
+    return true;
+  }
   ctx.println("\t{}.u64 = __builtin_rotateleft64({}.u32 | ({}.u64 << 32), {}.u8 & 0x1F) & 0x{:X};",
               ctx.r(ctx.insn.operands[0]), ctx.r(ctx.insn.operands[1]), ctx.r(ctx.insn.operands[1]),
               ctx.r(ctx.insn.operands[2]),  // Register, not immediate

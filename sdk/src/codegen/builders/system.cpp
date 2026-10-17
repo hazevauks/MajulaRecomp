@@ -139,15 +139,28 @@ bool build_dcbf(BuilderContext& ctx) {
   return true;
 }
 
+namespace {
+// dcbt_prefetch (sa2-nx): the hint as the host's own prefetch of the same address. No effect on any value.
+void emit_prefetch(BuilderContext& ctx, int write) {
+  if (!ctx.config().dcbtPrefetch) {
+    return;
+  }
+  ctx.print("\tREX_PREFETCH(");
+  if (ctx.insn.operands[0] != 0)
+    ctx.print("{}.u32 + ", ctx.r(ctx.insn.operands[0]));
+  ctx.println("{}.u32, {});", ctx.r(ctx.insn.operands[1]), write);
+}
+}  // namespace
+
 bool build_dcbt(BuilderContext& ctx) {
   // Hint instruction, prefetch has no semantic effect
-  (void)ctx;
+  emit_prefetch(ctx, 0);
   return true;
 }
 
 bool build_dcbtst(BuilderContext& ctx) {
   // Hint instruction, prefetch-for-store has no semantic effect
-  (void)ctx;
+  emit_prefetch(ctx, 1);
   return true;
 }
 

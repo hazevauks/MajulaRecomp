@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 
+#include <rex/sys_counters.h>
 #include <rex/system/xmemory.h>
 #include <rex/system/xtypes.h>
 #include <rex/thread.h>
@@ -173,8 +174,18 @@ class XObject {
 
   void RetainHandle();
   bool ReleaseHandle();
-  void Retain();
-  void Release();
+  // Inline (sa2-nx, 2026-10-12): two atomic operations, called around every handle lookup (577 call sites in the
+  // runtime were out-of-line calls). The PC build counts them (rex/sys_counters.h, kCensusRetainRelease).
+  void Retain() {
+    REX_SYS_CENSUS(rex::syscount::kCensusRetainRelease, 1);
+    ++pointer_ref_count_;
+  }
+  void Release() {
+    REX_SYS_CENSUS(rex::syscount::kCensusRetainRelease, 1);
+    if (--pointer_ref_count_ == 0) {
+      delete this;
+    }
+  }
   X_STATUS Delete();
 
   virtual bool Save(stream::ByteStream* stream) {

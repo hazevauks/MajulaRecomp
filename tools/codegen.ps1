@@ -47,6 +47,9 @@ Write-Host "== codegen ($Flavor) with $Rexglue"
 Push-Location $app
 try {
     $env:REX_MAX_JUMP_TABLE_ENTRIES = '1024'
+    # The loaded image (decrypted, decompressed), for the post-codegen steps that read the game's read-only data
+    # and look for function addresses in it (tools\ro_constants.py, the entry modes of tools\flush_mode_flow.py).
+    $env:REXGLUE_DUMP_IMAGE = Join-Path $root 'out\default_image.bin'
     & $env:ComSpec /c "`"$Rexglue`" codegen ds2_manifest.toml > `"$log`" 2>&1"
     $code = $LASTEXITCODE
 } finally { Pop-Location }

@@ -624,11 +624,13 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                "WaitMultiple: %.0f parked, %.0f woken by signal, %.0f safety re-polls, %.0f legacy 1 ms polls | "
                "timestamp timer ticks %.0f | UpdateGuestClock %.0f calls, %.0f contended | ObjectTable lookups "
                "%.0f, %.0f contended | VolumeChangeMask %.0f | vblank thread wakes %.0f | native audio DSP calls "
-               "%.0f, %.0f mismatches | critical-section host waits %.0f\n",
+               "%.0f, %.0f mismatches | critical-section host waits %.0f | signals with nobody blocked (no wake "
+               "syscall, thread_signal_skip_idle) %.0f\n",
                delta(40) / seconds, delta(41) / seconds, delta(42) / seconds, delta(43) / seconds,
                delta(44) / seconds, delta(45) / seconds, delta(46) / seconds, delta(47) / seconds,
                delta(48) / seconds, delta(49) / seconds, delta(50) / seconds, delta(51) / seconds,
-               delta(52) / seconds, delta(53) / seconds, delta(54) / seconds, delta(55) / seconds);
+               delta(52) / seconds, delta(53) / seconds, delta(54) / seconds, delta(55) / seconds,
+               delta(56) / seconds);
   if (frames > 0) {
     std::fprintf(f,
                  "     per frame: %.0f draws | scissor %.1f screens | %.1f submits | "
@@ -922,6 +924,45 @@ struct TicOverlay {
   }
 };
 
+// sa2-nx, second CPU round (2026-10-12): what one access of FPCR costs on this CPU. The recompiled code switches the
+// host's float flush mode with `msr fpcr`, and every choice between "a test in each conversion" and "a switch" (the
+// generator's fp_moves_modeless, fp_mode_lookahead and fp_copy_pairs) hangs on that cost, which had never been
+// measured on the A57. Four loops of the same shape, the best of five runs each: empty, a read, a write of the
+// value already there, a write that toggles FZ (what a real switch does). Run once, for the report's header.
+struct FpcrCost {
+  double read_ns, write_same_ns, write_toggle_ns;
+};
+FpcrCost MeasureFpcrCost(u64 tick_freq) {
+  constexpr int kCount = 200000;
+  u64 saved;
+  asm volatile("mrs %0, fpcr" : "=r"(saved));
+  const auto loop = [&](int kind) {
+    u64 best = ~u64(0);
+    for (int run = 0; run < 5; ++run) {
+      u64 v = saved;
+      const u64 t0 = armGetSystemTick();
+      for (int i = 0; i < kCount; ++i) {
+        if (kind == 1) {
+          asm volatile("mrs %0, fpcr" : "=r"(v));
+        } else if (kind == 2) {
+          asm volatile("msr fpcr, %0" : : "r"(v));
+        } else if (kind == 3) {
+          v ^= u64(1) << 24;  // FZ
+          asm volatile("msr fpcr, %0" : : "r"(v));
+        } else {
+          asm volatile("" : "+r"(v));
+        }
+      }
+      const u64 t = armGetSystemTick() - t0;
+      if (t < best) best = t;
+      asm volatile("msr fpcr, %0" : : "r"(saved));
+    }
+    return double(best) * 1e9 / double(tick_freq) / double(kCount);
+  };
+  const double empty = loop(0);
+  return {loop(1) - empty, loop(2) - empty, loop(3) - empty};
+}
+
 void ProfilerMain(void*) {
   const u64 tick_freq = armGetSystemTickFreq();
 
@@ -978,6 +1019,11 @@ void ProfilerMain(void*) {
     std::fprintf(f, "image 0x%016" PRIx64 ", code up to 0x%016" PRIx64 "\n\n", g_base,
                  g_text_hi);
     std::fprintf(f, "Stack sampling: %s\n", sample_stacks ? "active (1 ms)" : "disabled");
+    const FpcrCost fpcr = MeasureFpcrCost(tick_freq);
+    std::fprintf(f,
+                 "FPCR on this CPU (per access, loop overhead taken off): read %.1f ns, write of the same value "
+                 "%.1f ns, write that toggles the flush mode %.1f ns (one cycle is 0.98 ns at 1020 MHz)\n",
+                 fpcr.read_ns, fpcr.write_same_ns, fpcr.write_toggle_ns);
     std::fclose(f);
   }
 

@@ -13,8 +13,15 @@
 
 #include <cstdint>
 
+#if !defined(_WIN32)
+// rexglue ports (sasrt-nx, 2026-10-12): 1 puts a `dmb ish` back after every exclusive pair on AArch64 (the legacy
+// __sync builtins' trailing barrier; sdk/src/core/atomic_posix.cpp defines it, the app's key sets it).
+extern "C" unsigned char g_rex_atomic_legacy_barrier;
+#endif
+
 namespace rex::thread {
 
+#if defined(_WIN32)
 int32_t atomic_inc(volatile int32_t* value);
 int32_t atomic_dec(volatile int32_t* value);
 
@@ -27,6 +34,67 @@ int64_t atomic_exchange_add(int64_t amount, volatile int64_t* value);
 bool atomic_cas(int32_t old_value, int32_t new_value, volatile int32_t* value);
 bool atomic_cas(int64_t old_value, int64_t new_value, volatile int64_t* value);
 void atomic_store_release(int32_t new_value, volatile int32_t* value);
+#else
+// POSIX builds (the Switch): inline, so a critical-section enter or leave, a spin lock or an interlocked list
+// operation is the exclusive pair itself and not a call into another translation unit (the SDK library is not part
+// of the app's LTO link). The __atomic builtins with sequentially consistent ordering: acquire/release exclusives
+// and no trailing barrier, where the legacy __sync builtins end with `dmb ish` (GCC PR 65697).
+namespace detail {
+[[gnu::always_inline]] inline void LegacyBarrier() {
+#if defined(__aarch64__)
+  if (g_rex_atomic_legacy_barrier) [[unlikely]] {
+    __asm__ __volatile__("dmb ish" ::: "memory");
+  }
+#endif
+}
+}  // namespace detail
+
+inline int32_t atomic_inc(volatile int32_t* value) {
+  const int32_t r = __atomic_add_fetch(value, 1, __ATOMIC_SEQ_CST);
+  detail::LegacyBarrier();
+  return r;
+}
+inline int32_t atomic_dec(volatile int32_t* value) {
+  const int32_t r = __atomic_sub_fetch(value, 1, __ATOMIC_SEQ_CST);
+  detail::LegacyBarrier();
+  return r;
+}
+
+inline int32_t atomic_exchange(int32_t new_value, volatile int32_t* value) {
+  return __atomic_exchange_n(value, new_value, __ATOMIC_SEQ_CST);
+}
+inline int64_t atomic_exchange(int64_t new_value, volatile int64_t* value) {
+  return __atomic_exchange_n(value, new_value, __ATOMIC_SEQ_CST);
+}
+
+inline int32_t atomic_exchange_add(int32_t amount, volatile int32_t* value) {
+  const int32_t r = __atomic_fetch_add(value, amount, __ATOMIC_SEQ_CST);
+  detail::LegacyBarrier();
+  return r;
+}
+inline int64_t atomic_exchange_add(int64_t amount, volatile int64_t* value) {
+  const int64_t r = __atomic_fetch_add(value, amount, __ATOMIC_SEQ_CST);
+  detail::LegacyBarrier();
+  return r;
+}
+
+inline bool atomic_cas(int32_t old_value, int32_t new_value, volatile int32_t* value) {
+  const bool r =
+      __atomic_compare_exchange_n(value, &old_value, new_value, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+  detail::LegacyBarrier();
+  return r;
+}
+inline bool atomic_cas(int64_t old_value, int64_t new_value, volatile int64_t* value) {
+  const bool r =
+      __atomic_compare_exchange_n(value, &old_value, new_value, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+  detail::LegacyBarrier();
+  return r;
+}
+
+inline void atomic_store_release(int32_t new_value, volatile int32_t* value) {
+  __atomic_store_n(value, new_value, __ATOMIC_RELEASE);
+}
+#endif
 
 inline uint32_t atomic_inc(volatile uint32_t* value) {
   return static_cast<uint32_t>(atomic_inc(reinterpret_cast<volatile int32_t*>(value)));

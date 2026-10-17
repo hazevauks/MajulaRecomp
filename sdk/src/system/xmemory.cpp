@@ -33,6 +33,7 @@
 
 // TODO(benvanik): move xbox.h out
 #include <rex/system/xtypes.h>
+#include <rex/sys_counters.h>
 
 REXCVAR_DEFINE_BOOL(protect_zero, true, "Memory", "Protect the zero page from reads and writes")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
@@ -447,6 +448,7 @@ void Memory::Reset() {
 }
 
 const BaseHeap* Memory::LookupHeap(uint32_t address) const {
+  REX_SYS_CENSUS(rex::syscount::kCensusLookupHeap, 1);
   if (address < 0x40000000) {
     return &heaps_.v00000000;
   } else if (address < 0x7F000000) {
@@ -2053,6 +2055,13 @@ void PhysicalHeap::Initialize(memory::Memory* memory, uint8_t* membase, HeapType
     host_address_offset = 0x1000;
   } else {
     host_address_offset = 0;
+  }
+  // The header's constant is what the recompiled code and (off Windows) Memory::TranslateVirtual add instead of
+  // asking the heap: it must be this heap's offset.
+  if (host_address_offset != detail::PhysicalHostOffset(heap_base)) {
+    REXSYS_ERROR("Physical heap {:08X}: host address offset {:X}, but PhysicalHostOffset says {:X}", heap_base,
+                 host_address_offset, detail::PhysicalHostOffset(heap_base));
+    std::abort();
   }
 
   BaseHeap::Initialize(memory, membase, heap_type, heap_base, heap_size, page_size,

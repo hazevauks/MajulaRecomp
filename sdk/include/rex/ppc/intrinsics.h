@@ -116,35 +116,68 @@ inline uint8_t VectorShiftTableR[] = {
 // SIMD Helper Functions
 //=============================================================================
 
+// rexglue ports (sasrt-nx, 2026-10-12): on AArch64 the helpers below are the one NEON instruction that does what the
+// VMX instruction does, instead of the x86 emulation compiled through simde (vperm: two pshufb, each an AND and a TBL
+// there, a shift and a blend; the float conversions: x86's "integer indefinite" result patched up with compares and
+// blends, on top of simde's own emulation of that result). Same results for every input:
+// sdk/tests/vmx_helpers_neon_test.cpp compares vperm, vctsxs and vctuxs with the x86 form through simde's model of
+// the NEON instruction; sdk/tests/vmx_small_helpers_test.cpp compares the small ones (sa2-nx, 2026-10-12: saturating
+// add, the signed averages, the unsigned compares, vcfux, the per-lane shifts) with a scalar statement of the NEON
+// instruction, and the shifts with simde's model too. REX_VMX_HELPERS_X86_FORM keeps the x86 forms.
+// vcfux as UCVTF rounds in the host's current mode, the x86 form to nearest: the same while the mode is to nearest,
+// which is the only mode the vector unit of the 360 has and the mode vector code runs in.
+#if (defined(__aarch64__) || defined(_M_ARM64)) && !defined(REX_VMX_HELPERS_X86_FORM)
+#define REX_VMX_HELPERS_NEON 1
+#endif
+
 // Unsigned 32-bit saturating add
 inline simde__m128i simde_mm_adds_epu32(simde__m128i a, simde__m128i b) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128i_from_neon_u32(vqaddq_u32(simde__m128i_to_neon_u32(a), simde__m128i_to_neon_u32(b)));  // UQADD
+#else
   return simde_mm_add_epi32(
       a, simde_mm_min_epu32(simde_mm_xor_si128(a, simde_mm_cmpeq_epi32(a, a)), b));
+#endif
 }
 
 // Signed 8-bit average (rounds towards zero)
 inline simde__m128i simde_mm_avg_epi8(simde__m128i a, simde__m128i b) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128i_from_neon_i8(vrhaddq_s8(simde__m128i_to_neon_i8(a), simde__m128i_to_neon_i8(b)));  // SRHADD
+#else
   simde__m128i c = simde_mm_set1_epi8(char(128));
   return simde_mm_xor_si128(c,
                             simde_mm_avg_epu8(simde_mm_xor_si128(c, a), simde_mm_xor_si128(c, b)));
+#endif
 }
 
 // Signed 16-bit average
 inline simde__m128i simde_mm_avg_epi16(simde__m128i a, simde__m128i b) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128i_from_neon_i16(vrhaddq_s16(simde__m128i_to_neon_i16(a), simde__m128i_to_neon_i16(b)));
+#else
   simde__m128i c = simde_mm_set1_epi16(short(32768));
   return simde_mm_xor_si128(c,
                             simde_mm_avg_epu16(simde_mm_xor_si128(c, a), simde_mm_xor_si128(c, b)));
+#endif
 }
 
 // Signed 32-bit average
 inline simde__m128i simde_mm_avg_epi32(simde__m128i a, simde__m128i b) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128i_from_neon_i32(vrhaddq_s32(simde__m128i_to_neon_i32(a), simde__m128i_to_neon_i32(b)));
+#else
   simde__m128i sum = simde_mm_add_epi32(simde_mm_srai_epi32(a, 1), simde_mm_srai_epi32(b, 1));
   return simde_mm_add_epi32(sum,
                             simde_mm_and_si128(simde_mm_or_si128(a, b), simde_mm_set1_epi32(1)));
+#endif
 }
 
 // Convert unsigned 32-bit integers to floats
 inline simde__m128 simde_mm_cvtepu32_ps_(simde__m128i src1) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128_from_neon_f32(vcvtq_f32_u32(simde__m128i_to_neon_u32(src1)));  // UCVTF
+#else
   simde__m128i xmm1 = simde_mm_add_epi32(src1, simde_mm_set1_epi32(127));
   simde__m128i xmm0 = simde_mm_slli_epi32(src1, 31 - 8);
   xmm0 = simde_mm_srli_epi32(xmm0, 31);
@@ -153,30 +186,52 @@ inline simde__m128 simde_mm_cvtepu32_ps_(simde__m128i src1) {
   xmm0 = simde_mm_add_epi32(xmm0, simde_mm_set1_epi32(0x4F800000));
   simde__m128 xmm2 = simde_mm_cvtepi32_ps(src1);
   return simde_mm_blendv_ps(xmm2, simde_mm_castsi128_ps(xmm0), simde_mm_castsi128_ps(src1));
+#endif
 }
 
 // Permute bytes from two vectors based on control vector
 inline simde__m128i simde_mm_perm_epi8_(simde__m128i a, simde__m128i b, simde__m128i c) {
+#if defined(REX_VMX_HELPERS_NEON)
+  // Result byte i = (bit 4 of c[i] ? b : a)[15 - (c[i] & 15)]: with a and b as one 32-byte table that is entry
+  // (c[i] & 0x1F) ^ 0x0F (the XOR is the 15 - x of the low four bits and leaves bit 4).
+  const uint8x16x2_t table = {{simde__m128i_to_neon_u8(a), simde__m128i_to_neon_u8(b)}};
+  const uint8x16_t index =
+      veorq_u8(vandq_u8(simde__m128i_to_neon_u8(c), vdupq_n_u8(0x1F)), vdupq_n_u8(0x0F));
+  return simde__m128i_from_neon_u8(vqtbl2q_u8(table, index));
+#else
   simde__m128i d = simde_mm_set1_epi8(0xF);
   simde__m128i e = simde_mm_sub_epi8(d, simde_mm_and_si128(c, d));
   return simde_mm_blendv_epi8(simde_mm_shuffle_epi8(a, e), simde_mm_shuffle_epi8(b, e),
                               simde_mm_slli_epi32(c, 3));
+#endif
 }
 
 // Unsigned 8-bit compare greater than
 inline simde__m128i simde_mm_cmpgt_epu8(simde__m128i a, simde__m128i b) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128i_from_neon_u8(vcgtq_u8(simde__m128i_to_neon_u8(a), simde__m128i_to_neon_u8(b)));  // CMHI
+#else
   simde__m128i c = simde_mm_set1_epi8(char(128));
   return simde_mm_cmpgt_epi8(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
+#endif
 }
 
 // Unsigned 16-bit compare greater than
 inline simde__m128i simde_mm_cmpgt_epu16(simde__m128i a, simde__m128i b) {
+#if defined(REX_VMX_HELPERS_NEON)
+  return simde__m128i_from_neon_u16(vcgtq_u16(simde__m128i_to_neon_u16(a), simde__m128i_to_neon_u16(b)));
+#else
   simde__m128i c = simde_mm_set1_epi16(short(32768));
   return simde_mm_cmpgt_epi16(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
+#endif
 }
 
 // Vector Convert To Signed Fixed-Point Word Saturate
 inline simde__m128i simde_mm_vctsxs(simde__m128 src1) {
+#if defined(REX_VMX_HELPERS_NEON)
+  // FCVTZS: truncation, saturated at both ends, NaN -> 0: what the x86 form below builds.
+  return simde__m128i_from_neon_i32(vcvtq_s32_f32(simde__m128_to_neon_f32(src1)));
+#else
   simde__m128 xmm2 = simde_mm_cmpunord_ps(src1, src1);
   simde__m128i xmm0 = simde_mm_cvttps_epi32(src1);
   simde__m128i xmm1 = simde_mm_cmpeq_epi32(xmm0, simde_mm_set1_epi32(INT_MIN));
@@ -185,12 +240,17 @@ inline simde__m128i simde_mm_vctsxs(simde__m128 src1) {
                                         simde_mm_castsi128_ps(simde_mm_set1_epi32(INT_MAX)),
                                         simde_mm_castsi128_ps(xmm1));
   return simde_mm_andnot_si128(simde_mm_castps_si128(xmm2), simde_mm_castps_si128(dest));
+#endif
 }
 
 // Vector Convert To Unsigned Fixed-Point Word Saturate
 // Convert float to unsigned int with saturation to [0, UINT_MAX]
 // NaN -> 0, negative -> 0, > UINT_MAX -> UINT_MAX
 inline simde__m128i simde_mm_vctuxs(simde__m128 src1) {
+#if defined(REX_VMX_HELPERS_NEON)
+  // FCVTZU: truncation, negative -> 0, saturated at UINT_MAX, NaN -> 0.
+  return simde__m128i_from_neon_u32(vcvtq_u32_f32(simde__m128_to_neon_f32(src1)));
+#else
   simde__m128 nan_mask = simde_mm_cmpunord_ps(src1, src1);
   simde__m128 neg_mask = simde_mm_cmplt_ps(src1, simde_mm_setzero_ps());
   simde__m128 max_val = simde_mm_set1_ps(4294967295.0f);  // UINT_MAX as float
@@ -220,6 +280,7 @@ inline simde__m128i simde_mm_vctuxs(simde__m128 src1) {
       simde_mm_and_si128(simde_mm_castps_si128(overflow_mask), simde_mm_set1_epi32(-1)));
 
   return result;
+#endif
 }
 
 // Vector Shift Right
@@ -340,6 +401,12 @@ inline simde__m128i simde_mm_vsro(simde__m128i a, simde__m128i b) {
 
 // Variable 16-bit shift left: widen to 32-bit, shift, narrow back
 inline simde__m128i simde_mm_sllv_epi16(simde__m128i a, simde__m128i count) {
+#if defined(REX_VMX_HELPERS_NEON)
+  // USHL reads its count as the lane's low byte, signed: clamped to 16 it gives 0 for every count of 16 or more,
+  // as the widened x86 form does.
+  const uint16x8_t n = vminq_u16(simde__m128i_to_neon_u16(count), vdupq_n_u16(16));
+  return simde__m128i_from_neon_u16(vshlq_u16(simde__m128i_to_neon_u16(a), vreinterpretq_s16_u16(n)));
+#else
   simde__m128i zero = simde_mm_setzero_si128();
   simde__m128i a_lo = simde_mm_unpacklo_epi16(a, zero);
   simde__m128i a_hi = simde_mm_unpackhi_epi16(a, zero);
@@ -351,10 +418,16 @@ inline simde__m128i simde_mm_sllv_epi16(simde__m128i a, simde__m128i count) {
   r_lo = simde_mm_and_si128(r_lo, mask16);
   r_hi = simde_mm_and_si128(r_hi, mask16);
   return simde_mm_packus_epi32(r_lo, r_hi);
+#endif
 }
 
 // Variable 16-bit logical right shift: widen to 32-bit, shift, narrow back
 inline simde__m128i simde_mm_srlv_epi16(simde__m128i a, simde__m128i count) {
+#if defined(REX_VMX_HELPERS_NEON)
+  const uint16x8_t n = vminq_u16(simde__m128i_to_neon_u16(count), vdupq_n_u16(16));
+  return simde__m128i_from_neon_u16(
+      vshlq_u16(simde__m128i_to_neon_u16(a), vnegq_s16(vreinterpretq_s16_u16(n))));  // USHL by -n: a right shift
+#else
   simde__m128i zero = simde_mm_setzero_si128();
   simde__m128i a_lo = simde_mm_unpacklo_epi16(a, zero);
   simde__m128i a_hi = simde_mm_unpackhi_epi16(a, zero);
@@ -363,10 +436,17 @@ inline simde__m128i simde_mm_srlv_epi16(simde__m128i a, simde__m128i count) {
   simde__m128i r_lo = simde_mm_srlv_epi32(a_lo, s_lo);
   simde__m128i r_hi = simde_mm_srlv_epi32(a_hi, s_hi);
   return simde_mm_packus_epi32(r_lo, r_hi);
+#endif
 }
 
 // Variable 16-bit arithmetic right shift: sign-extend to 32-bit, shift, narrow back
 inline simde__m128i simde_mm_srav_epi16(simde__m128i a, simde__m128i count) {
+#if defined(REX_VMX_HELPERS_NEON)
+  // A count of 15 already gives the sign fill, which is what every larger count gives too.
+  const uint16x8_t n = vminq_u16(simde__m128i_to_neon_u16(count), vdupq_n_u16(15));
+  return simde__m128i_from_neon_i16(
+      vshlq_s16(simde__m128i_to_neon_i16(a), vnegq_s16(vreinterpretq_s16_u16(n))));  // SSHL by -n
+#else
   simde__m128i zero = simde_mm_setzero_si128();
   // Sign-extend a: duplicate each 16-bit lane, then arithmetic shift right by 16
   simde__m128i a_lo = simde_mm_srai_epi32(simde_mm_unpacklo_epi16(a, a), 16);
@@ -376,10 +456,15 @@ inline simde__m128i simde_mm_srav_epi16(simde__m128i a, simde__m128i count) {
   simde__m128i r_lo = simde_mm_srav_epi32(a_lo, s_lo);
   simde__m128i r_hi = simde_mm_srav_epi32(a_hi, s_hi);
   return simde_mm_packs_epi32(r_lo, r_hi);
+#endif
 }
 
 // Variable 8-bit shift left: widen to 16-bit, shift, narrow back
 inline simde__m128i simde_mm_sllv_epi8(simde__m128i a, simde__m128i count) {
+#if defined(REX_VMX_HELPERS_NEON)
+  const uint8x16_t n = vminq_u8(simde__m128i_to_neon_u8(count), vdupq_n_u8(8));
+  return simde__m128i_from_neon_u8(vshlq_u8(simde__m128i_to_neon_u8(a), vreinterpretq_s8_u8(n)));
+#else
   simde__m128i zero = simde_mm_setzero_si128();
   simde__m128i a_lo = simde_mm_unpacklo_epi8(a, zero);
   simde__m128i a_hi = simde_mm_unpackhi_epi8(a, zero);
@@ -391,6 +476,7 @@ inline simde__m128i simde_mm_sllv_epi8(simde__m128i a, simde__m128i count) {
   r_lo = simde_mm_and_si128(r_lo, mask8);
   r_hi = simde_mm_and_si128(r_hi, mask8);
   return simde_mm_packus_epi16(r_lo, r_hi);
+#endif
 }
 
 }  // namespace rex::ppc

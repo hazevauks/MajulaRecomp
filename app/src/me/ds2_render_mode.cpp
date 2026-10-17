@@ -23,6 +23,17 @@
 #include <switch.h>
 #endif
 
+#if REX_PLATFORM_SWITCH
+extern "C" void RexSwitchPerfIntervalSwap(unsigned vblanks);  // sdk/src/ui/switch_perf.cpp
+#endif
+
+// 2026-10-17: frame pacing at 30 frames a second on the Switch (the SDK's swap interval, switch_perf.cpp: each image
+// stays on screen for two vblanks). Only worth it once the game holds 30 most of the time: below that, frames that
+// miss a vblank wait for the next one (sa2-nx measured 22 % of frames at 66.7 ms with a median of 31 ms).
+REXCVAR_DEFINE_INT32(ds2_swap_interval, 0, "DS2",
+                     "Switch: vblanks per presented image (2 = paced at 30 frames a second, 1 = 60). 0 = left as the "
+                     "system has it (no pacing)")
+    .range(0, 4);
 REXCVAR_DEFINE_INT32(ds2_trophy_test_at, 0, "DS2",
                      "Test: at this presented frame the trophy notices show (platinum and the first trophy, nothing is "
                      "unlocked); 600 frames later the trophy screen opens, 900 after that it closes. 0 = off");
@@ -155,6 +166,17 @@ void ToggleHeight(const char* by) {
 }
 
 void OnPresented(uint64_t presented) {
+#if REX_PLATFORM_SWITCH
+  {
+    static int32_t applied = -1;
+    const int32_t interval = REXCVAR_GET(ds2_swap_interval);
+    if (interval != applied) {
+      applied = interval;
+      RexSwitchPerfIntervalSwap(unsigned(interval));
+      if (interval) REXLOG_INFO("[res] swap interval {}: paced at {} frames a second", interval, 60 / interval);
+    }
+  }
+#endif
   // Tests of the trophy screen and notices (ds2_trophy_test_at, ds2_trophies.cpp): at that presented frame the notices
   // show, 600 frames later the screen opens and 900 frames later it closes.
   if (const int32_t at = REXCVAR_GET(ds2_trophy_test_at); at > 0) {

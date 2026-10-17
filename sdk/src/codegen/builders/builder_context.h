@@ -35,6 +35,7 @@ struct RecompilerLocalVariables {
   bool v[128]{};
   bool env{};
   bool temp{};
+  bool f_bits[32]{};
   bool v_temp{};
   bool ea{};
 
@@ -98,6 +99,9 @@ struct BuilderContext {
   /// Pointer to active jump table for bctr dispatch, or nullptr
   const JumpTable* activeJumpTable = nullptr;
 
+  /// The addresses of the function that get a label (jump targets), or nullptr when the caller did not give them.
+  const std::unordered_set<size_t>* labels = nullptr;
+
   /// Get the recompiler configuration
   const RecompilerConfig& config() const;
 
@@ -156,6 +160,8 @@ struct BuilderContext {
 
   /// Get expression for vector temporary variable (always "vTemp")
   const char* v_temp();
+  /// fp_copy_pairs: the local that carries the bits an lfs loaded into float register `index` to its stores.
+  std::string f_bits(size_t index);
 
   /// Get expression for setjmp environment storage (always "env")
   const char* env();
@@ -291,10 +297,68 @@ struct BuilderContext {
   /// fp_moves_modeless no flush-mode switch is emitted (sa2-nx round 7). Otherwise FPU mode as before.
   void emit_flush_mode_for_move();
 
+  /// fp_copy_pairs: this lfs / lfsx takes the copy form: its bits go to the register's bits local and the register
+  /// gets its value through rex::ppc::SingleToDoublePure, with no mode statement. Every lfs / lfsx does where the
+  /// form pays (float_copy_pair_pays) and no mid-asm hook stands at it.
+  bool float_copy_pair_load() const;
+  /// fp_copy_pairs: where the copy forms are taken. VMX mode known to be current (the plain form would switch off
+  /// and back; certain to pay), and with fp_copy_only_functions also an unknown mode in a copy-only function (a
+  /// bet: see RecompilerConfig::fpCopyOnlyFunctions for what it cost in SA2).
+  bool float_copy_pair_pays() const;
+  /// fp_copy_pairs: a function with no instruction that needs FPU mode whose every lfs / stfs form is an
+  /// lfs / lfsx or a store of loaded bits (a structure or matrix copy). With the copy forms it has no mode
+  /// statement at all.
+  bool function_is_copy_only() const;
+
+  /// fp_copy_pairs: this stfs / stfsx writes loaded bits: its register still holds what an lfs / lfsx of the
+  /// same block put there (see RecompilerConfig::fpCopyPairs), and the form pays. It writes
+  /// rex::ppc::QuietSingleBits of the register's bits local, without a conversion and without a mode statement.
+  bool float_copy_pair_store() const;
+
   /// An lfs/stfs form: true when the conversion must go through rex::ppc::SingleToDoubleAnyMode /
   /// DoubleToSingleAnyMode (fp_moves_modeless with VMX mode current: no switch); otherwise switches to FPU mode as
   /// before and returns false (the plain conversion).
   bool single_conversion_any_mode();
+
+  /// fp_compares_modeless (sasrt-nx): an instruction whose result the flush mode cannot change (fcfid: integer
+  /// to double; fctiwz / fctidz: truncation, a denormal gives 0 either way; fsel through its bit test): no switch
+  /// and no check, and the tracked mode stays what it was. Without the option FPU mode as before.
+  void emit_flush_mode_for_modeless();
+
+  /// fcmpu / fcmpo / frsp: true when the any-mode form must be emitted (fp_compares_modeless with VMX mode current:
+  /// no switch); otherwise switches to FPU mode as before and returns false (the plain form).
+  bool compare_any_mode();
+
+  /// fp_mode_lookahead: what the code after this instruction needs, in address order within its block: kVmx when
+  /// the next instruction that needs a particular flush mode is a VMX float instruction, kFpu when it is a scalar
+  /// instruction without an any-mode form or the third scalar single operation in a row (a run that long switches
+  /// once instead), kNone when a branch, a call, the end of the block or 24 instructions come first. Instructions
+  /// with any-mode forms (float loads and stores, frsp, fcmpu) and instructions the mode cannot change do not count.
+  /// The answer only chooses between two exact forms of the current instruction.
+  enum class FloatDemand { kNone, kFpu, kVmx };
+  FloatDemand next_float_demand() const;
+
+  /// fp_mode_lookahead: whether the function has a VMX float instruction at all. A function without one is scalar
+  /// code: its float loads, stores and compares keep the plain forms behind one mode check, as before the option
+  /// (unless it is mode-free, below).
+  bool function_has_vmx_float() const;
+
+  /// fp_mode_lookahead: a function with no instruction that needs FPU mode (no scalar arithmetic at all: getters,
+  /// setters, float copies, compares) and at most 8 float loads / stores / frsp / fcmpu. With their any-mode forms
+  /// such a function never touches the mode, whatever its caller left; with the plain forms it switched to FPU
+  /// mode for nothing when called from vector code, and the caller switched back.
+  bool function_is_mode_free() const;
+
+  /// fp_mode_lookahead: an lfs / stfs / frsp / fcmpu takes its any-mode form: the mode is not known to be FPU, and
+  /// the next instruction that needs a mode is a VMX one, or there is none before the next branch and the function
+  /// mixes scalar and vector float code (where the mode flips; in a scalar function the single check is cheaper
+  /// than a test per conversion).
+  bool conversion_prefers_any_mode() const;
+
+  /// fadds / fsubs / fmuls / fdivs: true when the any-mode form must be emitted (fp_mode_lookahead, the mode is not
+  /// known to be FPU, and vector code follows after at most one more such operation: no switch, the tracked mode
+  /// stays); otherwise switches to FPU mode as before and returns false.
+  bool arithmetic_any_mode();
 
   /// Emit mid-asm hook if configured for current address
   void emit_mid_asm_hook();

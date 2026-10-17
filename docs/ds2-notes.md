@@ -1716,3 +1716,90 @@ hitches; the area transition hitches remain; in the water area with the knights,
 
 **The twenty-second build** (2026-10-15): `out\nx` (80.9 MB) and `out\nx_rel` in 43.4 min (90.3 MB);
 `tools/check_switch_build.py` passes on both. The ELFs in `out/switch_elf/optimised_5/`.
+
+## The CPU rounds of sa2-nx 1.0.2, ported (2026-10-17)
+
+The goal set by the user: 30 frames a second at stock clocks. Where the frame goes now (twenty-first and
+twenty-second builds): in the knights' water area the GPU waits 26 ms of a 60 ms frame, so the recompiled game is the
+limit there; in the area transitions the game stops sending frames for 200-650 ms. The CPU rounds sa2-nx shipped in
+1.0.1/1.0.2 (its `docs/cpu-rounds.md`; the author estimates 15 % on the console) and torchlight-nx took into its 1.0.2
+(promoted indirect calls alone: -13 to -15 % there) are the first step.
+
+**What was ported.**
+
+- **The SDK** (`sdk/`), from sa2-nx `fdd6f14` to `d2c6e15`: 42 files, 3,000 lines (the generator's new options, the
+  NEON forms of the VMX helpers, `fctid`/`fctiw` rounding halves to even as the PowerPC does, the guest
+  compare-and-swap without the trailing barrier, critical sections without the thread lookup, inline reference
+  counts, pointer translation without the heap lookup, events and semaphores that skip the notify nobody waits for).
+  Our `sdk/` was sa2-nx's at `fdd6f14` plus the five `ds2-nx` exceptions; the patch applied without a conflict.
+- **The generator options** (`app/perf_overrides.toml`): `fp_compares_modeless`, `fp_mode_lookahead`
+  (`fp_mode_lookahead_past_branch = false`), `fcti_inline`, `fp_copy_pairs`, `div_inline`.
+- **The post-codegen steps** (`tools/post_codegen.py`, sa2-nx's order; each tool copied with this port's names), on
+  Dark Souls II's code:
+
+| Step | Result |
+|---|---|
+| `indirect_calls.py` | 43,851 indirect call sites tagged; 460 promoted to a guarded direct call (below) |
+| `loop_barriers.py` (new version) | 51,794 loop headers, 37,151 keep a barrier (14,643 have nothing to protect) |
+| `pch_cold_traps.py` | the trap helper out of line and cold |
+| `guest_cas.py` | 255 compare-and-swap sites without the trailing `dmb` |
+| `flush_mode_flow.py` | 17,408 flush-mode checks proven by the control flow (23,727 kept) |
+| `vec_byteswap.py` | 115,828 vector byte reversals as REV64 + EXT; 9,322 shuffles by table |
+| `pch_neon_shuffles.py` | constant word shuffles as one permutation |
+| `ro_constants.py` | 14,672 float, 1,350 double, 820 integer and 7,837 vector loads from read-only data folded |
+| `float_loads.py` | 41,533 single-precision loads straight into a float register |
+| `frame_traffic.py` | marks only (the elisions stay off: not exact, sa2-nx's audit) |
+| `loop_locals.py` | 12,809 call-free loop regions in 6,234 functions keep 81,563 registers in locals |
+| `leaf_locals.py` | 2,625 leaf functions with loops, 36,667 registers in locals |
+
+- **The PC side** (`app/src/cpu/ds2_codegen_checks.cpp`, from sa2-nx's `sa2_codegen_checks.cpp` and its enhancements
+  file): every folded constant, promoted call and flush-mode proof the PC build executes is checked against the old
+  operation (`[verify]` lines), the indirect call census (`ds2_diag_indirect_census`), and the run-time key
+  `ds2_cpu_guest_cas_no_barrier`.
+- **The build** (`app/CMakeLists.txt`): the game code without the frame pointer on the Switch (`-fomit-frame-pointer`:
+  the crash log then lists the possible return addresses on the stack) and, with a profile, the inliner's limit at
+  64 and the unit growth at 12 %.
+
+**Checked on the PC** (`ds2_098`, 9 minutes from the title screen through the prologue video and the opening cutscene
+to Things Betwixt): 153 million flush-mode proofs executed, 7.6 million folded constants and 3.1 million critical
+section owners compared, **0 differences**; the prologue video, the cutscene and Things Betwixt draw right.
+
+**The promoted indirect calls.** The census of that session: 9,722 call sites, 317 million calls. A site is
+promoted when one target (or two or three) takes 99.5 % of its calls, or one takes 70 % (sa2-nx's thresholds): 460
+sites, 51.8 % of all indirect calls, 44 of them with two or three targets (`app/indirect_promotions.txt`). The guard
+compares the target, so a scene the census did not see still goes the right way, one compare later. The largest
+site with many targets is the WMV decoder's dispatch (`sub_833A70A0`, 30.5 million calls, eight targets): not
+promoted.
+
+**What this changes for the PGO profile.** Every function of the game is different text now, so the profile of
+2026-10-12 does not fit: this round ships the plain build (`ds2.nro`) and the instrumented one (`ds2-pgo.nro`) for a
+new collection; the LTO + PGO build comes after it.
+
+## Area transitions: what the other ports do
+
+- **sa2-nx**: the guest thread stacks from a pool and finished threads joined early when a creation needs their
+  slot (a one-shot thread every ~35 ms on one stage had made 1,000 ms frames); here the pool now takes the 4 MB
+  stacks too (twenty-second build), and each creation of 4 ms or more is logged. It also moved the log writing to its
+  own thread (an SD write had stalled the ring thread for 50-150 ms), which this port already has.
+- **nfsmw-nx**: a cache of file reads by exact range, because the game read the same zone packs again on every lap.
+  Dark Souls II does the same: in the last console session half of what it read (187 of 395 MB) were ranges it had
+  read before, all in pieces of 128 KB or less, which the cache's floor of 256 KB left out. The shipped `ds2.toml`
+  now sets `sa2_io_ranges_min_kb = 128`.
+- **torchlight-nx**: its loading reads go through a 64 KB block cache (64 MB), and its console profile is split by
+  time slices because the first 30-40 % of the samples are loading.
+- **MarathonRecomp-NX**: a stall watchdog (`[stall]` dumps of every thread when no frame comes for a second).
+- **Here**: the console profiler already separates the samples taken during long frames ("during the hitches" in
+  `rex_profile.log`, with `configs/ds2_profile.toml`), but it took every frame over 45 ms, which at 20 frames a
+  second is nearly all of them, and keeps only 256 windows. The threshold is now `ds2_profile_hitch_ms` (150 ms), so a
+  profiled session through a few transitions says what each thread was doing during the stalls.
+
+## 30 frames a second
+
+`ds2_swap_interval` (0 by default): 2 paces the presentation at 30 frames a second on the Switch (each image stays two
+vblanks). sa2-nx measured that it only pays once the median frame is under ~31 ms (otherwise 22 % of the frames fall
+to 66.7 ms), so it stays off until the game holds 30 most of the time.
+
+## deko3d
+
+The analysis of moving the renderer from Vulkan (NVK) to deko3d, from nfsmw-nx's branch and the other ports, is in
+`docs/deko3d.md`. In short: not now; what limits this game is the recompiled code and our own ring work, not NVK.

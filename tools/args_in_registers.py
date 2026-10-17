@@ -163,7 +163,7 @@ def classify(s):
     m = CALL.match(s)
     if m:
         return K_CALLF, m.group(1)     # a call; eligible only if the name is a function of the tree (not an import)
-    if 'REX_CALL_INDIRECT_FUNC(' in s:
+    if 'REX_CALL_INDIRECT_FUNC' in s:
         return K_CALLU, None
     return K_PLAIN, None
 

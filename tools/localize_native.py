@@ -38,7 +38,10 @@ REG = re.compile(r'\bctx\.(r\d+|f\d+|v\d+|cr\d|ctr|xer|reserved)\b')
 CALLEE = r'(?:__imp__)?(?:sub_[0-9A-F]+|__(?:save|rest)[a-z]+_\d+)'
 # Any call of the generated code's calling convention: a generated function, a helper, an import or a host function
 # (group 1), an indirect call or a trap (no group 1).
-CALL = re.compile(r'\b([A-Za-z_]\w*)\(ctx, base\);|\bREX_CALL_INDIRECT_FUNC\([^;]*\);|\bppc_trap\(ctx, base[^;]*\);')
+CALL = re.compile(r'\b([A-Za-z_]\w*)\(ctx, base\);|\bREX_CALL_INDIRECT_FUNC(?:_AT)?\([^;]*\);|\bppc_trap\(ctx, base[^;]*\);')
+# A leaf function rewritten by tools/leaf_locals.py no longer says ctx.<register>: its declarations name the registers.
+LEAF_REG = re.compile(r'\bREX_LEAF_LOCAL\(\w+, l_\w+, (\w+)\)')
+PROMOTED = re.compile(r'\bREX_PROMOTED_CALL\(0x[0-9A-F]{8}, (sub_[0-9A-F]{8})\)')
 ALL = None  # "reach unknown": full sync
 INDEX = os.path.join(ROOT, 'out', 'localize_index.json')
 DEF = re.compile(r'^DEFINE_REX_FUNC\((\w+)\) \{$')
@@ -74,6 +77,8 @@ def build_index(gen):
                 continue
             f = funcs[name]
             for m in REG.finditer(line):
+                f[0].add(m.group(1))
+            for m in LEAF_REG.finditer(line):  # tools/leaf_locals.py: the function's registers, under another name
                 f[0].add(m.group(1))
             for m in CALL.finditer(line):
                 if m.group(1) is None:  # indirect call or trap
@@ -207,8 +212,27 @@ def find_body(gen, name):
         text = open(path, encoding='utf-8', errors='replace').read()
         m = re.search(r'^DEFINE_REX_FUNC\(' + name + r'\) \{\n(.*?)^\}\n', text, re.S | re.M)
         if m:
-            return m.group(1), path
+            return unleaf(m.group(1)), path
     return None, None
+
+
+def unleaf(body):
+    """The function's text as it was before tools/leaf_locals.py (which runs after this tool in a fresh tree, but
+    before it when post_codegen.py is run again on a tree it already processed): ctx.<register> again, without the
+    declarations and the stores before the returns. This tool then makes its own locals of them."""
+    regs = LEAF_REG.findall(body)
+    if not regs:
+        return body
+    names = re.compile(r'\bl_(%s)\b' % '|'.join(re.escape(r) for r in regs))
+    out = []
+    for l in body.split('\n'):
+        if re.match(r'\tREX_LEAF_LOCAL\(', l) or re.match(r'\t(?:REX_LEAF_STORE\(l_\w+, \w+\);\s?)+$', l):
+            continue
+        l = re.sub(r'\{ (?:REX_LEAF_STORE\(l_\w+, \w+\); )+return; \}', 'return;', l)
+        out.append(names.sub(lambda m: 'ctx.' + m.group(1), l))
+    if 'REX_LEAF_' in '\n'.join(out):
+        sys.exit('localize_native: a leaf-local form this tool does not know (tools/leaf_locals.py changed?)')
+    return '\n'.join(out)
 
 
 def type_of(reg):
@@ -307,8 +331,12 @@ def localize(address, what, gen, out, allow_double, sync='smart'):
     # Every direct callee needs a declaration: recompiled functions, the save/restore helpers and the kernel imports
     # (__imp__KeBugCheck, __imp__RtlEnterCriticalSection, ...: the generated files declare those in their own
     # ds2_funcs.N.h, which this header does not include). Indirect calls and traps have no name (no group 1).
-    callees = sorted({m.group(1) for l in lines if not l.strip().startswith('//')
-                      for m in CALL.finditer(l) if m.group(1)})
+    callees = {m.group(1) for l in lines if not l.strip().startswith('//')
+               for m in CALL.finditer(l) if m.group(1)}
+    # tools/indirect_calls.py: a promoted call names its target's hookable symbol in its PC self-check, also where
+    # the call itself goes to __imp__sub_X.
+    callees |= {m.group(1) for l in lines for m in PROMOTED.finditer(l)}
+    callees = sorted(callees)
     externs = ''.join(f'REX_EXTERN({c});\n' for c in callees)
     rel = os.path.relpath(path, ROOT).replace('\\', '/')
     out = out or os.path.join(ROOT, 'app', 'generated', 'hot', f'n_{addr}.h')

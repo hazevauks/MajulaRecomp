@@ -29,6 +29,11 @@ ds2_native_zcull_1x_depth = true
 # To compare: configs/ds2_test_compute_conversion.toml.
 ds2_native_conversion_frag = true
 
+# 2026-10-17: the SDK's cache of file reads by exact range (from nfsmw-nx, for a game that reads the same parts of
+# its archives again) only took reads of 256 KB or more. Dark Souls II reads in pieces of 128 KB and less, and half
+# of what it read in a 9-minute console session (187 of 395 MB) were ranges it had already read: none was cached.
+sa2_io_ranges_min_kb = 128
+
 # A per-thread CPU report in rex_profile.log (without sampling stacks: that is configs/ds2_profile.toml).
 switch_profile_report = true
 

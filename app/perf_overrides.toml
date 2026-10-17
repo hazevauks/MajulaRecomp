@@ -44,3 +44,13 @@ fctiwz_inline = true
 non_volatile_as_local = true
 elide_lr_stores = true
 fp_moves_modeless = true
+# 2026-10-17: the generator options of sa2-nx 1.0.2's CPU rounds (its docs/cpu-rounds.md, "Switches"): float
+# compares without a mode switch, a lookahead before each switch (not past a branch), fctid/fctiw/fctiwz as fcvtzs
+# and a NaN select (also the correct rounding of halves on ARM), a float copied through a register without a mode
+# where that is certain, and the divisions inline.
+fp_compares_modeless = true
+fp_mode_lookahead = true
+fp_mode_lookahead_past_branch = false
+fcti_inline = true
+fp_copy_pairs = true
+div_inline = true

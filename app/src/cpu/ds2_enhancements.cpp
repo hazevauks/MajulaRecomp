@@ -155,6 +155,7 @@ void Resolve() {
               "configuration, turned on);{}",
               __DATE__, __TIME__, DS2_BUILD_FLAVOR, g_cpu_master ? "on" : "off", g_noncpu_master ? "on" : "off",
               defaulted_on, line);
+  CodegenRoundsInit();
 }
 
 bool GuestCodeMatches(const uint8_t* base, uint32_t address, uint32_t bytes, uint64_t fnv, const char* what) {
@@ -201,6 +202,7 @@ void StartReport() {
         REXLOG_INFO("[verify] checks done: native replacements {} | differences (native replacements + renderer "
                     "self-checks): {}",
                     checks, differences);
+      CodegenRoundsReport(seconds);
     }
   });
 }

@@ -21,8 +21,21 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/function.h>
 #include <rex/system/kernel_state.h>
+#include <rex/sys_counters.h>
 #include <rex/system/thread_state.h>
 #include <rex/types.h>
+
+// PC builds count the calls of every export (rex/sys_counters.h, ExportCensus: which host functions a game calls
+// most). Nothing on the Switch.
+#if defined(__SWITCH__)
+#define REX_EXPORT_CENSUS(name) ((void)0)
+#else
+#define REX_EXPORT_CENSUS(name)                                                                     \
+  do {                                                                                              \
+    static std::atomic<uint64_t>* const rex_export_count_ = ::rex::syscount::ExportCounter(name);   \
+    rex_export_count_->fetch_add(1, std::memory_order_relaxed);                                     \
+  } while (0)
+#endif
 
 //=============================================================================
 // Hook Macros
@@ -41,6 +54,7 @@
 #else
 #define REX_HOOK(subroutine, function)                  \
   extern "C" REX_FUNC(subroutine) {                     \
+    REX_EXPORT_CENSUS(#subroutine);                     \
     rex::ppc::HostToGuestFunction<function>(ctx, base); \
   }
 #endif

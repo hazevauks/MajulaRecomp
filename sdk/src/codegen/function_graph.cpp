@@ -582,6 +582,7 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
         int id = insn.opcode->id;
         BuilderContext builderCtx{body,           ctx,      *this,   insn, blockBase, data,
                                   localVariables, csrState, activeJt};
+        builderCtx.labels = &labels;
 
         if (hasHookBefore) {
           builderCtx.emit_mid_asm_hook();
@@ -669,6 +670,10 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
     emit_println(out, "\tPPCContext env{{}};");
   if (localVariables.temp)
     emit_println(out, "\tPPCRegister temp{{}};");
+  for (size_t i = 0; i < 32; i++) {
+    if (localVariables.f_bits[i])
+      emit_println(out, "\tPPCRegister fb{}{{}};", i);
+  }
   if (localVariables.v_temp)
     emit_println(out, "\tPPCVRegister vTemp{{}};");
   if (localVariables.ea)

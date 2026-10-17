@@ -164,6 +164,10 @@ DS2_ENHANCEMENT(g_resolved_retire, ds2_native_resolved_retire_idle, ds2::enh::kN
                 "presented frames is released (the game freed its render target's texture long ago). Without it "
                 "every address ever resolved to keeps its image for the whole session and GPU memory fills up in "
                 "long sessions");
+REXCVAR_DEFINE_INT32(ds2_profile_hitch_ms, 150, "DS2",
+                     "Switch profiler with stack sampling (configs/ds2_perfil.toml): frames longer than this many ms are "
+                     "the \"during the hitches\" windows of rex_profile.log (the area transitions' stalls are 200-650 ms)")
+    .range(20, 10000);
 REXCVAR_DEFINE_INT32(ds2_native_resolved_idle_frames, 3600, "SA2 renderer",
                      "Presented frames without a resolve or a read after which ds2_native_resolved_retire_idle "
                      "releases a resolved texture (3600 is one minute at 60 fps; at least 120)");
@@ -2575,9 +2579,10 @@ const std::array<std::pair<const uint32_t*, size_t>, 9> codes_conversion{{
       const auto now = std::chrono::steady_clock::now();
       if (last_swap_ != std::chrono::steady_clock::time_point{}) {
         const double ms = std::chrono::duration<double, std::milli>(now - last_swap_).count();
-        // Frames over 45 ms go to stack sampling. The window starts one normal frame (33 ms) earlier, because
-        // the game thread prepares the frame ahead of the ring. Ticks at 19.2 MHz.
-        if (ms > 45.0) {
+        // Frames over ds2_profile_hitch_ms go to stack sampling. The window starts one normal frame (33 ms) earlier,
+        // because the game thread prepares the frame ahead of the ring. Ticks at 19.2 MHz. (ds2-nx: it was 45 ms,
+        // which at 20 frames a second is nearly every frame, and the profiler keeps only 256 windows.)
+        if (ms > double(REXCVAR_GET(ds2_profile_hitch_ms))) {
           uint64_t end = 0;
 #if defined(__aarch64__)
           asm volatile("mrs %0, cntpct_el0" : "=r"(end));  // libnx's armGetSystemTick

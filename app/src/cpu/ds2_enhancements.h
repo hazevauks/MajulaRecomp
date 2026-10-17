@@ -68,6 +68,11 @@ void StartReport();
 // original path counts a check, every mismatch a difference (which must stay 0).
 void VerifyCheck(uint64_t n = 1);
 void VerifyDifference();
+// The post-codegen CPU rounds (ds2_codegen_checks.cpp): the PC self-checks, the census, the CAS barrier key.
+void CodegenChecksInit();
+void CodegenChecksReport(int seconds);
+void CodegenRoundsInit();
+void CodegenRoundsReport(int seconds);
 bool VerifyMode();
 
 // Non-CPU: the handheld GPU profile (ds2_gpu_boost; ds2_gpu_boost.cpp). Called once by the app before setup.

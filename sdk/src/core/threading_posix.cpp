@@ -84,6 +84,12 @@ REXCVAR_DEFINE_BOOL(thread_wait_blocking, true, "Threading",
                     "Event-driven waits: WaitMultiple parks on a wake point instead of polling every 1 ms, "
                     "and alertable waits are woken by the queued APC hint instead of a 1 ms poll slice. "
                     "false = the original 1 ms polling (A/B; also the fallback if a hang is suspected)");
+REXCVAR_DEFINE_BOOL(thread_signal_skip_idle, true, "Threading",
+                    "Setting an event or releasing a semaphore that no thread is blocked on does not call the "
+                    "condition variable's notify (on Horizon always a syscall, svcSignalProcessWideKey, even with "
+                    "nobody waiting): the waiters of each condition are counted under its own mutex. false = notify "
+                    "on every signal, as before");
+
 REXCVAR_DEFINE_INT32(thread_alertable_slice_ms, 8, "Threading",
                      "With thread_wait_blocking: longest an alertable wait sleeps before it re-checks the "
                      "APC queue (safety net; the wake-up normally arrives through the queued callback). "
@@ -405,6 +411,10 @@ class PosixConditionBase {
     if (predicate()) {
       executed = true;
     } else {
+      // thread_signal_skip_idle: counted while blocked (under mutex_, which the wait releases only once this thread
+      // is queued on the condition), so a signaller that changes the state under the same mutex sees every thread
+      // its notify could wake. A thread that arrives later finds the state already changed and does not block.
+      ++cond_waiters_;
       if (timeout == std::chrono::milliseconds::max()) {
         cond_.wait(lock, predicate);
         executed = true;  // Did not time out;
@@ -416,6 +426,7 @@ class PosixConditionBase {
         executed = cond_.wait_for(lock, timeout, predicate);
 #endif
       }
+      --cond_waiters_;
     }
     if (executed) {
       if (interrupt && !signaled()) {
@@ -611,8 +622,19 @@ class PosixConditionBase {
  protected:
   inline virtual bool signaled() const = 0;
   inline virtual void post_execution() = 0;
+  // thread_signal_skip_idle: the notify of a state change, given the waiter count read under mutex_ together with
+  // that change. Without a waiter there is nothing to wake and the syscall is skipped (counted for the profiler).
+  void WakeWaiters(uint32_t waiters) {
+    static const bool skip_idle = REXCVAR_GET(thread_signal_skip_idle);
+    if (waiters != 0 || !skip_idle) {
+      cond_.notify_all();
+    } else {
+      REX_SYS_COUNT(rex::syscount::kSignalIdle, 1);
+    }
+  }
   std::condition_variable cond_;
   std::mutex mutex_;
+  uint32_t cond_waiters_ = 0;  // threads blocked in Wait() on cond_; guarded by mutex_
 
  private:
   std::mutex multi_mutex_;
@@ -635,13 +657,15 @@ class PosixCondition<Event> : public PosixConditionBase {
   virtual ~PosixCondition() = default;
 
   bool Signal() override {
+    uint32_t waiters;
     {
       auto lock = std::unique_lock<std::mutex>(mutex_);
       signal_ = true;
+      waiters = cond_waiters_;
     }
     // Notified after the lock is released: a woken waiter (on Horizon the XMA decoder runs above the guest
     // threads) would otherwise run straight into the mutex its signaller still holds and go back to sleep.
-    cond_.notify_all();
+    WakeWaiters(waiters);
     NotifyMulti();
     return true;
   }
@@ -679,8 +703,9 @@ class PosixCondition<Semaphore> : public PosixConditionBase {
       *out_previous_count = count_;
     }
     count_ += release_count;
+    const uint32_t waiters = cond_waiters_;
     lock.unlock();
-    cond_.notify_all();
+    WakeWaiters(waiters);
     NotifyMulti();
     return true;
   }
@@ -689,7 +714,8 @@ class PosixCondition<Semaphore> : public PosixConditionBase {
   inline bool signaled() const override { return count_ > 0; }
   inline void post_execution() override {
     count_--;
-    cond_.notify_all();
+    // Called by the waiter under mutex_ (it has left the count already): other waiters re-check the count.
+    WakeWaiters(cond_waiters_);
   }
   uint32_t count_;
   const uint32_t maximum_count_;

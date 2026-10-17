@@ -41,18 +41,34 @@ DEVKITA64 = next((d + '/devkitA64/bin/' for d in (os.environ.get('DS2_DEVKITPRO'
 EXE = '.exe' if os.name == 'nt' else ''
 
 
-def generated_bodies(names):
-    """name -> generated C++ body, for the given recompiled functions (app/generated/*/ *_recomp.*.cpp)."""
+def generated_calls():
+    """name -> the recompiled functions its generated C++ body calls directly (app/generated/*/ *_recomp.*.cpp)."""
     import glob
     out = {}
     head = re.compile(r'^DEFINE_REX_FUNC\((sub_[0-9A-F]{8})\) \{$', re.M)
+    call = re.compile(r'\b(?:__imp__)?(sub_[0-9A-F]{8})\(ctx, base\)')
     for path in glob.glob(os.path.join(ROOT, 'app', 'generated', '*', '*_recomp.*.cpp')):
         text = open(path, encoding='utf-8', errors='replace').read()
-        for m in head.finditer(text):
-            if m.group(1) in names:
-                end = text.find('\n}\n', m.end())
-                out[m.group(1)] = text[m.end():end if end >= 0 else len(text)]
+        heads = list(head.finditer(text))
+        for i, m in enumerate(heads):
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+            out[m.group(1)] = set(call.findall(text, m.end(), end))
     return out
+
+
+def chain_to(calls, f, targets, depth=4, seen=()):
+    """The shortest-first chain of direct calls from f to one of the targets, at most `depth` calls long, or None."""
+    callees = calls.get(f, ())
+    hit = sorted(callees & targets)
+    if hit:
+        return [f, hit[0]]
+    if depth > 1:
+        for c in sorted(callees):
+            if c not in seen:
+                rest = chain_to(calls, c, targets, depth - 1, seen + (f,))
+                if rest:
+                    return [f] + rest
+    return None
 
 
 def main():
@@ -117,15 +133,16 @@ def main():
     functions = {f.replace('__imp__', '') for f in self_loops}
     unknown = sorted(functions - known)
     # Round 7: GCC may inline a known halt into a caller (non_volatile_as_local made the callees smaller: the halts of
-    # sub_828DB988 and sub_8293FA08 then appear in sub_828D71E8 and sub_8293FE28). A function whose generated body
-    # calls a known-halt function directly is accepted, and named.
+    # sub_828DB988 and sub_8293FA08 then appear in sub_828D71E8 and sub_8293FE28), and with a higher inline limit
+    # that caller into its own caller (sub_828C5D60 inlines sub_828D71E8). A function whose generated body reaches
+    # a known-halt function through at most four direct calls is accepted, and named with the chain.
     inlined = []
     if unknown:
-        bodies = generated_bodies(set(unknown))
+        calls = generated_calls()
         for f in list(unknown):
-            calls = set(re.findall(r'\b(?:__imp__)?(sub_[0-9A-F]{8})\(ctx, base\)', bodies.get(f, '')))
-            if calls & known:
-                inlined.append(f'{f} (inlines {", ".join(sorted(calls & known))})')
+            chain = chain_to(calls, f, known)
+            if chain:
+                inlined.append(f'{f} (inlines {" -> ".join(chain[1:])})')
                 unknown.remove(f)
     print(f'branch-to-self in recompiled functions: {len(self_loops)} instructions in {len(functions)} functions, '
           f'{len(functions & known)} of them known guest halts'

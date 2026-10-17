@@ -11,6 +11,7 @@
 
 #include <rex/logging.h>
 #include <rex/stream.h>
+#include <rex/sys_counters.h>
 #include <rex/system/xevent.h>
 
 namespace rex::system {
@@ -74,6 +75,7 @@ void XEvent::Query(uint32_t* out_type, uint32_t* out_state) {
 }
 
 int32_t XEvent::Set(uint32_t priority_increment, bool wait) {
+  REX_SYS_CENSUS(rex::syscount::kCensusEventSet, 1);
   event_->Set();
   return 1;
 }

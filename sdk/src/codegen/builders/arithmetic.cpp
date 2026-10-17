@@ -103,9 +103,12 @@ bool build_divd(BuilderContext& ctx) {
   auto rD = ctx.r(ctx.insn.operands[0]);
   auto rA = ctx.r(ctx.insn.operands[1]);
   auto rB = ctx.r(ctx.insn.operands[2]);
-  ctx.println(
-      "\t{}.s64 = ({}.s64 && !({}.s64 == INT64_MIN && {}.s64 == -1)) ? {}.s64 / {}.s64 : 0;", rD,
-      rB, rA, rB, rA, rB);
+  if (ctx.config().divInline)
+    ctx.println("\t{}.s64 = rex::ppc::divd({}.s64, {}.s64);", rD, rA, rB);
+  else
+    ctx.println(
+        "\t{}.s64 = ({}.s64 && !({}.s64 == INT64_MIN && {}.s64 == -1)) ? {}.s64 / {}.s64 : 0;", rD,
+        rB, rA, rB, rA, rB);
   emitRecordFormCompare(ctx);
   return true;
 }
@@ -116,7 +119,10 @@ bool build_divdu(BuilderContext& ctx) {
   auto rD = ctx.r(ctx.insn.operands[0]);
   auto rA = ctx.r(ctx.insn.operands[1]);
   auto rB = ctx.r(ctx.insn.operands[2]);
-  ctx.println("\t{}.u64 = {}.u64 ? {}.u64 / {}.u64 : 0;", rD, rB, rA, rB);
+  if (ctx.config().divInline)
+    ctx.println("\t{}.u64 = rex::ppc::divdu({}.u64, {}.u64);", rD, rA, rB);
+  else
+    ctx.println("\t{}.u64 = {}.u64 ? {}.u64 / {}.u64 : 0;", rD, rB, rA, rB);
   emitRecordFormCompare(ctx);
   return true;
 }
@@ -127,10 +133,13 @@ bool build_divw(BuilderContext& ctx) {
   auto rD = ctx.r(ctx.insn.operands[0]);
   auto rA = ctx.r(ctx.insn.operands[1]);
   auto rB = ctx.r(ctx.insn.operands[2]);
-  ctx.println(
-      "\t{}.u64 = uint32_t(({}.s32 && !({}.s32 == INT32_MIN && {}.s32 == -1)) ? {}.s32 / {}.s32 : "
-      "0);",
-      rD, rB, rA, rB, rA, rB);
+  if (ctx.config().divInline)
+    ctx.println("\t{}.u64 = rex::ppc::divw({}.s32, {}.s32);", rD, rA, rB);
+  else
+    ctx.println(
+        "\t{}.u64 = uint32_t(({}.s32 && !({}.s32 == INT32_MIN && {}.s32 == -1)) ? {}.s32 / {}.s32 : "
+        "0);",
+        rD, rB, rA, rB, rA, rB);
   emitRecordFormCompare(ctx);
   return true;
 }
@@ -141,7 +150,10 @@ bool build_divwu(BuilderContext& ctx) {
   auto rD = ctx.r(ctx.insn.operands[0]);
   auto rA = ctx.r(ctx.insn.operands[1]);
   auto rB = ctx.r(ctx.insn.operands[2]);
-  ctx.println("\t{}.u64 = uint32_t({}.u32 ? {}.u32 / {}.u32 : 0);", rD, rB, rA, rB);
+  if (ctx.config().divInline)
+    ctx.println("\t{}.u64 = rex::ppc::divwu({}.u32, {}.u32);", rD, rA, rB);
+  else
+    ctx.println("\t{}.u64 = uint32_t({}.u32 ? {}.u32 / {}.u32 : 0);", rD, rB, rA, rB);
   emitRecordFormCompare(ctx);
   return true;
 }

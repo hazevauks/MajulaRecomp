@@ -141,6 +141,10 @@ extern PPCFuncMapping PPCFuncMappings[];
 #endif
 
 #define REX_RAW_ADDR(x) (base + (u32)(x) + REX_PHYS_HOST_OFFSET(x))
+// dcbt / dcbtst with the generator's dcbt_prefetch option: the host's prefetch of the same address.
+#ifndef REX_PREFETCH
+#define REX_PREFETCH(x, write) __builtin_prefetch((const void*)REX_RAW_ADDR(x), (write))
+#endif
 
 #define REX_LOAD_U8(x) (*(volatile u8*)(base + (u32)(x) + REX_PHYS_HOST_OFFSET(x)))
 #define REX_LOAD_U16(x) __builtin_bswap16(*(volatile u16*)(base + (u32)(x) + REX_PHYS_HOST_OFFSET(x)))

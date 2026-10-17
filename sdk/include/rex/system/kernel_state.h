@@ -400,7 +400,17 @@ class KernelState {
 };
 
 // Global kernel state accessor (defined in kernel_state.cpp)
+#if defined(_WIN32)
 KernelState* kernel_state();
+#else
+// sa2-nx (third CPU round, 2026-10-12): one load, inline. It was an out-of-line call (378 call sites in the
+// runtime's Switch objects, 12,000 calls a second in SA2). On Windows it stays a function: the pointer lives in the
+// runtime DLL.
+extern KernelState* shared_kernel_state_;
+inline KernelState* kernel_state() {
+  return shared_kernel_state_;
+}
+#endif
 
 // Convenience accessor for kernel memory
 inline memory::Memory* kernel_memory() {

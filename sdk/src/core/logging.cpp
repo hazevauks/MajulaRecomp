@@ -35,6 +35,7 @@
 #include <rex/logging.h>
 #include <rex/platform.h>
 #include <rex/platform/env.h>
+#include <rex/sys_counters.h>
 #include <rex/thread.h>
 
 #if REX_PLATFORM_SWITCH
@@ -745,6 +746,7 @@ std::span<const LogCategoryEntry> GetAllCategories() {
 }
 
 spdlog::logger* GetLoggerRaw(LogCategoryId category) {
+  REX_SYS_CENSUS(rex::syscount::kCensusLogCall, 1);
   if (!g_initialized && !g_early_initialized)
     InitLoggingEarly();
   if (category.id < g_registry.size()) {

@@ -237,9 +237,17 @@ bool build_lfdx(BuilderContext& ctx) {
 }
 
 bool build_lfs(BuilderContext& ctx) {
-  const bool any_mode = ctx.single_conversion_any_mode();
+  const bool pair = ctx.float_copy_pair_load();
+  const bool any_mode = !pair && ctx.single_conversion_any_mode();
   std::string macro = "REX_LOAD_U32";
   const std::string args = ctx.d_form_args(macro, false);
+  if (pair) {
+    // The bits in the register's own local: its stores may come after other loads and stores.
+    const std::string bits = ctx.f_bits(ctx.insn.operands[0]);
+    ctx.println("\t{}.u32 = {}({});", bits, macro, args);
+    ctx.println("\t{}.f64 = rex::ppc::SingleToDoublePure({}.u32);", ctx.f(ctx.insn.operands[0]), bits);
+    return true;
+  }
   ctx.println("\t{}.u32 = {}({});", ctx.temp(), macro, args);
   if (any_mode)
     ctx.println("\t{}.f64 = rex::ppc::SingleToDoubleAnyMode({}.u32);", ctx.f(ctx.insn.operands[0]),
@@ -250,12 +258,16 @@ bool build_lfs(BuilderContext& ctx) {
 }
 
 bool build_lfsx(BuilderContext& ctx) {
-  const bool any_mode = ctx.single_conversion_any_mode();
-  ctx.print("\t{}.u32 = REX_LOAD_U32(", ctx.temp());
+  const bool pair = ctx.float_copy_pair_load();
+  const bool any_mode = !pair && ctx.single_conversion_any_mode();
+  const std::string bits = pair ? ctx.f_bits(ctx.insn.operands[0]) : std::string(ctx.temp());
+  ctx.print("\t{}.u32 = REX_LOAD_U32(", bits);
   if (ctx.insn.operands[1] != 0)
     ctx.print("{}.u32 + ", ctx.r(ctx.insn.operands[1]));
   ctx.println("{}.u32);", ctx.r(ctx.insn.operands[2]));
-  if (any_mode)
+  if (pair)
+    ctx.println("\t{}.f64 = rex::ppc::SingleToDoublePure({}.u32);", ctx.f(ctx.insn.operands[0]), bits);
+  else if (any_mode)
     ctx.println("\t{}.f64 = rex::ppc::SingleToDoubleAnyMode({}.u32);", ctx.f(ctx.insn.operands[0]),
                 ctx.temp());
   else
@@ -498,8 +510,13 @@ bool build_stfiwx(BuilderContext& ctx) {
 }
 
 bool build_stfs(BuilderContext& ctx) {
-  const bool any_mode = ctx.single_conversion_any_mode();
-  if (any_mode)
+  // fp_copy_pairs: the register's bits local still holds what its lfs loaded.
+  const bool pair = ctx.float_copy_pair_store();
+  const bool any_mode = !pair && ctx.single_conversion_any_mode();
+  if (pair)
+    ctx.println("\t{}.u32 = rex::ppc::QuietSingleBits({}.u32);", ctx.temp(),
+                ctx.f_bits(ctx.insn.operands[0]));
+  else if (any_mode)
     ctx.println("\t{}.f32 = rex::ppc::DoubleToSingleAnyMode({}.f64);", ctx.temp(),
                 ctx.f(ctx.insn.operands[0]));
   else
@@ -512,8 +529,12 @@ bool build_stfs(BuilderContext& ctx) {
 }
 
 bool build_stfsx(BuilderContext& ctx) {
-  const bool any_mode = ctx.single_conversion_any_mode();
-  if (any_mode)
+  const bool pair = ctx.float_copy_pair_store();
+  const bool any_mode = !pair && ctx.single_conversion_any_mode();
+  if (pair)
+    ctx.println("\t{}.u32 = rex::ppc::QuietSingleBits({}.u32);", ctx.temp(),
+                ctx.f_bits(ctx.insn.operands[0]));
+  else if (any_mode)
     ctx.println("\t{}.f32 = rex::ppc::DoubleToSingleAnyMode({}.f64);", ctx.temp(),
                 ctx.f(ctx.insn.operands[0]));
   else

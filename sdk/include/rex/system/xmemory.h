@@ -385,12 +385,20 @@ class Memory {
   // Note that the contents at the specified host address are big-endian.
   template <typename T = uint8_t*>
   inline T TranslateVirtual(uint32_t guest_address) const {
+#if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && defined(__aarch64__))
     uint8_t* host_address = virtual_membase_ + guest_address;
     const auto heap = LookupHeap(guest_address);
     if (heap) {
       host_address += heap->host_address_offset();
     }
     return reinterpret_cast<T>(host_address);
+#else
+    // sa2-nx (2026-10-12): no heap has a host offset on this platform (detail::PhysicalHostOffset, the constant the
+    // recompiled code adds for the same translation, is 0; PhysicalHeap::Initialize checks that every heap agrees
+    // with it). So this is the plain sum, without the out-of-line heap lookup every kernel call that takes a
+    // pointer paid for (318 call sites in the runtime).
+    return reinterpret_cast<T>(virtual_membase_ + guest_address);
+#endif
   }
 
   // Base address of physical memory in the host address space.
