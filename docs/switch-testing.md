@@ -4,6 +4,45 @@ The builds below are newest first; each section says what to copy, what changed 
 the end, is the **first build for the console**: at that point the game had reached the first map with the right
 picture on the PC, only through software Vulkan, and nothing had been tested on the Switch yet.
 
+## Twenty-third build (2026-10-17): sa2-nx's CPU rounds, trophies and button pictures
+
+Copy over: `ds2.nro`, `ds2-pgo.nro`, `ds2.toml` and the `configs/` folder. Keep `ds2-opt.nro` on the card: it is
+still the twenty-second build's (old code with LTO + PGO), for comparison. Delete the old files in the `pgo/` folder
+next to the programs before the collection (they belong to the old code and would only confuse the merge).
+
+What each program is now:
+
+| file | what it is |
+|---|---|
+| `ds2.nro` | **the new one**: sa2-nx 1.0.2's CPU rounds (promoted indirect calls, constants folded at build time, faster float loads, fewer flush-mode switches and loop barriers, registers in locals in loops and leaf functions), the trophy screen and notices, and the Nintendo-style button pictures. No LTO/PGO yet |
+| `ds2-pgo.nro` | the same new code, instrumented, for the profile collection. It is slow on purpose |
+| `ds2-opt.nro` | the **old one** (twenty-second build), for comparison only |
+
+Also new in both: the reads the game repeats (half of what it read last session) now go through the read cache, and
+the profiler only marks frames of 150 ms or more as hitches (`ds2_profile_hitch_ms`).
+
+The whole game's code changed again, so the first test is about stability, as in the eighteenth build.
+
+**Test 1, `ds2.nro` (stability and speed):**
+
+1. Open it, go to the save list and load a save.
+2. The usual three standing points (the thicket, the Fire Keepers' house, the view of Majula), ~30 s each at 540p.
+3. The trophies: L + Minus opens the trophy screen; the button prompts in the menus should show the Switch's buttons.
+   If a trophy unlocks, the notice should close by itself and the speed should stay the same afterwards.
+4. Play 15 minutes or more with several area transitions; watch whether the transition hitches changed.
+5. Optional, if there is time: one more session with `configs/ds2_profile.toml` copied over `ds2.toml`, going through
+   three or four transitions (it records what each thread does during the hitches). Put the normal `ds2.toml` back
+   afterwards.
+
+If `ds2.nro` freezes or closes at any point, stop there and send the `logs/` folder (and Atmosphère's report folders,
+if any): there is no point collecting a profile of a program that is not right.
+
+**Test 2, `ds2-pgo.nro` (only if test 1 passed):** the profile collection: play 20 to 30 minutes of varied play
+(menus, a bonfire, walking, fighting, dying, area loads) and leave through the HOME menu, closing the program. The
+collection feeds the next `ds2-opt.nro` (new code with LTO + PGO).
+
+Then: the `logs/` folder (with `rex` inside) and the `pgo/` folder that appears next to the program.
+
 ## Twenty-second build (2026-10-15): long sessions and the area hitches
 
 Copy over: `ds2-opt.nro` and `ds2.nro`.

@@ -32,8 +32,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # as a compare and a conditional branch): sub_8285E1D0, a copy of a quoted string that stops reading at 512 bytes and
 # then compares the last byte with '"' forever when there was no quote (read in the generated code), and sub_82B482D8
 # (in the disassembly: a test of an unchanged register's low byte before the branch, no memory access on that path).
+# And one in the instrumented build of the sa2-nx 1.0.2 rounds (2026-10-17): sub_82DD01A8, a remainder by repeated
+# subtraction (subf r9,r10,r9 until r9 < r8) entered only when the divisor r10 is 0, which never changes in the loop;
+# on the game's path r10 is the count it has just set to 0 and incremented, so 1 (read in the generated code).
 KNOWN_HALTS = ['sub_828FC278', 'sub_82B11CB8', 'sub_82BE8748', 'sub_82C3FAA0', 'sub_82DE5A18',
-               'sub_8285E1D0', 'sub_82B482D8']
+               'sub_8285E1D0', 'sub_82B482D8', 'sub_82DD01A8']
 DEVKITA64 = next((d + '/devkitA64/bin/' for d in (os.environ.get('DS2_DEVKITPRO', ''), os.environ.get('DEVKITPRO', ''),
                                                   'C:/devkitPro', os.path.expanduser('~/Downloads/devkitPro'),
                                                   '/opt/devkitpro')
