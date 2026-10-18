@@ -31,6 +31,9 @@ foreach ($f in 'ds2_shaders.mesp', 'ds2_shaders.mesp.idx') {
 # Fallback configurations for the first hardware tests: copy one over ds2.toml to use it.
 $configs = Join-Path $dest 'configs'
 New-Item -ItemType Directory -Force $configs | Out-Null
+# 2026-10-18: written fresh every time. The Portuguese names of before the twenty-second build stayed in the staged
+# folder and on the card, and a session ran with a stale or missing ds2.toml (ZCULL off: 16 % slower, no stacks).
+Get-ChildItem -Path $configs -Filter *.toml -File | Remove-Item -Force
 $base = Get-Content (Join-Path $root 'app\ds2_switch.toml') -Raw -Encoding UTF8
 # Written without a byte order mark (Windows PowerShell's "utf8" adds one, which a TOML reader may not accept).
 $noBom = New-Object System.Text.UTF8Encoding($false)

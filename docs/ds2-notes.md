@@ -1861,3 +1861,34 @@ nfsmw-nx's ring thread does 8.5-9 µs a draw; here it is six times that. The nex
 **Also in this build** (from sa2-nx 1.0.2.1, `ee5a61a`): `ds2_native_texture_slots_evict`. The 2D descriptor heap has
 4,096 slots and the texture cache only counted texel bytes; in sa2-nx the slots ran out after three to four hours and
 new textures were drawn black. Here the water area already had 2,436 textures cached after 32 minutes.
+
+## The twenty-fourth build on the console: the new code with LTO + PGO (2026-10-18)
+
+`logs/`: `ds2_059` (15 min) and `ds2_060` (18 min), both `ds2-opt.nro`, the same route (the three standing points,
+then to Heide's Tower of Flame and the knights' water area). No crash.
+
+**Only `ds2_059` ran with the shipped settings.** `ds2_060`, meant as the profiled session, ran with ZCULL off, no GPU
+pass categories and no stack sampling: none of the package's files reads that way, so the game read no `ds2.toml`
+of ours (a copy under another name, or a stale one; the card's `configs/` still held the Portuguese files of before
+the twenty-second build). With ZCULL off the same spots were 16 % slower (the thicket 16.3 against 19.5 fps). Since
+2026-10-18 `tools/win/package_switch.ps1` empties `configs/` before writing it.
+
+**`ds2_059` against the twenty-third build's `ds2.nro` (`ds2_052`; same settings, 540p):**
+
+| stretch | twenty-third `ds2.nro` | twenty-fourth `ds2-opt.nro` | frame | GPU busy | ring thread | limit |
+|---|---|---|---|---|---|---|
+| thicket | 19.9 | 19.5 | 51 ms | 50 ms | 51 ms | GPU |
+| house | 17.9 | 20.0 (+12 %) | 50 | 48 | 50 | GPU |
+| after the first transition | 19.9 | 23.6 (+19 %) | 42 | 38-39 | 41-42 | ring thread and GPU |
+| the knights' water area | 14.2 | 18.7 (+32 %) | 53 | 36 | 43-44 | the game's main thread |
+
+Against the twenty-second build's `ds2-opt.nro` (old code with LTO + PGO): 20.3 / 20.1 / 22.0 at the three points
+and 13-15 fps in the water area. Where the GPU limits nothing moved, as expected; where the CPU limits the new code
+gives 19-32 %.
+
+**Area transitions:** frames of 400 ms or more only at the save's first load (500 and 646 ms); in play the longest
+were 150-310 ms (a burst of 150-226 ms frames at the house, with the GPU busy as long: a GPU-heavy view, not a stall).
+
+**For 30 frames a second, now:** the GPU (48-50 ms at the thicket and the house), the ring thread (41-51 ms), the
+game's main thread (~53 ms in the water area). The stack profile that would split the two CPU threads is still to
+come (the next session, with `configs/ds2_profile.toml` renamed to `ds2.toml`).
