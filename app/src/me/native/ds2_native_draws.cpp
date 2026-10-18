@@ -797,6 +797,21 @@ DS2_ENHANCEMENT(g_linear_not_resolved, ds2_native_linear_fetch_not_resolved, ds2
                 "Renderer: a linear (untiled) texture fetch is never taken for a resolved texture (resolves write tiled "
                 "layouts only): CPU data at a freed resolve's address is read from guest memory instead of being "
                 "rejected (Wild Canyon's mission box centre)");
+// From sa2-nx 1.0.2.1 (ee5a61a, ported 2026-10-17). sa2-nx's long sessions, second finding (2026-10-14; its 1.0.2
+// still showed black textures and missing geometry after three to four hours): the texture cache released a texture
+// only by BYTES (from 75 % of ds2_native_textures_mb_max, 512 MB, counting texel data), and SA2's textures are small,
+// so another limit came first: the 4,096 slots of the 2D descriptor heap. When no slot is free a new texture's view
+// gets slot 0, the empty texture ("texture pool full"), and from then on whatever is loaded is drawn black or, where
+// the draw tests alpha, not at all, until the game is closed. Here, after 32 minutes the knights' water area already
+// had 2,436 textures cached (ds2_052, 2026-10-17). The test is in sa2-nx's docs/enhancements.md.
+DS2_ENHANCEMENT(g_slots_evict, ds2_native_texture_slots_evict, ds2::enh::kNonCpu, true,
+                "Renderer: the texture cache also releases its coldest textures when a descriptor heap is three "
+                "quarters full, and an eighth of the heap at once when a view finds no slot. Without it only the "
+                "cache's texel bytes count, and with small textures the 4,096 slots run out first: after hours of "
+                "play new textures are drawn black or not at all");
+REXCVAR_DEFINE_INT32(ds2_diag_texture_slots, 0, "DS2",
+                     "Diagnostic: capacity of the 2D texture descriptor heap (0 = the device's, at most 4096; "
+                     "at least 64). A small value brings on a long session's shortage of slots within minutes");
 // GPU round 2 (2026-10-07, from the round-8 console log: 2.1 root-table uploads per draw, 3.9 words each): with the
 // constants in set 4 (kSpecConstantsUbo in every pipeline key), the three push-constant addresses are never read, but
 // they moved with every draw's constant offsets and cost a vkCmdPushConstants per draw (NVK: a LOAD_CONSTANT_BUFFER of
@@ -6093,7 +6108,102 @@ class DrawsVulkanImpl final : public DrawsVulkan {
    */
   static constexpr uint32_t kDropPerFrame = 4;
 
+  // ds2_native_texture_slots_evict: slots in use of an image heap (slot 0 is the empty texture and never handed out).
+  uint32_t SlotsUsed(uint32_t heap) const {
+    const Heap& m = heaps_[heap];
+    return m.next - 1 - uint32_t(m.free.size());
+  }
+
+  // A view found no free slot: this frame it shows the empty texture; the next eviction pass makes room.
+  void NoteSlotsFull(uint32_t heap) {
+    if (heap < 3) slots_full_heaps_ |= 1u << heap;
+    ++slots_full_events_;
+  }
+
+  static uint32_t HeapOfTexture(const Texture& texture) {
+    return texture.layers == 6 ? 2u : texture.background ? 1u : 0u;  // cube, 3D, 2D (PrepareTexture's `heap`)
+  }
+
+  // The `count` coldest textures of one heap: unused for kFramesNoUsageForDrop frames, so no pending work
+  // references them (the rule of the byte limit's eviction). Returns how many went.
+  uint32_t DropColdOfHeap(uint32_t heap, uint32_t count) {
+    std::vector<std::pair<uint64_t, uint64_t>> cold;  // (last frame it was prepared, key)
+    for (const auto& [key, texture] : textures_) {
+      if (texture.image.image == VK_NULL_HANDLE || texture.needs_upload || texture.in_flight ||
+          texture.frame == UINT64_MAX || texture.frame + kFramesNoUsageForDrop >= frame_ ||
+          HeapOfTexture(texture) != heap) {
+        continue;
+      }
+      cold.emplace_back(texture.frame, key);
+    }
+    if (cold.empty()) return 0;
+    if (cold.size() > count) {
+      std::partial_sort(cold.begin(), cold.begin() + count, cold.end());
+      cold.resize(count);
+    }
+    std::unordered_set<VkImage> images;
+    for (const auto& [last, key] : cold) {
+      const auto it = textures_.find(key);
+      images.insert(it->second.image.image);
+      bytes_textures_ -= std::min(bytes_textures_, it->second.bytes);
+    }
+    DropImages(images);
+    released_textures_ += images.size();
+    released_for_slots_ += images.size();
+    return uint32_t(images.size());
+  }
+
+  /*
+   * ds2_native_texture_slots_evict: the descriptor heaps are a limit of their own.
+   *
+   * The byte limit above counts texel data, and SA2's textures are small: 4,096 of them are far from 384 MB. So a
+   * heap that is three quarters full sheds its coldest textures, 32 every 16 frames (each batch renews the texture
+   * generation, so not every frame), until it is back under five eighths. And when a view found no slot at all, an
+   * eighth of the heap goes at the next frame: that view showed the empty texture for one frame instead of for the
+   * rest of the session.
+   */
+  void EvictTexturesForSlots() {
+    if (g_slots_evict.active) {
+      for (uint32_t heap = 0; heap < 3; ++heap) {  // the image heaps: 2D, 3D, cube
+        const uint32_t capacity = SlotCapacity(heap);
+        if (capacity < 8) continue;
+        const bool full = (slots_full_heaps_ >> heap) & 1u;
+        const uint32_t used = SlotsUsed(heap);
+        if (used > capacity / 4 * 3) {
+          draining_slots_[heap] = true;
+        } else if (used <= capacity / 8 * 5) {
+          draining_slots_[heap] = false;
+        }
+        uint32_t dropped = 0;
+        if (full) {
+          dropped = DropColdOfHeap(heap, std::max(capacity / 8, 8u));
+        } else if (draining_slots_[heap] && (frame_ & 15) == 0) {
+          dropped = DropColdOfHeap(heap, 32);
+        }
+        if (dropped) g_slots_evict.Use();
+        if (full && slots_full_logged_ < 16) {
+          ++slots_full_logged_;
+          REXLOG_WARN("[native] C3: descriptor heap {} had no free slot ({} of {} in use): {} cold textures released "
+                      "(ds2_native_texture_slots_evict); {} textures remain",
+                      heap, used, capacity - 1, dropped, textures_.size());
+        }
+      }
+    }
+    slots_full_heaps_ = 0;
+    if (frame_ >= report_slots_frame_ + 600) {
+      report_slots_frame_ = frame_;
+      REXLOG_INFO("[native] C3 slots: 2D {} of {} in use, 3D {} of {}, cube {} of {}, samplers {} of {}; {} textures "
+                  "in the cache ({} MB of texels); {} released for slots so far, {} views found no slot "
+                  "(ds2_native_texture_slots_evict {})",
+                  SlotsUsed(0), SlotCapacity(0) - 1, SlotsUsed(1), SlotCapacity(1) - 1, SlotsUsed(2),
+                  SlotCapacity(2) - 1, SlotsUsed(3), SlotCapacity(3) - 1, textures_.size(),
+                  bytes_textures_ >> 20, released_for_slots_, slots_full_events_,
+                  g_slots_evict.active ? "on" : "off");
+    }
+  }
+
   void EvictTexturesIfDoesMissing() {
+    EvictTexturesForSlots();
     const uint64_t limit = uint64_t(std::max(textures_mb_max_, 0)) << 20;
     if (!limit) {
       return;
@@ -6846,6 +6956,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     view.heap = heap;
     view.slot = ReserveSlot(heap);
     if (!view.slot) {
+      NoteSlotsFull(heap);
       Warn(35, "texture pool full");
       return 0;
     }
@@ -8307,6 +8418,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         return false;
       }
       heaps_[i].capacity = binding.descriptorCount;
+      if (i == 0) {  // ds2_diag_texture_slots: fewer slots are handed out (the heap itself keeps its size)
+        const int32_t diag = REXCVAR_GET(ds2_diag_texture_slots);
+        if (diag >= 64 && uint32_t(diag) < heaps_[0].capacity) {
+          diag_slots_2d_ = uint32_t(diag);
+          REXLOG_INFO("[native] ds2_diag_texture_slots: the 2D heap hands out {} slots", diag);
+        }
+      }
     }
     const VkDescriptorPoolSize sizes[2] = {
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
@@ -8544,8 +8662,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (slot < diag_written_[3].size()) diag_written_[3].set(slot);
   }
 
+  // Slots an image heap hands out, plus slot 0 (ds2_diag_texture_slots lowers it for the 2D heap).
+  uint32_t SlotCapacity(uint32_t heap) const {
+    return heap == 0 && diag_slots_2d_ ? diag_slots_2d_ : heaps_[heap].capacity;
+  }
+
   uint32_t ReserveSlot(uint32_t heap) {
     auto& m = heaps_[heap];
+    if (heap == 0 && diag_slots_2d_ && SlotsUsed(0) + 1 >= diag_slots_2d_) [[unlikely]] {
+      return 0;  // ds2_diag_texture_slots: as if the heap ended here
+    }
     if (!m.free.empty()) {
       const uint32_t slot = m.free.back();
       m.free.pop_back();
@@ -10161,6 +10287,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     view.slot = ReserveSlot(heap);
     if (!view.slot) {
       dfn_.vkDestroyImageView(device_, view.view, nullptr);
+      NoteSlotsFull(heap);
       Warn(35, "texture pool full");
       return 0;
     }
@@ -13606,6 +13733,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   uint64_t full_previous_queue_ = 0;
   uint32_t reports_no_compensate_ = 0;
   bool releasing_per_missing_of_memory_ = false;  // guard against reentry
+  // ds2_native_texture_slots_evict
+  uint32_t slots_full_heaps_ = 0;  // bit per image heap: a view found no slot since the last eviction pass
+  uint32_t slots_full_logged_ = 0;
+  uint64_t slots_full_events_ = 0, released_for_slots_ = 0, report_slots_frame_ = 0;
+  bool draining_slots_[3] = {};    // above three quarters, until back under five eighths
+  uint32_t diag_slots_2d_ = 0;     // ds2_diag_texture_slots
   uint64_t released_little_to_little_ = 0;
   uint64_t warning_trickle_ = 0;
   uint64_t attempt_eviction_ = 0;

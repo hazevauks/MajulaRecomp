@@ -116,8 +116,12 @@ constexpr size_t kFrames = 10;
 // 0-32 renderer/audio counters (see RexSwitchPerfAdd); 40-55 host-runtime overhead (include/rex/sys_counters.h).
 constexpr unsigned kCounterCount = 64;
 // In <NRO folder>/logs/rex/ (switch_crash_hooks.c computes it at startup).
+// ds2-nx (2026-10-17): a session with stack sampling writes rex_profile_stacks.log, so the next plain session (a PGO
+// collection, say) does not overwrite the one profile that has stacks. Set once by ProfilerMain before the first write.
+std::atomic<bool> g_report_stacks{false};
 std::string ReportPath() {
-  return std::string(RexSwitchLogDir()) + "rex_profile.log";
+  return std::string(RexSwitchLogDir()) +
+         (g_report_stacks.load(std::memory_order_relaxed) ? "rex_profile_stacks.log" : "rex_profile.log");
 }
 
 struct Slot {
@@ -1014,6 +1018,7 @@ void ProfilerMain(void*) {
   for (unsigned i = 0; i < kCounterCount; ++i) {
     counters_last[i] = g_counters[i].load(std::memory_order_relaxed);
   }
+  g_report_stacks.store(sample_stacks, std::memory_order_relaxed);
   if (report) RexSwitchEnsureLogDir();
   if (FILE* f = report ? std::fopen(ReportPath().c_str(), "w") : nullptr) {
     std::fprintf(f, "image 0x%016" PRIx64 ", code up to 0x%016" PRIx64 "\n\n", g_base,

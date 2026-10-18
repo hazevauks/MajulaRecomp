@@ -4,6 +4,31 @@ The builds below are newest first; each section says what to copy, what changed 
 the end, is the **first build for the console**: at that point the game had reached the first map with the right
 picture on the PC, only through software Vulkan, and nothing had been tested on the Switch yet.
 
+## Twenty-fourth build (2026-10-17): the new code with LTO + PGO
+
+Copy over: `ds2-opt.nro`. `ds2.nro`, `ds2.toml` and `configs/` are the twenty-third build's. You can delete
+`ds2-pgo.nro` and the `pgo/` folder from the card (the collection was used).
+
+What changes in `ds2-opt.nro`:
+
+- It is now the twenty-third build's new code (sa2-nx's CPU rounds) with LTO + PGO, made with the profile of your
+  30-minute collection. From the eighteenth to the nineteenth build the same step gave +13 to +14 % where the CPU
+  limits.
+- Long sessions: the texture cache also releases its coldest textures when the texture slots fill up (from sa2-nx
+  1.0.2.1; there, after three to four hours, new textures were drawn black).
+- A session with `configs/ds2_profile.toml` now writes `logs/rex/rex_profile_stacks.log`, so a later session does
+  not erase it (last time the PGO collection overwrote the profiled session).
+
+**Test 1, `ds2-opt.nro`:** the three standing points (the thicket, the Fire Keepers' house, the view of Majula),
+~30 s each at 540p, then play through some transitions as far as the knights' water area and stay there ~30 s.
+
+**Test 2 (the important one for the next round):** copy `configs/ds2_profile.toml` over `ds2.toml` and play about 10
+minutes with `ds2-opt.nro`: the same three points, the water area and three or four area transitions. It records
+what the renderer's thread and the game's main thread do in each frame, which is what the next optimisations need.
+Put the normal `ds2.toml` back afterwards.
+
+Then the `logs/` folder (with `rex` inside).
+
 ## Twenty-third build (2026-10-17): sa2-nx's CPU rounds, trophies and button pictures
 
 Copy over: `ds2.nro`, `ds2-pgo.nro`, `ds2.toml` and the `configs/` folder. Keep `ds2-opt.nro` on the card: it is
@@ -516,7 +541,7 @@ In the `configs/` folder; to use one, copy it over `ds2.toml`:
   freezes or the picture comes out wrong with the normal one, try this one and tell me whether it changed.
 - `ds2_emulated_gpu.toml`: uses the emulated GPU instead of the native renderer. It is extremely slow on the console;
   it is only for comparing the picture on a still screen.
-- `ds2_profile.toml`: samples the CPU stacks (`logs/rex/rex_profile.log`); a little slower.
+- `ds2_profile.toml`: samples the CPU stacks (`logs/rex/rex_profile_stacks.log` since the twenty-fourth build); a little slower.
 - `ds2_test_*.toml`: the A/B tests of earlier builds.
 
 Up to the twenty-second build these files had Portuguese names (`ds2_padrao`, `ds2_melhorias_desligadas`,

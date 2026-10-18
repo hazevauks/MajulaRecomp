@@ -1803,3 +1803,61 @@ to 66.7 ms), so it stays off until the game holds 30 most of the time.
 
 The analysis of moving the renderer from Vulkan (NVK) to deko3d, from nfsmw-nx's branch and the other ports, is in
 `docs/deko3d.md`. In short: not now; what limits this game is the recompiled code and our own ring work, not NVK.
+
+## The twenty-third build on the console, and what 30 frames a second needs (2026-10-17)
+
+`logs/`: `ds2_052` with `ds2.nro` (the CPU rounds, no LTO/PGO; 15:15 to 15:51 on the PC's clock, with 17 minutes in
+the HOME menu from 15:28), `ds2_053` with `configs/ds2_profile.toml` (6 min), `ds2_054` the PGO collection with
+`ds2-pgo.nro` (30 min, one stream of 6.4 MB). No crash; the trophy screen, a trophy notice and the button pictures
+worked. The user's goal, made precise: 30 frames a second **without drops** at stock clocks (handheld: CPU 1020 MHz,
+GPU 460.8 MHz, memory 1331 MHz).
+
+**The stretches where the player stood still** (whole 10-s windows, 540p). The plain build of the eighteenth build
+(optimised code, no LTO/PGO) is the fair comparison; the LTO + PGO build of this code is being made from `ds2_054`.
+
+| stretch | fps (eighteenth `ds2.nro`) | frame | GPU busy | GPU idle | ring thread's work | draws |
+|---|---|---|---|---|---|---|
+| thicket, 15:18 | 19.9 (19.5) | 50.4 ms | 48.8 ms | 1.6 ms | 50.2 ms (57.5 µs a draw) | 873 |
+| house, 15:22 | 17.9 (17.6) | 56.0 | 48.7 | 7.3 | 53.5 (51.7) | 1,033 |
+| after the first transition, 15:25 | 19.9 | 50.1 | 39.3 | 10.8 | 49.3 (50.3) | 979 |
+| Majula, 15:27 | 24.7 | 40.2 | 27.8 | 12.4 | 28.7 (50.0) | 574 |
+| the knights' water area, 15:47 | 14.2 | 70.3 | 35.8 | 34.5 | 53.7 (57.8) | 928 |
+
+The ring thread's "work" is its parse loop's wall time less its waits for the game, so it also holds the time it
+waits for the GPU (upload slots, presentation); where the GPU is busy all frame (the thicket) the two numbers are
+the same frame seen twice. Where the GPU idles (the water area: 34.5 ms of 70) the CPU is the limit: the ring thread
+and the game's main thread.
+
+**Area transitions.** Frames of 400 ms or more (all logged): the first load of the save (550 and 617 ms) and nothing
+else in 36 minutes, through Things Betwixt -> Majula -> the forest -> Heide (earlier builds: 200-650 ms at each
+transition). Things Betwixt -> Majula still shows four frames of 180-350 ms. No thread creation took 4 ms or more. The
+range cache (`sa2_io_ranges_min_kb = 128`): 1,244 hits against 2,068 misses, 155.5 MB served from memory against
+264.1 MB from the SD; it sits at its 64 MB cap (1,556 evictions). The heap had 19 MB free inside 2,269 MB at the end,
+so the cap stays.
+
+**The profiled session was lost.** `rex_profile.log` is rewritten by every session, and the PGO collection came after
+the profiled one. Since this build a session with stack sampling writes `rex_profile_stacks.log` instead
+(`sdk/src/ui/switch_perf.cpp`, already one of the five `ds2-nx` exceptions), so a plain session no longer erases it.
+
+**What 30 frames a second without drops means here.** Every frame under 33.3 ms, on all three paths at once:
+
+| path | now (540p, plain build) | needed |
+|---|---|---|
+| GPU | 48.8 ms at the thicket and the house (scene 25-33 ms; EDRAM import, alias and import9 6-10 ms; half-size passes 2.5-5.6 ms; copies 1.5-3 ms) | -32 % |
+| ring thread | 50-54 ms a frame, 50-58 µs a draw at ~1,000 draws (timed draws: uploads 13.7 µs, targets/indices/vertices 6.6, textures 3.7, pipeline 2.9, recording 2.6; the rest outside the draw) | -38 % |
+| game's main thread | ~40 ms in Majula (GPU 28 and ring 29 there) | -17 % |
+
+nfsmw-nx's ring thread does 8.5-9 µs a draw; here it is six times that. The next steps, in order:
+
+1. The LTO + PGO build of the new code (`ds2-opt.nro`, from `ds2_054`): the eighteenth -> nineteenth builds gave
+   +13 to +14 % where the CPU limits.
+2. A profiled session with that build (stacks of the ring thread and the main thread during normal frames and
+   transitions), now kept in `rex_profile_stacks.log`.
+3. The ring thread's own cost per draw (the uploads first), and the GPU's emulation passes (EDRAM import and alias:
+   ours, not the game's).
+4. If the GPU stays above 33 ms at 540p after that: a dynamic resolution between 2/3 and 3/4 driven by the GPU's own
+   time per frame (the renderer already rescales live).
+
+**Also in this build** (from sa2-nx 1.0.2.1, `ee5a61a`): `ds2_native_texture_slots_evict`. The 2D descriptor heap has
+4,096 slots and the texture cache only counted texel bytes; in sa2-nx the slots ran out after three to four hours and
+new textures were drawn black. Here the water area already had 2,436 textures cached after 32 minutes.

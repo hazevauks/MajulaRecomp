@@ -43,8 +43,8 @@ $noBom = New-Object System.Text.UTF8Encoding($false)
     "`n# The SDK's emulated GPU instead of the native renderer (very slow on the console; for comparing the picture).`n" +
     "ds2_gpu_backend = `"vulkan`"`n"), $noBom)
 [IO.File]::WriteAllText((Join-Path $configs 'ds2_profile.toml'), ($base +
-    "`n# Measuring: GPU time per pass category and sampling of the CPU stacks (rex_profile.log). It runs a little`n" +
-    "# slower; it is for finding where the time goes.`n" +
+    "`n# Measuring: GPU time per pass category and sampling of the CPU stacks (rex_profile_stacks.log). It runs`n" +
+    "# a little slower; it is for finding where the time goes.`n" +
     "ds2_gpu_marks_categories = true`nswitch_profile_stacks = true`nswitch_profile_report = true`n"), $noBom)
 [IO.File]::WriteAllText((Join-Path $configs 'ds2_test_zcull.toml'), ($base +
     "`n# A/B test: ZCULL on the single-sample depth targets too (the game's main one). The stencil imports then`n" +
