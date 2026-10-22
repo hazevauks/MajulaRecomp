@@ -1,74 +1,63 @@
-# deko3d instead of Vulkan (NVK): what the other ports found, and what it would mean here
+# deko3d: the plan (2026-10-22)
 
-Written 2026-10-17, from nfsmw-nx's branch `deko3d-implementation` (`docs/HowToDeko3d.md`, 533 lines, and
-`docs/deko3d-devlog.md`, 921 lines; last commit 2026-10-10, merged as pull request #27) and from what the other ports
-in `_ref/` use. A first look is in `docs/ds2-notes.md` ("A CPU profile with stacks on the console and the deko3d
-question", 2026-10-10); this page brings it up to date with the numbers of the twenty-second build.
+The user's decision (2026-10-22): move the renderer to deko3d, the Switch's own graphics API, as the sibling Xbox 360
+ports did, for the long term even if the first gain is small. The goal stays 30 frames a second without drops at
+stock clocks, at 540p; 720p once deko3d frees enough GPU. The earlier analysis on this page (2026-10-17, "not now")
+weighed only swapping NVK under the current renderer; the route below replaces the renderer itself.
 
-## What deko3d is
+## Which route
 
-devkitPro's low-level graphics API for the Switch's GPU (the one Nintendo's own titles reach through NVN). It looks
-like Vulkan (memory blocks, command buffers, queues, fences, barriers, images, descriptors) but has no pipelines, no
-render passes and no descriptor sets, and it writes GPU commands itself, with no driver in between. Its shaders are
-DKSH binaries made by `uam`, a compiler that only takes GLSL.
-
-## Who uses what
-
-| Port | Renderer | Driver |
+| | nfsmw-nx `deko3d-implementation` | sa2-nx 1.0.3 (from banjo-nx) |
 |---|---|---|
-| sa2-nx, this port, torchlight-nx | the native PM4-ring renderer (`app/src/me`) on Vulkan | NVK (Mesa) with nfsmw-nx's patch |
-| nfsmw-nx `main` (released) | the same family, on Vulkan | NVK with its own 35-file patch |
-| nfsmw-nx `deko3d-implementation` | a second backend, `RenderDk`, next to the Vulkan one | deko3d + uam |
-| MarathonRecomp-NX, UnleashedRecomp-NX | their own renderer through plume (a Vulkan layer) | NVK |
-| WWHD (Wind Waker HD) | moved from Mesa (OpenGL) to deko3d | deko3d |
+| What changes | a second back end under the PM4-ring renderer | the renderer: Renut's, at the Direct3D level, on plume |
+| PM4 ring, EDRAM model | kept | **gone** |
+| Status | never merged; NVK stays the release | released (1.0.3, 1.0.3.1), and banjo-nx, peggle2-nx, futari-nx |
+| Guide | `docs/HowToDeko3d.md`, `docs/deko3d-devlog.md` | `docs/deko3d-renderer-guide.md`, `docs/renut-renderer.md` |
 
-Only nfsmw-nx has tried deko3d among the ReXGlue ports, and it keeps the NVK build as the released one.
+**sa2-nx's route**, because what limits this port is exactly what it removes. At the twenty-fourth build (540p, stock
+clocks) the ring thread spent 41-54 ms a frame parsing PM4 and preparing draws (50-58 µs a draw, against 8-11 µs
+on sa2-nx's Renut render thread), and the GPU spent 6-10 ms a frame on the EDRAM emulation passes. NVK was 3.7 % of
+the CPU. Our current renderer is also sa2-nx's own family, so the order of work, the tools and the checks carry over.
 
-## What nfsmw-nx measured (stock clocks, handheld)
+**Dark Souls II's Direct3D is close to SA2's.** DS2 links Direct3D 2.0.21256 (docs/ds2-notes.md); SA2 links 21076 and
+Sonic & All-Stars Racing Transformed 21119, which has SA2's device layout. Renut's offsets were mapped from N&B
+(2.0.7645) to SA2 with a name for every source; DS2 should start from SA2's map and confirm each offset in its own
+code.
 
-- **Before the port's own work:** deko3d was *slower*: GPU-bound at 35-43 ms a frame against NVK's 19-24 ms in the
-  same race. The NVK path's GPU savings (copies, barriers, deferred clears, depth compression, ...) had to be redone
-  for deko3d, in five batches, before it caught up.
-- **After twelve console runs:** 26-32 fps in a race where NVK did 21-29; at its 960x540 scene option 35.2 fps on
-  average (28.0-47.7), GPU 24.6 ms a frame, the ring thread at 8.5 µs a draw (2,200 draws a frame).
-- **What it removed:** pipeline creation (about 59 ms each on NVK, the stutters of a first race) and NVK's CPU cost
-  per draw (pipeline lookups, descriptor sets, the draw itself: ~3.4 µs of the ~9 µs a draw the ring thread spent).
-  Also the driver build (MSYS2, Rust) and the Mesa patch.
-- **What it did not remove:** the GPU cost of the shaders (uam is not NAK, and NAK's tuning does not carry over: the
-  open items are individual shaders slower than on NVK), the game's own main thread, the NvMap handle limit.
-- **Cost:** about 13,000 lines (a second renderer backend, 73 files changed) and a new shader path: HLSL -> DXC ->
-  SPIR-V -> SPIRV-Cross -> GLSL -> uam -> DKSH, with changes to XenosRecomp's HLSL so SPIRV-Cross accepts it.
-  deko3d does not run on a PC: every check of the new backend is a console run, while the Vulkan renderer stays the PC
-  build and the reference. The branch is not merged into `main` and nothing newer has been published.
+## The steps, as they apply here
 
-## The arithmetic for Dark Souls II (twenty-second build, 540p, stock clocks)
+1. **Census.** The ~25 Direct3D functions Renut hooks, and the device layout. Already known from the native renderer
+   work (docs/ds2-notes.md): `DrawVertices` `sub_829C2E28`, `DrawIndexedVertices` `sub_829C3240`, `DrawVerticesUP`
+   `sub_829C2800`, `BeginVertices` `sub_829C2340`, Swap `sub_829BB060`, and the ring wait `sub_829B9C60`. Still to
+   find: `Direct3D_CreateDevice`, `KickOff`/`KickOffSegment`, `BeginRingBig`, the ring allocators,
+   `SetRingBufferParameters`, `BlockOnFence`, `CBlocker::Check`, `IsFencePending`, `InsertCallback`,
+   `SynchronizeToPresentationInterval`, `ClearF`, `Resolve`, `XGRegisterVertexShader`/`PixelShader`,
+   `CreateVertexDeclaration`, `D3DResource_Destroy`. `tools/d3d_match.py` needs a named reference image (N&B's or
+   SA2's), which is not here: the matching is by shape against the call graph we have, each confirmed by its calls.
+2. **Renut on the PC**, on plume's Vulkan back end, behind a boot key (`ds2_renderer = "renut"`), against the current
+   renderer frame by frame. This PC has no hardware Vulkan: lavapipe, as for the current renderer.
+3. **Shaders.** reblue-XenosRecomp -> DXC -> SPIR-V -> SPIRV-Cross -> GLSL -> banjo-nx's passes -> uam. DS2 has 1,409
+   containers (SA2: 103), so the console's first-use compiles and the DKSH cache matter much more here: the cache has
+   to be built on the PC from a pipeline list before a console test, or the first session stutters for a long time.
+4. **deko3d.** The guide tests first light in Ryujinx (banjo-nx's build). Ryujinx needs a real GPU and this PC has an
+   Intel HD 4000: either Ryujinx on lavapipe (to be tried; slow) or straight to the console.
+5. **Drop NVK** (`REXGLUE_SWITCH_NO_NVK`, `PLUME_SWITCH_NO_NVK`): the NRO loses the driver.
+6. **Console profile and the render thread work** (device deltas, store cards, chain reuse, wake batches, core layout).
+7. **Pacing and input latency.** DS2 runs at 30 frames a second on the Xbox 360 (presentation interval two): Renut's
+   pacing must keep the game's own interval.
+8. **Game shaders outside the NRO.** The GLSL is made from the game's shaders, so it is game data: it cannot be in
+   the repository or a public NRO. For the console tests it goes on the SD card with the package, as the game files do.
 
-| What | Here | nfsmw-nx (NVK) | What deko3d acts on |
-|---|---|---|---|
-| Ring thread per draw | 40-55 µs (LTO + PGO) | ~9 µs | only NVK's share of it |
-| NVK's own work | the deferred-recording thread, 3.7 % of the CPU (round-5 stack profile) | ~3.4 µs a draw | all of it |
-| Pipeline creation stalls | prewarmed from `cache/ds2_native_pipelines.bin`; none in the hang reports | the first race of a session | all of them |
-| GPU per frame | 45-62 ms (scene 20-32 ms) | 19-24 ms | possibly worse at first (uam) |
-| Where the CPU goes | two thirds the recompiled game, about a fifth the ring thread | the ring thread first | neither |
+## What changes in the repository
 
-What limits this game now is, in this order: the recompiled game's own code (the knights' water area: the GPU waits
-26 ms a frame), the ring thread's own work (indices, vertices, constants, the EDRAM emulation: API-independent), and
-the GPU at 720p. deko3d would take away the 3.7 % of NVK and a part of the ring thread's 40 µs, against a rewrite of
-the renderer's backend, including the parts this game depends on most (the EDRAM mode 4 aliases and the conversions
-by fragment and compute shaders, ZCULL with its patch, the render-scale rewrite of the SPIR-V), all of it written
-against Vulkan and checked on the PC with lavapipe.
+Third-party code comes in as it is, with its licence and a diff in `patches/` for every change: plume with banjo-nx's
+deko3d back end (MIT), uam (zlib/MIT/MPL-2.0), reblue-XenosRecomp (MIT), Renut's renderer (`app/src/renut_engine`,
+see below). The SDK takes sa2-nx 1.0.3's changes (`patches/rexglue-sdk-v0.10.0.patch` there: the no-NVK switch, the
+input read hook, the core layout, the emulator start). The current renderer (`app/src/me`) stays as the reference until
+Renut draws everything, as in sa2-nx, and NVK (Mesa 26.2.1 now; the 26.2.4 SDK is in `_tools`) with it.
 
-## Recommendation
+## Open points for the user
 
-Not now. The CPU rounds of sa2-nx 1.0.2 (ported on 2026-10-17: guarded direct calls, read-only constants, float loads,
-leaf and loop locals, flush-mode proofs) go after the two thirds that deko3d does not touch, and the ring thread's
-cost is our own code. Worth revisiting when:
-
-1. the ring thread is under ~15 µs a draw and NVK's share becomes a large part of it, or
-2. a console profile shows pipeline or descriptor work of NVK in the frame time, or
-3. nfsmw-nx (or another ReXGlue port) publishes a deko3d backend that reached parity and could be shared: the
-   backend is the renderer family's, not the game's, so most of it would carry over.
-
-If it is ever done, the order nfsmw-nx used is the one to follow: the shader path first, alone (all variants of
-`ds2_shaders.mesp` through uam, byte-identical DKSH on the PC and the console), then an empty renderer, then the first
-frames, then parity, and the NVK NRO stays as the fallback until deko3d beats it on the same scenes at stock clocks.
+- **reNut's licence.** reNut (masterspike52) has no licence file; sa2-nx's notes say its author permits reuse by that
+  developer's ports. This repository needs the same permission before Renut's code is committed here.
+- **Ryujinx.** See step 4.
