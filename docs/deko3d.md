@@ -61,3 +61,49 @@ Renut draws everything, as in sa2-nx, and NVK (Mesa 26.2.1 now; the 26.2.4 SDK i
 - **reNut's licence.** reNut (masterspike52) has no licence file; sa2-nx's notes say its author permits reuse by that
   developer's ports. This repository needs the same permission before Renut's code is committed here.
 - **Ryujinx.** See step 4.
+
+## The census (2026-10-22)
+
+`tools/d3d_callgraph.py` (the call graph of the generated code, with the kernel imports each function calls) and the
+disassembly in the generated comments. Each function was identified by what it does, then checked against SA2's
+distances where the linker kept the same neighbours.
+
+**The device layout is SA2's.** `Direct3D_CreateDevice` allocates 24,704 bytes (SA2: 24,704, `0x6080`), and DS2's
+Direct3D reads the device at SA2's offsets throughout: fences 11024/11036, flags 11068/11072, the vertex declaration
+12240, the index buffer 12812, targets 12816, textures 12920, pixel/vertex shader 13068/13072, the inline ring end
+13844, the command buffer 13920, the automatic buffers 15228, the present fence 15344, the swap count 16968, the
+behaviour flags 24392. Renut's SA2 offsets are the starting point as they are; each one is still read once more in DS2's
+code when its hook is ported.
+
+| Function | DS2 | SA2 | How it was found |
+|---|---|---|---|
+| Direct3D_CreateDevice | `829BA480` | `8254FC10` | allocates 24,704; the game calls it at `82FD9F80`; calls the hardware path `829C20B0` |
+| hardware path (SA2 `sub_8255CDA0`) | `829C20B0` | | `VdInitializeEngines`, `KeQueryPerformanceFrequency`, SetRingBufferParameters |
+| RingBufferDeviceAllocate | `829A8008` | `8254D4B8` | BlockOnFence - 0x230, as in SA2 |
+| CDevice::BlockOnFence | `829A8238` | `8254D6E8` | completed (11024) against next (11036); KickOff, then the CBlocker wait |
+| AllocateInlineData | `829A8450` | `8254D9A8` | segment allocator - 0xE8, as in SA2 |
+| ring segment allocator | `829A8538` | `8254DA90` | |
+| CDevice::KickOffSegment | `829A92D8` | `8254E830` | segment allocator + 0xDA0, as in SA2; called by KickOff |
+| CDevice::KickOff | `829A9618` | `8254EBB8` | 75 callers; closes the segment, returns the write position (+48) |
+| IsFencePending | `829A9758` | `8254ECF8` | KickOff + 0x140, as in SA2; the global device, the fence compare |
+| BeginRingBig | `829A9850` | `8254EDF8` | IsFencePending + 0xF8 |
+| InsertCallback | `829A9940` | `8254EEE8` | BeginRingBig + 0xF0, as in SA2 |
+| SetRingBufferParameters | `829A9998` | `8254EF40` | InsertCallback + 0x58, as in SA2; `VdInitializeRingBuffer` |
+| CBlocker ctor / Check / dtor | `829B9B68` / `829B9C60` / `829B9B98` | `8254F400` (Check) | the wait loop of every fence wait |
+| SynchronizeToPresentationInterval | `829BB060` | `825589D8` | Swap - 0x4C0, as in SA2 (to read again when ported) |
+| Swap | `829BB520` | `82558E98` | calls `VdSwap`, reads 15344 and 16968 |
+| ClearF | `829CCC28` | `82563978` | Clear (`829CCD60`, D3DCOLOR) calls it per rectangle: Z in f1, stencil in r8 |
+| Resolve | `829B60E8` | `825656F8` | 19 instructions: reads the caller's +92 and +100, calls `829B4F90` |
+| BeginVertices | `829C2340` | `82565758` | |
+| DrawVerticesUP | `829C2800` | `82565C18` | |
+| DrawVertices | `829C2E28` | `82565C60` | |
+| DrawIndexedVertices | `829C3240` | `82566078` | DrawVertices + 0x418, as in SA2 |
+| XGRegisterVertexShader | `829B10E0` | `8255E658` | (object, physical part): type 6, physical at +32, the 872-byte object |
+| XGRegisterPixelShader | `829AF490` | `8255DBF8` | type 7, physical at +24 |
+| CreateVertexDeclaration | `829AFA30` | `8255E198` | (elements) -> declaration: counts the 12-byte elements to the 0xFF stream, allocates, initialises (`829AF940`) |
+| D3DResource_Destroy | `829ACF00` | `8254A200` | Release (`829AD1A8`) calls it at zero; a switch on the resource type |
+
+Also DS2's own: `BeginIndexedVertices` `829C2848` and `DrawIndexedVerticesUP` `829C2D88` (SA2's linker dropped
+them); the header copies of the shaders `829B10A0` (+872) and `829B0F78` (+40), Renut's container offsets. **The game
+also initialises vertex declarations in its own memory** (`829AF940` called directly from `826A8F08`): that path needs
+the declaration hook too, or those declarations never reach Renut.
