@@ -4,6 +4,21 @@ The builds below are newest first; each section says what to copy, what changed 
 the end, is the **first build for the console**: at that point the game had reached the first map with the right
 picture on the PC, only through software Vulkan, and nothing had been tested on the Switch yet.
 
+## The measuring points (from 2026-10-22)
+
+The user's four points, each one a place the game itself puts the player in, with the same position and view every
+time (the old three were spots where the player stopped by hand, and small differences between sessions could give a
+false reading):
+
+1. **The start of the game:** right after the opening cutscene, where a new game puts the player.
+2. **The Fire Keepers' house:** where the game puts the player after creating the character.
+3. **Heide's Tower of Flame:** travel there from Majula, go to the first bonfire and warp to that same bonfire; when
+   the warp ends the player always stands in the same place.
+4. **The Forest of Fallen Giants:** back through Majula to the forest, and the same warp to its first bonfire.
+
+Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
+at stock clocks.
+
 ## Twenty-fourth build (2026-10-17): the new code with LTO + PGO
 
 Copy over: `ds2-opt.nro`. `ds2.nro`, `ds2.toml` and `configs/` are the twenty-third build's. You can delete
@@ -542,7 +557,8 @@ In the `configs/` folder; to use one, copy it over `ds2.toml`:
 - `ds2_emulated_gpu.toml`: uses the emulated GPU instead of the native renderer. It is extremely slow on the console;
   it is only for comparing the picture on a still screen.
 - `ds2_profile.toml`: samples the CPU stacks (`logs/rex/rex_profile_stacks.log` since the twenty-fourth build); a little slower.
-- `ds2_test_*.toml`: the A/B tests of earlier builds.
+- `ds2_test_720p.toml`: handheld mode at 1280x720 (the other A/B tests of earlier builds were decided and removed on
+  2026-10-22).
 
 Up to the twenty-second build these files had Portuguese names (`ds2_padrao`, `ds2_melhorias_desligadas`,
 `ds2_gpu_emulada`, `ds2_perfil`, `ds2_teste_*`), which the older sections below still use.

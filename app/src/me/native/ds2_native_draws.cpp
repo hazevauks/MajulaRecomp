@@ -462,7 +462,7 @@ REXCVAR_DEFINE_INT32(ds2_native_textures_binding_thread_priority, 0x2D, "SA2 ren
  * no decision of the ring: it only counts, and reports every 10 s in the "C3 reuse by content"
  * line.
  */
-REXCVAR_DEFINE_BOOL(ds2_native_diag_reuse, true, "SA2 renderer",
+REXCVAR_DEFINE_BOOL(ds2_native_diag_reuse, false, "SA2 renderer",
                     "Native renderer (measurement only): counts how many new textures have the "
                     "same content and shape as another live one in the cache (the game reloads packs at another address) "
                     "and how many of those other ones have gone unused for more than 120 frames. Changes nothing. false = no "
@@ -1152,7 +1152,7 @@ REXCVAR_DEFINE_BOOL(ds2_native_dynamic_state3, false, "SA2 renderer",
                     "Native renderer: blend, equation and color mask with vkCmdSet* "
                     "(VK_EXT_extended_dynamic_state3) instead of in the pipeline. Self-checked. false = in the "
                     "pipeline, as before");
-REXCVAR_DEFINE_BOOL(ds2_native_diag_memory_upload, true, "SA2 renderer",
+REXCVAR_DEFINE_BOOL(ds2_native_diag_memory_upload, false, "SA2 renderer",
                     "Native renderer: when creating the upload buffer, measures once how many MB/s can be written from the "
                     "CPU into each visible memory type (8 MB) and how much publishing them costs")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);

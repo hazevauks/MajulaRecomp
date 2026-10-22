@@ -45,23 +45,26 @@ $noBom = New-Object System.Text.UTF8Encoding($false)
     ($base -replace 'ds2_renderer_native = true', 'ds2_renderer_native = false') +
     "`n# The SDK's emulated GPU instead of the native renderer (very slow on the console; for comparing the picture).`n" +
     "ds2_gpu_backend = `"vulkan`"`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_profile.toml'), ($base +
+# 2026-10-22: the profile config used to append keys the base already has (ds2_gpu_marks_categories,
+# switch_profile_report). A TOML file with a key twice is invalid, so the game ignored the whole file and ran on its
+# built-in defaults (ZCULL off, no stack sampling): every profiled session from the twenty-third build on was lost.
+# Set-Key replaces a key that is there and appends one that is not; the check at the end parses every file.
+function Set-Key([string]$text, [string]$key, [string]$value) {
+    $pattern = "(?m)^\s*$([regex]::Escape($key))\s*=.*$"
+    if ($text -match $pattern) { return [regex]::Replace($text, $pattern, "$key = $value") }
+    return $text.TrimEnd() + "`n$key = $value`n"
+}
+$profileText = Set-Key (Set-Key (Set-Key $base 'ds2_gpu_marks_categories' 'true') 'switch_profile_report' 'true') `
+    'switch_profile_stacks' 'true'
+[IO.File]::WriteAllText((Join-Path $configs 'ds2_profile.toml'), ($profileText +
     "`n# Measuring: GPU time per pass category and sampling of the CPU stacks (rex_profile_stacks.log). It runs`n" +
-    "# a little slower; it is for finding where the time goes.`n" +
-    "ds2_gpu_marks_categories = true`nswitch_profile_stacks = true`nswitch_profile_report = true`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_zcull.toml'), ($base +
-    "`n# A/B test: ZCULL on the single-sample depth targets too (the game's main one). The stencil imports then`n" +
-    "# use masked passes instead of the copy engine.`n" +
-    "ds2_native_zcull_1x_depth = true`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_no_clear_shortcut.toml'), ($base +
-    "`n# A/B test: without the shortcut for the clears through 4x surfaces (round 2): as in the build before it.`n" +
-    "ds2_native_edram4_clear_color0_alias = false`n"), $noBom)
-[IO.File]::WriteAllText((Join-Path $configs 'ds2_test_compute_conversion.toml'), (
-    ($base -replace 'ds2_native_conversion_frag = true', 'ds2_native_conversion_frag = false') +
-    "`n# A/B test: the HDR target's format conversions by compute shader, as up to the fifteenth build.`n"), $noBom)
+    "# a little slower; it is for finding where the time goes.`n"), $noBom)
 [IO.File]::WriteAllText((Join-Path $configs 'ds2_test_720p.toml'), (
     ($base -replace 'ds2_render_height_handheld = 540', 'ds2_render_height_handheld = 720') +
     "`n# A/B test: handheld mode at the game's own resolution (1280x720), as in the earlier builds.`n"), $noBom)
+# Every configuration must parse (a key twice makes the game ignore the whole file).
+& python -c "import sys, tomllib, pathlib; [tomllib.loads(p.read_text('utf-8')) for p in [pathlib.Path(sys.argv[1]), *pathlib.Path(sys.argv[2]).glob('*.toml')]]; print('configs: all parse')" (Join-Path $dest 'ds2.toml') $configs
+if ($LASTEXITCODE -ne 0) { throw 'a configuration does not parse as TOML' }
 if ($IncludeGame) {
     if ($LooseGame) {
         robocopy (Join-Path $root 'assets\game_root') (Join-Path $dest 'game_root') /E /NFL /NDL /NJH /NJS | Out-Null
