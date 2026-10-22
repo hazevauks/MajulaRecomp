@@ -26,45 +26,45 @@
 #include "renut_engine/gpu/log.h"
 #include "renut_engine/gpu/backend/render_thread.h"
 #include "renut_engine/gpu/banjo_renut_tuning.h"
-#include "renut_engine/gpu/sa2_line_compare.h"
+#include "renut_engine/gpu/ds2_line_compare.h"
 
 // sa2-nx (2026-10-20): see SnapshotKind below.
-REXCVAR_DEFINE_BOOL(sa2_renut_snapshot_deltas, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_snapshot_deltas, true, "DS2/Renderer",
                     "Renut's renderer: a draw keeps what changed in the device since the device's previous draw (its "
                     "64-byte chunks that differ, and the float constant groups the game marked dirty) instead of a "
                     "copy of the device's first 13,088 bytes; the render thread rebuilds the device from them. Off: "
                     "the whole copy for every draw")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_snapshot_deltas_constants, true, "SA2/Renderer",
-                    "Renut's renderer (sa2_renut_snapshot_deltas): the chain's draws tell the constant uploads which "
+REXCVAR_DEFINE_BOOL(ds2_renut_snapshot_deltas_constants, true, "DS2/Renderer",
+                    "Renut's renderer (ds2_renut_snapshot_deltas): the chain's draws tell the constant uploads which "
                     "float constant groups changed since the previous draw, so only those are compared with what the "
                     "GPU holds (as a recorded command buffer's replayed draws do); a frame's first draw compares them "
                     "all. Off: every draw compares every group its shaders read")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_capture_batches, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_capture_batches, true, "DS2/Renderer",
                     "Renut's renderer (with banjo_renut_capture_pool): the game thread takes its draws' captures from "
                     "the pool, and the render thread gives them back, 32 at a time instead of one lock of the pool's "
                     "per draw on each thread. Off: one at a time")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_snapshot_deltas_narrow, true, "SA2/Renderer",
-                    "Renut's renderer (sa2_renut_snapshot_deltas): the game thread compares only the device chunks the "
+REXCVAR_DEFINE_BOOL(ds2_renut_snapshot_deltas_narrow, true, "DS2/Renderer",
+                    "Renut's renderer (ds2_renut_snapshot_deltas): the game thread compares only the device chunks the "
                     "render thread reads (40 of 77: not the dirty masks, ring pointers and call tables before the fetch "
                     "constants, nor the private words from 11008 to 12223, which only the hooks use on the live "
                     "device). The second console run: comparing all 77 was 9 % of the game thread. Off: all 77")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_deferred_chain, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_deferred_chain, true, "DS2/Renderer",
                     "Renut's renderer (from futari-nx, as peggle2-nx has it): Begin*Vertices draws are deltas of the "
-                    "device snapshot chain too, not whole 13 KB copies (sa2_renut_snapshot_deltas). Made and queued "
+                    "device snapshot chain too, not whole 13 KB copies (ds2_renut_snapshot_deltas). Made and queued "
                     "under the chain's lock; every hook queues its device's waiting Begin*Vertices draw first, so the "
                     "chain stays in order. Off: whole copies outside the chain, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_neon_compare, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_neon_compare, true, "DS2/Renderer",
                     "Renut's renderer on the Switch: the device chunks of the delta chain and the pushed shared "
                     "constants' lines are compared 64 bytes at a time with NEON (four 128-bit loads a side) instead of "
                     "eight 64-bit words, which GCC left scalar. Off: the 64-bit words")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_snapshot_deltas_verify, false, "SA2/Renderer",
-                    "Tests (sa2_renut_snapshot_deltas): every draw also keeps the whole copy, and the render thread "
+REXCVAR_DEFINE_BOOL(ds2_renut_snapshot_deltas_verify, false, "DS2/Renderer",
+                    "Tests (ds2_renut_snapshot_deltas): every draw also keeps the whole copy, and the render thread "
                     "counts the draws whose rebuilt device differs from it in any byte (the 10 s \"[renut] device "
                     "snapshots\" line)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
@@ -73,7 +73,7 @@ namespace renut::gpu {
 
 namespace {
 
-// sa2-nx (2026-10-20, sa2_renut_snapshot_deltas): how a queued draw holds its device.
+// sa2-nx (2026-10-20, ds2_renut_snapshot_deltas): how a queued draw holds its device.
 //   Whole:  DrawCapture::state is the device's first kDeviceSnapshotSize bytes (every draw before; the Begin*Vertices
 //           draws, which are queued later than they are captured, still).
 //   Rebase: the same, and the render thread takes it as its device (the chain's first draw, and each frame's).
@@ -90,7 +90,7 @@ struct DrawCapture {
   std::vector<u8> state;  // the device, kDeviceSnapshotSize bytes (or a delta: SnapshotKind)
   std::vector<u8> vertices, indices;
   SnapshotKind snapshot = SnapshotKind::Whole;  // sa2-nx (2026-10-20)
-  std::vector<u8> verify;  // sa2-nx: the whole device as well (sa2_renut_snapshot_deltas_verify)
+  std::vector<u8> verify;  // sa2-nx: the whole device as well (ds2_renut_snapshot_deltas_verify)
   DrawCall call;
   // banjo-nx (2026-10-19, CPU proposal 23): a queued clear's or resolve's arguments. They come from the same pool as
   // the draws' captures: each made three heap allocations on the game thread (its arguments, a device snapshot, a
@@ -111,7 +111,7 @@ struct DrawCapture {
 // the queued closure) and freed them on the render thread: about 2,000 a frame through the Switch's one malloc lock.
 // A pooled capture keeps its snapshot's storage, and the closure holds a plain pointer, which std::function stores
 // without allocating. Off: every capture is deleted after use, as before (a new one per draw).
-// sa2-nx (2026-10-20, sa2_renut_capture_batches): the pool's lock was taken twice a draw, by the game thread (Take) and
+// sa2-nx (2026-10-20, ds2_renut_capture_batches): the pool's lock was taken twice a draw, by the game thread (Take) and
 // by the render thread (Give), on two cores: its cache line went back and forth about 1,800 times a City Escape frame.
 // Each thread now keeps a few captures of its own and goes to the pool kBatch at a time.
 bool CaptureBatchesOn();
@@ -197,12 +197,12 @@ struct DeferredDraw {
 };
 std::mutex g_deferred_mutex;
 std::unordered_map<u32, DeferredDraw> g_deferred;
-// sa2-nx (2026-10-20, sa2_renut_callbacks_fast): g_deferred.size(), kept under g_deferred_mutex and read without it
+// sa2-nx (2026-10-20, ds2_renut_callbacks_fast): g_deferred.size(), kept under g_deferred_mutex and read without it
 // (FlushDeferredVertices: every hook calls it first). A Begin*Vertices draw is flushed by the next hook of its device,
 // on the thread that made it, which sees the count in program order.
 std::atomic<size_t> g_deferred_count{0};
 
-// sa2-nx (2026-10-20, sa2_renut_snapshot_deltas): the delta chain's layout. Of the device's first kDeviceSnapshotSize
+// sa2-nx (2026-10-20, ds2_renut_snapshot_deltas): the delta chain's layout. Of the device's first kDeviceSnapshotSize
 // bytes, the float constants (VertexShaderF, PixelShaderF: 8 KB, two thirds) go by the groups m_Pending marks dirty
 // (one bit per four registers, bit 63 - group, as the recorded command buffers keep them: command_buffers.cpp); the
 // rest goes by 64-byte chunks (30 before the constants, 47 after them, the last one 32 bytes), those that differ from
@@ -227,7 +227,7 @@ constexpr u32 DeltaChunkSize(u32 i) {
                               : std::min(kDeltaUnitBytes, kDeltaTailBytes - (i - kDeltaHeadChunks) * kDeltaUnitBytes);
 }
 
-// sa2-nx (2026-10-20, sa2_renut_snapshot_deltas_narrow): the device bytes the render thread never reads from a draw's
+// sa2-nx (2026-10-20, ds2_renut_snapshot_deltas_narrow): the device bytes the render thread never reads from a draw's
 // device (DrawStateLocked and what it calls: the accessors of render/draw.cpp, textures.cpp, surfaces.cpp, the pipeline
 // key): before the fetch constants (the dirty masks, ring pointers and Set/Get*State call tables, which a recorded
 // command buffer's replay leaves zero too), and the private words 11008-12223 (the creation thread, the fences, the
@@ -307,41 +307,41 @@ DeltaChain g_delta;
 // The render thread's side: the device the chain's draws rebuild.
 alignas(64) u8 g_delta_device[d3d::kDeviceSnapshotSize];
 std::atomic<uint64_t> g_delta_verified{0}, g_delta_differ{0};
-// sa2_renut_snapshot_deltas_constants: the chain as a replay of the constant uploads' tracking (draw.h,
+// ds2_renut_snapshot_deltas_constants: the chain as a replay of the constant uploads' tracking (draw.h,
 // ReplayConstants): its id (a new one at each whole copy; the top bit keeps it apart from the command buffers'
 // replays, numbered from 1) and the float constant groups written since the upload last consumed them.
 uint64_t g_chain_id = 0, g_chain_count = 0;
 uint64_t g_chain_vs_dirty = ~uint64_t(0), g_chain_ps_dirty = ~uint64_t(0);
-// sa2_renut_chain_reuse: the number of the chain's last draw (draw.h ChainHint::seq; from 2).
+// ds2_renut_chain_reuse: the number of the chain's last draw (draw.h ChainHint::seq; from 2).
 uint64_t g_chain_seq = 1;
 
 bool DeltasOn() {
-  static const bool on = REXCVAR_GET(sa2_renut_snapshot_deltas);
+  static const bool on = REXCVAR_GET(ds2_renut_snapshot_deltas);
   return on;
 }
 bool ChainConstantsOn() {
-  static const bool on = DeltasOn() && REXCVAR_GET(sa2_renut_snapshot_deltas_constants);
+  static const bool on = DeltasOn() && REXCVAR_GET(ds2_renut_snapshot_deltas_constants);
   return on;
 }
 bool CaptureBatchesOn() {
-  static const bool on = REXCVAR_GET(sa2_renut_capture_batches);
+  static const bool on = REXCVAR_GET(ds2_renut_capture_batches);
   return on;
 }
 bool NeonCompareOn() {
-  static const bool on = REXCVAR_GET(sa2_renut_neon_compare);
+  static const bool on = REXCVAR_GET(ds2_renut_neon_compare);
   return on;
 }
-// sa2-nx (2026-10-20, from futari-nx via peggle2-nx): sa2_renut_deferred_chain (QueueDeferredDraw).
+// sa2-nx (2026-10-20, from futari-nx via peggle2-nx): ds2_renut_deferred_chain (QueueDeferredDraw).
 bool DeferredChainOn() {
-  static const bool on = REXCVAR_GET(sa2_renut_deferred_chain);
+  static const bool on = REXCVAR_GET(ds2_renut_deferred_chain);
   return on;
 }
 bool DeltasNarrowOn() {
-  static const bool on = REXCVAR_GET(sa2_renut_snapshot_deltas_narrow);
+  static const bool on = REXCVAR_GET(ds2_renut_snapshot_deltas_narrow);
   return on;
 }
 bool DeltasVerifyOn() {
-  static const bool on = DeltasOn() && REXCVAR_GET(sa2_renut_snapshot_deltas_verify);
+  static const bool on = DeltasOn() && REXCVAR_GET(ds2_renut_snapshot_deltas_verify);
   return on;
 }
 
@@ -349,7 +349,7 @@ bool DeltasVerifyOn() {
 // their packets; a snapshot taken after this has them clear, as the command
 // buffer ops' do.
 void ClearPending(d3d::Device *device) {
-  // sa2-nx (sa2_renut_snapshot_deltas): the dirty constant groups a whole capture consumes go with the chain's next
+  // sa2-nx (ds2_renut_snapshot_deltas): the dirty constant groups a whole capture consumes go with the chain's next
   // delta (its callers hold g_delta.mutex when the deltas are on).
   if (device == g_delta.device) {
     g_delta.vs |= uint64_t(device->m_Pending[0]);
@@ -359,10 +359,10 @@ void ClearPending(d3d::Device *device) {
     mask = 0;
 }
 
-// sa2-nx (sa2_renut_snapshot_deltas), on the render thread: the device a queued draw reads.
+// sa2-nx (ds2_renut_snapshot_deltas), on the render thread: the device a queued draw reads.
 const u8 *DeviceForDraw(const DrawCapture &capture) {
   if (capture.snapshot == SnapshotKind::Whole) {
-    g_chain_hint = {};  // not a chain draw (sa2_renut_chain_reuse)
+    g_chain_hint = {};  // not a chain draw (ds2_renut_chain_reuse)
     return capture.state.data();
   }
   if (capture.snapshot == SnapshotKind::Rebase) {
@@ -403,7 +403,7 @@ const u8 *DeviceForDraw(const DrawCapture &capture) {
   }
   if (!capture.verify.empty()) {
     g_delta_verified.fetch_add(1, std::memory_order_relaxed);
-    // sa2-nx (sa2_renut_snapshot_deltas_narrow): the bytes the render thread reads; with the narrow compare off, all.
+    // sa2-nx (ds2_renut_snapshot_deltas_narrow): the bytes the render thread reads; with the narrow compare off, all.
     bool same;
     if (DeltasNarrowOn()) {
       same = std::memcmp(g_delta_device + kDeltaUnreadEnd, capture.verify.data() + kDeltaUnreadEnd,
@@ -423,7 +423,7 @@ const u8 *DeviceForDraw(const DrawCapture &capture) {
                (g_delta_device[at] == capture.verify[at] || (DeltasNarrowOn() && !DeltaByteRead(at))))
           ++at;
         RGPU_WARN("Device snapshot delta: the rebuilt device differs from the device at +{} ({} draw): {:02X}, the "
-                  "device {:02X} (sa2_renut_snapshot_deltas_verify)",
+                  "device {:02X} (ds2_renut_snapshot_deltas_verify)",
                   at, capture.snapshot == SnapshotKind::Rebase ? "a whole" : "a delta", g_delta_device[at],
                   capture.verify[at]);
       }
@@ -433,7 +433,7 @@ const u8 *DeviceForDraw(const DrawCapture &capture) {
 }
 
 void QueueCapture(DrawCapture *capture) {
-  // sa2-nx (2026-10-20, sa2_renut_prefetch_next): the capture and its device bytes, written on the game thread's core,
+  // sa2-nx (2026-10-20, ds2_renut_prefetch_next): the capture and its device bytes, written on the game thread's core,
   // are fetched into the render thread's cache while it does the item before this one.
   render_thread::QueuePrefetched(capture, capture->state.data(), [capture] {
     DrawCall call = capture->call;
@@ -443,7 +443,7 @@ void QueueCapture(DrawCapture *capture) {
       call.up_indices = capture->indices.data();
     const u8 *device = DeviceForDraw(*capture);
     if (capture->snapshot != SnapshotKind::Whole && ChainConstantsOn()) {
-      // sa2-nx (sa2_renut_snapshot_deltas_constants): every constant is the rebuilt device's (no running device).
+      // sa2-nx (ds2_renut_snapshot_deltas_constants): every constant is the rebuilt device's (no running device).
       const ReplayConstants chain{nullptr, ~uint64_t(0), ~uint64_t(0), &g_chain_vs_dirty, &g_chain_ps_dirty,
                                   g_chain_id};
       DrawStateLocked(device, call, &chain);
@@ -472,7 +472,7 @@ DrawCapture *Capture(u32 device_va, const DrawCall &call) {
   return capture;
 }
 
-// sa2-nx (2026-10-20, sa2_renut_snapshot_deltas): a draw of the chain. Requires g_delta.mutex, held until the capture
+// sa2-nx (2026-10-20, ds2_renut_snapshot_deltas): a draw of the chain. Requires g_delta.mutex, held until the capture
 // is queued.
 DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
   auto *device = GuestPtr<d3d::Device>(device_va);
@@ -509,11 +509,11 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     DeltaHeader h{};
     u32 chunks = 0;
     const DeltaChunkList &list = DeltasNarrowOn() ? kDeltaReadChunks : kDeltaAllChunks;
-    const bool neon = NeonCompareOn();  // sa2-nx (sa2_renut_neon_compare)
+    const bool neon = NeonCompareOn();  // sa2-nx (ds2_renut_neon_compare)
     for (u32 k = 0; k < list.count; ++k) {
       const u32 i = list.index[k];
       const u32 at = DeltaChunkOffset(i), size = DeltaChunkSize(i);
-      const bool differs = size == kDeltaUnitBytes ? sa2::renut::Line64Differs(bytes + at, c.shadow + at, neon)
+      const bool differs = size == kDeltaUnitBytes ? ds2::renut::Line64Differs(bytes + at, c.shadow + at, neon)
                                                    : std::memcmp(bytes + at, c.shadow + at, size) != 0;
       if (!differs)
         continue;
@@ -582,7 +582,7 @@ std::string SnapshotDeltaReport() {
     return {};
   const double per_delta = double(std::max<uint64_t>(deltas, 1));
   std::string line = fmt::format(
-      "device snapshots (sa2_renut_snapshot_deltas): {} draws, {:.0f} bytes kept a draw on average (the whole device "
+      "device snapshots (ds2_renut_snapshot_deltas): {} draws, {:.0f} bytes kept a draw on average (the whole device "
       "is {}); {:.1f} chunks and {:.1f} constant groups a delta; {} whole copies (the frames' first draws); {} "
       "Begin*Vertices draws as whole copies",
       draws, double(bytes) / double(draws), d3d::kDeviceSnapshotSize, double(chunks) / per_delta,
@@ -597,7 +597,7 @@ std::string SnapshotDeltaReport() {
 void QueueDraw(u32 device_va, const DrawCall &call, u32 up_vertex_bytes, u32 up_index_bytes) {
   FlushDeferredVertices(device_va);
   RunReadyCallbacks();
-  // sa2-nx (2026-10-20, sa2_renut_snapshot_deltas): made and queued under the chain's lock.
+  // sa2-nx (2026-10-20, ds2_renut_snapshot_deltas): made and queued under the chain's lock.
   std::unique_lock<std::mutex> chain;
   if (DeltasOn())
     chain = std::unique_lock<std::mutex>(g_delta.mutex);
@@ -614,7 +614,7 @@ void QueueDraw(u32 device_va, const DrawCall &call, u32 up_vertex_bytes, u32 up_
 void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u32 bytes) {
   FlushDeferredVertices(device_va);
   RunReadyCallbacks();
-  // sa2-nx (2026-10-20, sa2_renut_deferred_chain, from futari-nx via peggle2-nx): a Begin*Vertices draw of the chain
+  // sa2-nx (2026-10-20, ds2_renut_deferred_chain, from futari-nx via peggle2-nx): a Begin*Vertices draw of the chain
   // too. Made under the chain's lock and queued by FlushDeferredVertices under it as well, before any other draw of the
   // device is made (every hook flushes its device's deferred draw first), so the render thread still applies the chain
   // in order. A draw that will not be queued (no scratch) stays a whole capture outside the chain, as before.
@@ -642,7 +642,7 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
   }
   DrawCapture *capture = nullptr;
   {
-    // sa2-nx (sa2_renut_snapshot_deltas): a whole capture (queued later than made: outside the chain), whose dirty
+    // sa2-nx (ds2_renut_snapshot_deltas): a whole capture (queued later than made: outside the chain), whose dirty
     // constant groups ClearPending hands to the chain's next delta.
     std::unique_lock<std::mutex> chain;
     if (DeltasOn())
@@ -668,7 +668,7 @@ void FlushDeferredVertices(u32 device_va) {
   FlushRecordedVertices(device_va);
   if (HookFastPathsOn() && g_deferred_count.load(std::memory_order_acquire) == 0)
     return;  // sa2-nx (2026-10-20): none waiting, no lock
-  // sa2-nx (2026-10-20, sa2_renut_deferred_chain): a chain draw is queued under the chain's lock (taken before the
+  // sa2-nx (2026-10-20, ds2_renut_deferred_chain): a chain draw is queued under the chain's lock (taken before the
   // deferred map's, as QueueDeferredDraw takes them), so no draw of the chain is made or queued between.
   std::unique_lock<std::mutex> chain;
   if (DeltasOn() && DeferredChainOn())

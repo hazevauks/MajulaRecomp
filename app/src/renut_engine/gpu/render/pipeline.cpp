@@ -998,7 +998,7 @@ bool BuildDrawLayout(VideoState &s) {
 static plume::RenderPipeline *GetPipelineSlow(const PipelineKey &key, const PipelineInputs &inputs, uint8_t &kind,
                                               uint64_t &memo_epoch);
 
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): GetPipelineLocked's calls counted, and the prebuild epoch: a draw whose key
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): GetPipelineLocked's calls counted, and the prebuild epoch: a draw whose key
 // is the previous draw's takes that draw's answer when no lookup was made since and no prebuilt pipeline came in
 // (DrawStateLocked). The answer depends on nothing else: the last key and the memo change only in the lookups, and a
 // memo entry of a generic pipeline is held only for its prebuild epoch.

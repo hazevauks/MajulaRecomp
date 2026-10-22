@@ -24,22 +24,22 @@
 #include <rex/cvar.h>
 
 // sa2-nx (2026-10-20): see g_done_waiters and Run.
-REXCVAR_DEFINE_BOOL(sa2_renut_done_notify_waiters, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_done_notify_waiters, true, "DS2/Renderer",
                     "Renut's render thread signals its work done (frames, fences, drains) only when a thread waits for "
                     "it: a signal is a kernel call on the Switch even with nobody waiting, and it made one after every "
                     "batch of work. Off: after every batch, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_prefetch_next, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_prefetch_next, true, "DS2/Renderer",
                     "Renut's render thread asks for the next draw's capture (written on the game thread's core) to be "
                     "brought into its cache while it does the draw before it")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_INT32(sa2_renut_wake_batch, 16, "SA2/Renderer",
+REXCVAR_DEFINE_INT32(ds2_renut_wake_batch, 16, "DS2/Renderer",
                      "Renut's render thread, when it has caught up and sleeps, is woken by the game's draws only once "
                      "this many are queued (each wake is a kernel call on both threads; the fourth console run woke it "
                      "for almost every draw). Every other item (frames, fences, resources), every wait for it and a "
                      "2 ms timer still wake it at once. 1 or less: every draw wakes it, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_batch_clock, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_batch_clock, true, "DS2/Renderer",
                     "Renut's render thread reads the clock once per batch of work instead of once per item (about "
                     "1,800 items a frame in City Escape); its busy time per frame is the same sum")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
@@ -63,10 +63,10 @@ using Clock = std::chrono::steady_clock;
 struct Item {
   std::function<void()> work;
   bool locked = true;  // run with State().mutex held
-  const void *prefetch[2] = {};  // sa2-nx (2026-10-20, sa2_renut_prefetch_next): fetched while the item before runs
+  const void *prefetch[2] = {};  // sa2-nx (2026-10-20, ds2_renut_prefetch_next): fetched while the item before runs
 };
 
-// sa2-nx (2026-10-20, sa2_renut_prefetch_next): the next item's data into the cache (its first lines).
+// sa2-nx (2026-10-20, ds2_renut_prefetch_next): the next item's data into the cache (its first lines).
 inline void PrefetchItem(const Item &item) {
   if (const auto *a = static_cast<const char *>(item.prefetch[0])) {
     __builtin_prefetch(a);
@@ -88,17 +88,17 @@ std::condition_variable g_work_cv;  // work queued, or stopping
 // it has not seen is never missed.
 bool g_render_waiting = false;
 std::condition_variable g_done_cv;  // work done: frames, fences, drains; or stopped
-// sa2-nx (2026-10-20, sa2_renut_done_notify_waiters): threads in g_done_cv's waits (under g_mutex). A done signal goes
+// sa2-nx (2026-10-20, ds2_renut_done_notify_waiters): threads in g_done_cv's waits (under g_mutex). A done signal goes
 // only when there is one: a waiter checks its condition under g_mutex before it counts itself and sleeps, and the
 // state it waits for changes under g_mutex too, so no signal it needs is skipped.
 int g_done_waiters = 0;
 bool DoneNotifyAll() {
-  static const bool on = REXCVAR_GET(sa2_renut_done_notify_waiters);
+  static const bool on = REXCVAR_GET(ds2_renut_done_notify_waiters);
   return !on;
 }
-// sa2-nx (2026-10-20, sa2_renut_wake_batch): the draws queued before a sleeping render thread is woken (1: each).
+// sa2-nx (2026-10-20, ds2_renut_wake_batch): the draws queued before a sleeping render thread is woken (1: each).
 size_t WakeBatch() {
-  static const size_t n = size_t(std::max(1, int(REXCVAR_GET(sa2_renut_wake_batch))));
+  static const size_t n = size_t(std::max(1, int(REXCVAR_GET(ds2_renut_wake_batch))));
   return n;
 }
 std::vector<Item> g_queue;
@@ -161,7 +161,7 @@ void Run() {
       std::unique_lock lock(g_mutex);
       g_render_waiting = true;
       if (WakeBatch() > 1) {
-        // sa2-nx (sa2_renut_wake_batch): draws queued without a wake are taken within 2 ms at the latest.
+        // sa2-nx (ds2_renut_wake_batch): draws queued without a wake are taken within 2 ms at the latest.
         while (g_queue.empty() && !g_stopping)
           g_work_cv.wait_for(lock, std::chrono::milliseconds(2));
       } else {
@@ -177,12 +177,12 @@ void Run() {
     // first loading screen (a game thread's hook waits on the lock while the render thread's next item waits on it):
     // each item takes the lock on its own, as before.
     Clock::time_point start = Clock::now();
-    static const bool batch_clock = REXCVAR_GET(sa2_renut_batch_clock);
+    static const bool batch_clock = REXCVAR_GET(ds2_renut_batch_clock);
     if (batch_clock) {
       // sa2-nx (2026-10-20): the batch's start for every item (QueueFrame's item counts its frame up to itself from
       // there and leaves the rest of the batch to the next frame), one clock read at the end.
       g_item_start = start;
-      static const bool prefetch = REXCVAR_GET(sa2_renut_prefetch_next);
+      static const bool prefetch = REXCVAR_GET(ds2_renut_prefetch_next);
       const size_t n = batch.size();
       for (size_t i = 0; i < n; ++i) {
         if (prefetch && i + 1 < n)
@@ -231,7 +231,7 @@ void Start() {
   });
 }
 
-// sa2-nx (2026-10-20, sa2_renut_wake_batch): before a thread waits for the render thread, the draws queued without a
+// sa2-nx (2026-10-20, ds2_renut_wake_batch): before a thread waits for the render thread, the draws queued without a
 // wake are handed over. Requires g_mutex.
 void WakeForWaitLocked() {
   if (g_render_waiting && !g_queue.empty())
@@ -247,7 +247,7 @@ void Push(std::function<void()> work, bool locked, const void *prefetch0 = nullp
     if (g_running && !g_stopping) {
       g_queue.push_back({std::move(work), locked, {prefetch0, prefetch1}});
       ++g_items_queued;
-      // sa2-nx (sa2_renut_wake_batch): a draw wakes a sleeping render thread once enough are queued.
+      // sa2-nx (ds2_renut_wake_batch): a draw wakes a sleeping render thread once enough are queued.
       const bool wake = (g_render_waiting && (!draw || g_queue.size() >= WakeBatch())) ||
                         !banjo::renut_gpu::QueueNotifyIdleOn();
       lock.unlock();
@@ -272,7 +272,7 @@ void QueueUnlocked(std::function<void()> work) {
 }
 
 void QueuePrefetched(const void *prefetch0, const void *prefetch1, std::function<void()> work) {
-  Push(std::move(work), true, prefetch0, prefetch1, true);  // sa2-nx: the game's draws (sa2_renut_wake_batch)
+  Push(std::move(work), true, prefetch0, prefetch1, true);  // sa2-nx: the game's draws (ds2_renut_wake_batch)
 }
 
 void QueueFenceCompletion(u32 completion_va, u32 fence, uint64_t after_callback) {
@@ -335,8 +335,8 @@ bool WaitForFenceProgress(std::chrono::milliseconds timeout) {
   if (!g_running || g_stopping)
     return false;
   const uint64_t seen = g_fences_done;
-  WakeForWaitLocked();  // sa2-nx (sa2_renut_wake_batch)
-  ++g_done_waiters;  // sa2-nx (sa2_renut_done_notify_waiters)
+  WakeForWaitLocked();  // sa2-nx (ds2_renut_wake_batch)
+  ++g_done_waiters;  // sa2-nx (ds2_renut_done_notify_waiters)
   g_done_cv.wait_for(lock, timeout,
                      [seen] { return g_fences_done != seen || !g_running || g_stopping; });
   --g_done_waiters;
@@ -428,8 +428,8 @@ uint64_t QueueFrame(std::function<void()> work) {
   });
   const auto waiting = std::chrono::steady_clock::now();
   std::unique_lock lock(g_mutex);
-  WakeForWaitLocked();  // sa2-nx (sa2_renut_wake_batch)
-  ++g_done_waiters;  // sa2-nx (sa2_renut_done_notify_waiters)
+  WakeForWaitLocked();  // sa2-nx (ds2_renut_wake_batch)
+  ++g_done_waiters;  // sa2-nx (ds2_renut_done_notify_waiters)
   g_done_cv.wait(lock, [] {
     return !g_running || g_stopping || g_frames_queued - g_frames_done <= kMaxFramesAhead;
   });
@@ -469,8 +469,8 @@ void Drain() {
   if (!g_running || std::this_thread::get_id() == g_thread_id)
     return;
   const uint64_t target = g_items_queued;
-  WakeForWaitLocked();  // sa2-nx (sa2_renut_wake_batch)
-  ++g_done_waiters;  // sa2-nx (sa2_renut_done_notify_waiters)
+  WakeForWaitLocked();  // sa2-nx (ds2_renut_wake_batch)
+  ++g_done_waiters;  // sa2-nx (ds2_renut_done_notify_waiters)
   g_done_cv.wait(lock, [target] { return !g_running || g_items_done >= target; });
   --g_done_waiters;
 }

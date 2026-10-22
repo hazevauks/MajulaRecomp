@@ -620,7 +620,7 @@ void RecordRun(u32 device_va, u32 command_buffer_va) {
 }
 
 void FlushRecordedVertices(u32 device_va) {
-  // sa2-nx (2026-10-20, sa2_renut_callbacks_fast): every hook calls this first; nothing pending (always so without
+  // sa2-nx (2026-10-20, ds2_renut_callbacks_fast): every hook calls this first; nothing pending (always so without
   // command buffers, SA2's case) needs no lock. g_pending_count is kept under g_record_mutex (SyncPendingCount).
   if (HookFastPathsOn() && g_pending_count.load(std::memory_order_acquire) == 0)
     return;

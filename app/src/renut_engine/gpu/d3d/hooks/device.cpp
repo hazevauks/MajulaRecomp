@@ -34,10 +34,10 @@
 #include "renut_engine/gpu/banjo_renut_tuning.h"  // banjo-nx: CountFenceQuery
 #include "renut_engine/gpu/banjo_renut_checks.h"  // banjo-nx (package 27c): QueueKickFlush
 #include "renut_engine/gpu/banjo_renut_select.h"
-#include "renut_engine/gpu/sa2_renut_pacing.h"  // sa2-nx
+#include "renut_engine/gpu/ds2_renut_pacing.h"  // sa2-nx
 #include "renut_engine/gpu/banjo_renut_capture.h"  // sa2-nx: lockstep captures
-#include "sa2_capture.h"                            // sa2-nx: lockstep captures
-#include "me/sa2_render_mode.h"                     // sa2-nx (1.0.3.1): the PC's docked test toggles
+#include "ds2_capture.h"                            // sa2-nx: lockstep captures
+#include "me/ds2_render_mode.h"                     // sa2-nx (1.0.3.1): the PC's docked test toggles
 
 #include <rex/cvar.h>
 #include <rex/kernel/xboxkrnl/video.h>
@@ -63,10 +63,10 @@
 
 using namespace renut::gpu;
 
-// sa2-nx: frames the game has presented (src/sa2_d3d_trace.cpp; the test recorder waits on it).
-extern std::atomic<uint64_t> g_sa2_game_frames;
-REXCVAR_DECLARE(bool, sa2_renut_gamma_ramp);  // sa2-nx (2026-10-20): backend/present.cpp
-// sa2-nx (2026-10-20, sa2_renut_core_layout): the SDK's core layout (system/xthread.cpp).
+// sa2-nx: frames the game has presented (defined in src/ds2_capture.cpp).
+extern std::atomic<uint64_t> g_ds2_game_frames;
+REXCVAR_DECLARE(bool, ds2_renut_gamma_ramp);  // sa2-nx (2026-10-20): backend/present.cpp
+// sa2-nx (2026-10-20, ds2_renut_core_layout): the SDK's core layout (system/xthread.cpp).
 extern "C" uint32_t RexSetGuestThreadCoreLayout(int main_core, uint32_t others_mask, int others_preferred);
 
 // Kernel exports the device code uses.
@@ -90,8 +90,8 @@ constexpr u32 kRingDataSize = 1u << 20;
 
 // CDevice-private state Direct3D_CreateDevice (0x8264DF28) sets up, as byte
 // offsets into the device allocation. sa2-nx (2026-10-20): SA2's (d3d.h),
-// read from its Direct3D_CreateDevice sub_8254FC10, sub_8255C808, sub_8255C878
-// and the hardware path sub_8255CDA0; N&B's in brackets.
+// read from its Direct3D_CreateDevice sub_829BA480, sub_8255C808, sub_8255C878
+// and the hardware path sub_829C20B0; N&B's in brackets.
 // Byte whose 0x80 bit marks a device without GPU hardware (its device-type-2
 // path sets it); D3D's code skips hardware work for it.
 constexpr u32 kDeviceOffsetFlags = 11068;  // [10940]
@@ -104,7 +104,7 @@ constexpr u8 kDeviceFlagImmediateFences = 0x02;
 // Pointer to the completed-fence word IsFencePending / BlockOnFence read.
 constexpr u32 kDeviceOffsetFenceCompletion = 11024;  // [10896]
 // Nonzero while a KickOff is in progress (BlockOnFence does not kick then).
-// sa2-nx: the word SA2's CDevice::BlockOnFence (sub_8254D6E8) tests [13232].
+// sa2-nx: the word DS2's CDevice::BlockOnFence (sub_829A8238) tests [13232].
 constexpr u32 kDeviceOffsetInKickOff = 13600;
 // Side buffer (0x12C0 bytes) every device gets.
 constexpr u32 kDeviceOffsetSideBuffer = 17136;  // [16728]
@@ -114,7 +114,9 @@ constexpr u32 kDeviceOffsetsMinusOne[] = {21968, 21972, 15340};  // [21560, 2156
 constexpr u32 kDeviceTypeNoHardware = 2;
 // Copied from the global qword at 0x82F39B38 into every device.
 constexpr u32 kDeviceOffsetGlobalQword = 11008;  // [10880]
-constexpr u32 kGlobalQwordVa = 0x82980268;  // [0x82F39B38]
+// ds2-nx (2026-10-22): DS2's sub_829C1B18 loads it from 0x8343B708 (lis 0x8344, ld -18680) and stores it at
+// +11008 (SA2: 0x82980268).
+constexpr u32 kGlobalQwordVa = 0x8343B708;  // [0x82F39B38]
 // Hardware-path fields: two critical sections, QueryPerformanceFrequency and
 // its reciprocal as floats, and 41 words set to -1.
 constexpr u32 kDeviceOffsetCriticalSection0 = 15348;  // [14944]
@@ -122,8 +124,10 @@ constexpr u32 kDeviceOffsetCriticalSection1 = 15376;  // [14972]
 constexpr u32 kDeviceOffsetPerfFrequency = 21996;  // [21588]
 constexpr u32 kDeviceOffsetTitleMinusOne = 23380;
 // Import slot holding the address of the kernel's VdGlobalDevice variable.
-// sa2-nx: SA2's (sub_8255CDA0 stores the title device there) [0x820007FC].
-constexpr u32 kVdGlobalDeviceImportSlot = 0x82000710;
+// sa2-nx: DS2's (sub_829C20B0 stores the title device there) [0x820007FC].
+// ds2-nx (2026-10-22): DS2's hardware path sub_829C20B0 stores the device through 0x82000728 for a title process
+// (0x8200072C, VdGlobalXamDevice, for a system one: the imports are in ordinal order, 0x1BE then 0x1BF). SA2: 0x82000710.
+constexpr u32 kVdGlobalDeviceImportSlot = 0x82000728;
 
 constexpr u32 kE_OUTOFMEMORY = 0x8007000Eu;
 
@@ -865,17 +869,17 @@ void D3DDevice_RunCommandBuffer_hook(u32 device_va, u32 command_buffer,
 // The frame goes to the render thread, which presents it; the game thread
 // goes on with the next one, waiting only when it is more than
 // render_thread::kMaxFramesAhead ahead.
-constexpr u32 kSa2DeviceOffsetGammaRamp = 15408;  // sa2-nx: SA2's +0x3A9C (the +404 block)
+constexpr u32 kDs2DeviceOffsetGammaRamp = 15408;  // sa2-nx: SA2's +0x3A9C (the +404 block)
 
 // sa2-nx (2026-10-20): the SDK's core layout (system/xthread.cpp).
-REXCVAR_DEFINE_BOOL(sa2_renut_core_layout, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_core_layout, true, "DS2/Renderer",
                     "Renut's renderer on the Switch: at the first Swap the guest main thread (SA2's game and drawing "
                     "thread) is pinned to core 0 and every other guest thread gets cores 1-2 (the render thread is on "
                     "core 1), so no game thread time-slices with it. Off: every guest thread on any core, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
-  // sa2-nx (2026-10-20, sa2_renut_core_layout, the Switch): once, the guest main thread (SA2's game and drawing thread,
+  // sa2-nx (2026-10-20, ds2_renut_core_layout, the Switch): once, the guest main thread (SA2's game and drawing thread,
   // about a core of work in City Escape) alone on core 0, the other guest threads on cores 1-2 (preferring 2: the
   // render thread is pinned to core 1 at a higher priority). Before, every guest thread could run on any core, and at
   // their priority (0x3B) Horizon time-slices the threads of a core in 10 ms slices.
@@ -883,26 +887,26 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
   if (!core_layout_done) {
     core_layout_done = true;
 #if REX_PLATFORM_SWITCH
-    if (REXCVAR_GET(sa2_renut_core_layout)) {
+    if (REXCVAR_GET(ds2_renut_core_layout)) {
       const uint32_t moved = RexSetGuestThreadCoreLayout(0, 0x6, 2);
-      RGPU_INFO("[renut] sa2_renut_core_layout: the guest main thread on core 0, the other guest threads on cores "
+      RGPU_INFO("[renut] ds2_renut_core_layout: the guest main thread on core 0, the other guest threads on cores "
                   "1-2 ({} threads set)", moved);
     }
 #endif
   }
-  // sa2-nx: the console's vertical blank paced SA2's frames (its game speed follows them): sa2_renut_pacing.cpp.
-  sa2::renut::PaceSwap(device_va);
-  // sa2-nx: SA2's game frame count (src/sa2_d3d_trace.cpp: the flip, which only the GPU's vblank interrupt reaches).
-  const uint64_t game_frame = g_sa2_game_frames.fetch_add(1, std::memory_order_relaxed) + 1;
-  // sa2-nx (1.0.3.1): the PC's docked / handheld test toggles (sa2_render_test_toggle_at; nothing on the Switch).
-  sa2::render::OnPresented(game_frame);
-  // sa2-nx: a lockstep recording (sa2_capture.cpp) takes this very frame: asked before it is queued.
-  const uint64_t capture_ticket = sa2::capture::RenutLockstepOn() ? RequestFrameCapture() : 0;
+  // sa2-nx: the console's vertical blank paced SA2's frames (its game speed follows them): ds2_renut_pacing.cpp.
+  ds2::renut::PaceSwap(device_va);
+  // sa2-nx: SA2's game frame count (src/ds2_capture.cpp).
+  const uint64_t game_frame = g_ds2_game_frames.fetch_add(1, std::memory_order_relaxed) + 1;
+  // sa2-nx (1.0.3.1): the PC's docked / handheld test toggles (ds2_render_test_toggle_at; nothing on the Switch).
+  ds2::render::OnPresented(game_frame);
+  // sa2-nx: a lockstep recording (ds2_capture.cpp) takes this very frame: asked before it is queued.
+  const uint64_t capture_ticket = ds2::capture::RenutLockstepOn() ? RequestFrameCapture() : 0;
   renut::frame_stats::OnGameFrame();
   rex::latency::NoteGuestSwap();  // banjo-nx (2026-10-19, input latency): the probe
   const uint64_t swap_ordinal = rex::latency::SwapCount();
   FlushDeferredVertices(device_va);
-  SnapshotDeltasNewFrame();  // sa2-nx (2026-10-20, sa2_renut_snapshot_deltas)
+  SnapshotDeltasNewFrame();  // sa2-nx (2026-10-20, ds2_renut_snapshot_deltas)
 
   // What the original does after handing the frame to the video hardware:
   // count the swap, record the frame's fence tag, and end the frame with a
@@ -919,16 +923,16 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
     device[d3d::kDeviceOffsetSwapFlags] &= u8(~d3d::kSwapFlagPending);
     // sa2-nx (2026-10-20): the display gamma ramp SA2's SetGammaRamp keeps in the device (sub_825527D8: +15408, 768
     // words; N&B's +0x3A9C), which the original Swap writes to the display controller's table, goes to the
-    // scan-out (backend/present.cpp, sa2_renut_gamma_ramp).
-    if (REXCVAR_GET(sa2_renut_gamma_ramp))
-      Video::SetGammaRamp(device + kSa2DeviceOffsetGammaRamp);
+    // scan-out (backend/present.cpp, ds2_renut_gamma_ramp).
+    if (REXCVAR_GET(ds2_renut_gamma_ramp))
+      Video::SetGammaRamp(device + kDs2DeviceOffsetGammaRamp);
     // banjo-nx (package 27c): the frame's last vertex and texture fills are read here, before the Swap's fence
     // completes. They were read at the present, after it: the game, told the frame was done, could rewrite a dynamic
     // buffer for the next frame first, and the frame's last draws (the composite, the HUD) took the new bytes.
     banjo::renut_gpu::checks::QueueKickFlush();
     KickFence(device);
     // sa2-nx: banjo-nx's banjo_renut_game_gamma (N&B's +0x3A9C) is not taken; SA2's ramp goes to the present above
-    // (sa2_renut_gamma_ramp).
+    // (ds2_renut_gamma_ramp).
   }
 
   render_thread::QueueFrame([front_buffer, swap_ordinal] {
@@ -957,7 +961,7 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
   if (capture_ticket) {
     rex::ui::RawImage image;
     const bool ok = WaitFrameCapture(capture_ticket, image, 2000);
-    sa2::capture::RenutLockstepFrame(game_frame, ok ? &image : nullptr);
+    ds2::capture::RenutLockstepFrame(game_frame, ok ? &image : nullptr);
   }
 
   // sa2-nx: no ResetAllState (N&B's dirty masks; nothing reads them here: the draws read the device's state, and
@@ -1288,24 +1292,24 @@ void SetFence(u32 device_va) {
 // SA2's addresses (each read from SA2's code; N&B's in brackets). What differs:
 //   - Creation: SA2's own Direct3D_CreateDevice builds a device without hardware (its type-2 path: the device block,
 //     XenonGpu_Initialize and InitializeApiState, natively in N&B's hook), then the title device gets what the
-//     hardware path (sub_8255CDA0) gives it apart from the GPU: critical sections, VdGlobalDevice, a fence word, the
-//     timer frequency, and SA2's own InitializePresentationParameters (sub_8255CB20: the automatic back buffer and
+//     hardware path (sub_829C20B0) gives it apart from the GPU: critical sections, VdGlobalDevice, a fence word, the
+//     timer frequency, and DS2's own InitializePresentationParameters (sub_829C1E30: the automatic back buffer and
 //     SA2's automatic front buffer, a texture the Present resolves into) and InitializeApiState again, the hardware
 //     path's order.
 //   - The state setters, Clear's and Resolve's device work and the Present stay SA2's code: they write the device's
 //     shadows, which the draws read, and their packets go into the ring sink. Clear and Resolve queue the host work
-//     first (sa2_renut_hooks.cpp).
-//   - SA2's ring segment allocator (sub_8254DA90) rewinds the sink like the others.
+//     first (ds2_renut_hooks.cpp).
+//   - DS2's ring segment allocator (sub_829A8538) rewinds the sink like the others.
 
-REX_EXTERN(__imp__sub_8254FC10);  // Direct3D_CreateDevice, the original
-REX_EXTERN(__imp__sub_8255CB20);  // D3D::InitializePresentationParameters (CDevice*, D3DPRESENT_PARAMETERS*)
-REX_EXTERN(__imp__sub_8255C150);  // D3D::InitializeApiState (CDevice*)
+REX_EXTERN(__imp__sub_829BA480);  // Direct3D_CreateDevice, the original
+REX_EXTERN(__imp__sub_829C1E30);  // D3D::InitializePresentationParameters (CDevice*, D3DPRESENT_PARAMETERS*)
+REX_EXTERN(__imp__sub_829C1460);  // D3D::InitializeApiState (CDevice*)
 
 namespace {
 
 // HRESULT Direct3D_CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, void*, DWORD BehaviorFlags,
-//     D3DPRESENT_PARAMETERS*, IDirect3DDevice9 **ppReturnedDeviceInterface) [sub_8254FC10; N&B 0x8264DF28]
-void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
+//     D3DPRESENT_PARAMETERS*, IDirect3DDevice9 **ppReturnedDeviceInterface) [sub_829BA480; N&B 0x8264DF28]
+void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
   const u32 device_type = ctx.r4.u32;
   u32 behavior_flags = ctx.r6.u32;
   const u32 present_parameters = ctx.r7.u32;
@@ -1330,7 +1334,7 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
 
   // SA2's own no-hardware device.
   ctx.r4.u64 = kDeviceTypeNoHardware;
-  __imp__sub_8254FC10(ctx, base);
+  __imp__sub_829BA480(ctx, base);
   if (ctx.r3.u32 != 0)
     return;
   const u32 device_va = LoadGuestU32(out_va);
@@ -1364,7 +1368,7 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
     if (present_parameters) {
       ctx.r3.u64 = device_va;
       ctx.r4.u64 = present_parameters;
-      __imp__sub_8255CB20(ctx, base);
+      __imp__sub_829C1E30(ctx, base);
       if (!ctx.r3.u32) {
         RGPU_ERROR("Direct3D_CreateDevice: InitializePresentationParameters failed");
         ctx.r3.u64 = kE_OUTOFMEMORY;
@@ -1372,7 +1376,7 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
       }
     }
     ctx.r3.u64 = device_va;
-    __imp__sub_8255C150(ctx, base);
+    __imp__sub_829C1460(ctx, base);
     native::RewindRing(d);
     // From here the title device's fences complete on the render thread (KickFence).
     bytes[kDeviceOffsetFlags2] &= u8(~kDeviceFlagImmediateFences);
@@ -1382,9 +1386,9 @@ void Sa2CreateDevice(PPCContext &ctx, uint8_t *base) {
   ctx.r3.u64 = 0;  // S_OK
 }
 
-// SA2's ring segment allocator (sub_8254DA90 (CDevice*, DWORD Dwords): KickOffSegment, BeginRingBig and Swap call it
+// DS2's ring segment allocator (sub_829A8538 (CDevice*, DWORD Dwords): KickOffSegment, BeginRingBig and Swap call it
 // for a new segment): the sink again. Non-zero: the callers retry the ring, which has the room.
-u32 Sa2NewSegment_hook(u32 device_va, u32 /*dwords*/) {
+u32 Ds2NewSegment_hook(u32 device_va, u32 /*dwords*/) {
   native::Device d = native::DeviceAt(device_va);
   if (!d)
     return 0;
@@ -1393,9 +1397,9 @@ u32 Sa2NewSegment_hook(u32 device_va, u32 /*dwords*/) {
   return d.W(native::off::Ring) + 4;
 }
 
-// D3D::SynchronizeToPresentationInterval(CDevice*, BOOL) [sub_825589D8; N&B 0x8228A748]: its packets (the swap
+// D3D::SynchronizeToPresentationInterval(CDevice*, BOOL) [sub_829BB060; N&B 0x8228A748]: its packets (the swap
 // callback and the waits) are the GPU's; the swap is pending.
-void Sa2SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/) {
+void Ds2SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/) {
   native::Device d = native::DeviceAt(device_va);
   if (d)
     d.SetB(d3d::kDeviceOffsetSwapFlags, d.B(d3d::kDeviceOffsetSwapFlags) | d3d::kSwapFlagPending);
@@ -1403,19 +1407,19 @@ void Sa2SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/)
 
 }  // namespace
 
-BANJO_RENUT_HOOK_RAW(sub_8254FC10) {  // Direct3D_CreateDevice [0x8264DF28]
-  Sa2CreateDevice(ctx, base);
+BANJO_RENUT_HOOK_RAW(sub_829BA480) {  // Direct3D_CreateDevice [0x8264DF28]
+  Ds2CreateDevice(ctx, base);
 }
-BANJO_RENUT_HOOK(sub_8254EEE8, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback [0x821FB688]
-BANJO_RENUT_HOOK(sub_825589D8, Sa2SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval [0x8228A748]
-BANJO_RENUT_HOOK(sub_8254EBB8, KickOff_hook);  // D3D_CDevice_KickOff [0x82210AB0]
-BANJO_RENUT_HOOK(sub_8254E830, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment [0x822106C8]
-BANJO_RENUT_HOOK(sub_8254EDF8, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig [0x821F7C18]
-BANJO_RENUT_HOOK(sub_8254D4B8, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate [0x8222D3E0]
-BANJO_RENUT_HOOK_SHARED(sub_8254D9A8, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData [0x8222D240]
-BANJO_RENUT_HOOK(sub_8254DA90, Sa2NewSegment_hook);  // SA2's ring segment allocator
-BANJO_RENUT_HOOK(sub_8254EF40, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters [0x82657508]
-BANJO_RENUT_HOOK(sub_82558E98, D3DDevice_Swap_hook);  // D3DDevice_Swap [0x82287590]
-BANJO_RENUT_HOOK(sub_8254D6E8, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence [0x8228F558]
-BANJO_RENUT_HOOK_SHARED(sub_8254F400, CBlocker_Check_hook);  // D3D_CBlocker_Check [0x8264DCD0]
-BANJO_RENUT_HOOK(sub_8254ECF8, IsFencePending_hook);  // D3DDevice_IsFencePending [0x8228F650]
+BANJO_RENUT_HOOK(sub_829A9940, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback [0x821FB688]
+BANJO_RENUT_HOOK(sub_829BB060, Ds2SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval [0x8228A748]
+BANJO_RENUT_HOOK(sub_829A9618, KickOff_hook);  // D3D_CDevice_KickOff [0x82210AB0]
+BANJO_RENUT_HOOK(sub_829A92D8, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment [0x822106C8]
+BANJO_RENUT_HOOK(sub_829A9850, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig [0x821F7C18]
+BANJO_RENUT_HOOK(sub_829A8008, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate [0x8222D3E0]
+BANJO_RENUT_HOOK_SHARED(sub_829A8450, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData [0x8222D240]
+BANJO_RENUT_HOOK(sub_829A8538, Ds2NewSegment_hook);  // DS2's ring segment allocator
+BANJO_RENUT_HOOK(sub_829A9998, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters [0x82657508]
+BANJO_RENUT_HOOK(sub_829BB520, D3DDevice_Swap_hook);  // D3DDevice_Swap [0x82287590]
+BANJO_RENUT_HOOK(sub_829A8238, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence [0x8228F558]
+BANJO_RENUT_HOOK_SHARED(sub_829B9C60, CBlocker_Check_hook);  // D3D_CBlocker_Check [0x8264DCD0]
+BANJO_RENUT_HOOK(sub_829A9758, IsFencePending_hook);  // D3DDevice_IsFencePending [0x8228F650]

@@ -5,9 +5,12 @@
 #   bash tools/deko3d_build_tools.sh [SPIRV-Cross source]
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SPIRV_CROSS_SRC="${1:-/c/devkitPro/UnleashedRecomp-NX/thirdparty/MoltenVK/SPIRV-Cross}"
+# ds2-nx: KhronosGroup/SPIRV-Cross at tag vulkan-sdk-1.4.304.0, cloned into _tools (banjo-nx: UnleashedRecomp-NX's
+# MoltenVK copy), and this machine's MSYS2 (banjo-nx: devkitPro's, /c/devkitPro/msys2).
+SPIRV_CROSS_SRC="${1:-$ROOT/_tools/SPIRV-Cross}"
 OUT="$ROOT/out/deko3d_tools"
-export PATH="/c/devkitPro/msys2/clang64/bin:/c/devkitPro/msys2/usr/bin:$PATH"
+MSYS2="${MSYS2_ROOT:-/c/msys64}"
+export PATH="$MSYS2/clang64/bin:$MSYS2/usr/bin:$PATH"
 
 mkdir -p "$OUT/spirv-cross-build" "$OUT/uam-build"
 cmake -S "$SPIRV_CROSS_SRC" -B "$OUT/spirv-cross-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \

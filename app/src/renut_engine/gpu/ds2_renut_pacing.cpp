@@ -1,4 +1,4 @@
-// sa2-nx (2026-10-20): the game's frame pacing with Renut's renderer (sa2_renderer = "renut").
+// sa2-nx (2026-10-20): the game's frame pacing with Renut's renderer (ds2_renderer = "renut").
 //
 // On the console SA2's frames are paced by the vertical blank: after each Swap the GPU waits for the flip (a flag the
 // game's vblank interrupt callback clears), and the game thread blocks on its fences once it is a frame or two ahead.
@@ -10,10 +10,10 @@
 // PresentationInterval, which SA2's Direct3D keeps in the device: InitializePresentationParameters copies the parameters
 // to +13948, so the interval is at +14000; SynchronizeToPresentationInterval reads it there): ONE (or DEFAULT) one
 // refresh of 60 Hz, TWO two, THREE three, IMMEDIATE none. A frame that is late:
-//   - sa2_vsync_relaxed on (the player's default): goes at once, and the next one is due an interval after it (the
+//   - ds2_vsync_relaxed on (the player's default): goes at once, and the next one is due an interval after it (the
 //     native renderer's relaxed vsync: 50-59 fps instead of a fall to 30);
 //   - off: waits for the next refresh of the 60 Hz grid, as fixed vsync does.
-#include "renut_engine/gpu/sa2_renut_pacing.h"
+#include "renut_engine/gpu/ds2_renut_pacing.h"
 
 #include <algorithm>
 #include <chrono>
@@ -33,21 +33,21 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
-#include "cpu/sa2_enhancements.h"
+#include "cpu/ds2_enhancements.h"
 #include "renut_engine/gpu/backend/queued.h"
 #include "renut_engine/display_sync.h"  // sa2-nx (2026-10-20): banjo_display_sync
 #include "renut_engine/gpu/guest/guest_memory.h"
 
-REXCVAR_DEFINE_BOOL(sa2_renut_vblank_pacing, true, "SA2",
-                    "Renut's renderer (sa2_renderer = renut): each Swap is released at the game's presentation interval "
+REXCVAR_DEFINE_BOOL(ds2_renut_vblank_pacing, true, "DS2",
+                    "Renut's renderer (ds2_renderer = renut): each Swap is released at the game's presentation interval "
                     "(60 Hz refreshes), as the console's vertical blank paces the game; SA2's game speed follows its "
                     "frame rate. Off: the game runs as fast as the host renders (tests only)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 // The native renderer's relaxed vsync key (src/me/me_native_system.cpp), the player's setting.
-extern ::sa2::enh::Enhancement g_vsync_relaxed;
+extern ::ds2::enh::Enhancement g_vsync_relaxed;
 
-namespace sa2::renut {
+namespace ds2::renut {
 
 namespace {
 
@@ -55,7 +55,7 @@ using Clock = std::chrono::steady_clock;
 constexpr uint32_t kDeviceOffsetPresentationInterval = 14000;  // the device's copy of D3DPRESENT_PARAMETERS + 52
 constexpr Clock::duration kRefresh = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 60.0));
 
-// Refreshes per frame for D3DPRESENT_INTERVAL_*: as SA2's SynchronizeToPresentationInterval (sub_825589D8) maps them.
+// Refreshes per frame for D3DPRESENT_INTERVAL_*: as DS2's SynchronizeToPresentationInterval (sub_829BB060) maps them.
 uint32_t RefreshesPerFrame(uint32_t interval) {
   switch (interval) {
     case 0:  // DEFAULT
@@ -103,7 +103,7 @@ void NoteRelease(Clock::time_point arrived, Clock::time_point released, bool lat
   if (released - s.since < std::chrono::seconds(10)) return;
   if (s.frames)
     REXLOG_INFO("[renut] game thread, {:.1f} s: {} frames, {:.2f} ms a frame from Swap to Swap (most {:.2f} ms), "
-                "{:.2f} ms a frame paced; {} frames late (sa2_renut_vblank_pacing)",
+                "{:.2f} ms a frame paced; {} frames late (ds2_renut_vblank_pacing)",
                 Ms(released - s.since) / 1000.0, s.frames, s.work_ms / double(s.frames), s.work_max_ms,
                 s.sleep_ms / double(s.frames), s.late);
   // The game thread's other measure: what its draws keep of the device (backend/queued.cpp).
@@ -148,7 +148,7 @@ void SleepUntil(Clock::time_point t) {
 uint64_t g_display_previous_ns = 0;
 
 void PaceSwap(uint32_t device_va) {
-  static const bool on = REXCVAR_GET(sa2_renut_vblank_pacing);
+  static const bool on = REXCVAR_GET(ds2_renut_vblank_pacing);
   if (!on || !device_va) return;
   const auto *interval_word = ::renut::gpu::GuestPtr<const be_u32>(device_va + kDeviceOffsetPresentationInterval);
   const uint32_t refreshes = RefreshesPerFrame(interval_word ? uint32_t(*interval_word) : 1);
@@ -156,7 +156,7 @@ void PaceSwap(uint32_t device_va) {
   // sa2-nx (2026-10-20, banjo_display_sync, Banjo's latency set): on the Switch the release follows the display's own
   // refresh (its vsync event) plus a measured phase, as late as the frame's image still makes the refresh, instead of
   // this clock's 60 Hz grid, which drifts against the display's. A late frame goes at once (as relaxed vsync); fixed
-  // vsync (sa2_vsync_relaxed off) and an unknown refresh (the PC, the first frames) keep the grid below.
+  // vsync (ds2_vsync_relaxed off) and an unknown refresh (the PC, the first frames) keep the grid below.
   ::banjo::display_sync::Start();
   if (g_started && refreshes && g_vsync_relaxed.active) {
     const auto period = kRefresh * refreshes;
@@ -205,4 +205,4 @@ void PaceSwap(uint32_t device_va) {
   NoteRelease(now, Clock::now(), true);
 }
 
-}  // namespace sa2::renut
+}  // namespace ds2::renut

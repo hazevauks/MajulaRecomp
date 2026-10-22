@@ -1,6 +1,6 @@
 # sa2-nx (2026-10-20): Renut's Direct3D-level renderer (github.com/masterspike52/reNut, as banjo-nx carries it in
 # src/renut_engine/gpu, retargeted to SA2's Direct3D: docs/renut-renderer.md), chosen at boot with
-# sa2_renderer = "renut" (src/renut_engine/gpu/banjo_renut_select.h). From banjo-nx's cmake/banjo_renut_gpu.cmake: Renut's
+# ds2_renderer = "renut" (src/renut_engine/gpu/banjo_renut_select.h). From banjo-nx's cmake/banjo_renut_gpu.cmake: Renut's
 # gpu.cmake as banjo-nx uses it, with its dependencies where it looks for them: thirdparty/plume (with banjo-nx's deko3d
 # back end), thirdparty/reblue-XenosRecomp (the translator, DXC, zstd, smol-v, xxHash), thirdparty/imgui,
 # cmake/collect_captured_shaders.cmake.
@@ -8,7 +8,7 @@
 # An OBJECT library, not a static one: its hooks replace the generated code's weak sub_X definitions, and a static
 # archive's members are only pulled in for undefined symbols, so the hooks would silently not be linked.
 
-# The shader containers its shader cache is built from: tools/sa2_dump_shaders.py (default.xex's image and
+# The shader containers its shader cache is built from: tools/ds2_dump_shaders.py (default.xex's image and
 # Shader/xbox360/obj). A normal variable, so it shadows gpu.cmake's cache entry.
 set(RENUT_SHADER_DUMP_DIR "${CMAKE_SOURCE_DIR}/../out/renut_shader_dump")
 set(RENUT_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets" CACHE PATH "Game assets (default.xex and Bundle/)")
@@ -60,15 +60,15 @@ if(REXGLUE_PLATFORM_SWITCH)
     # no translated game shader built in and the shader table without SPIR-V; every game shader comes from
     # deko3d_glsl.bin beside the NRO, which the web installer makes from the player's own files. OFF = every translated
     # shader built in (development and test builds: game data, not for distribution).
-    option(SA2_RENUT_RELEASE_SHADERS "Switch: no translated game shader in the NRO (deko3d_glsl.bin beside it)" OFF)
-    if(SA2_RENUT_RELEASE_SHADERS)
-        set(_sa2_renut_shaders "${CMAKE_SOURCE_DIR}/out/renut_switch_release")
+    option(DS2_RENUT_RELEASE_SHADERS "Switch: no translated game shader in the NRO (deko3d_glsl.bin beside it)" OFF)
+    if(DS2_RENUT_RELEASE_SHADERS)
+        set(_ds2_renut_shaders "${CMAKE_SOURCE_DIR}/out/renut_switch_release")
     else()
-        set(_sa2_renut_shaders "${CMAKE_SOURCE_DIR}/out/renut_switch")
+        set(_ds2_renut_shaders "${CMAKE_SOURCE_DIR}/out/renut_switch")
     endif()
-    set(BANJO_DEKO3D_GLSL_CPP "${_sa2_renut_shaders}/deko3d_glsl_switch.cpp" CACHE FILEPATH
+    set(BANJO_DEKO3D_GLSL_CPP "${_ds2_renut_shaders}/deko3d_glsl_switch.cpp" CACHE FILEPATH
         "The deko3d GLSL package's source (tools/deko3d_shader_package.py)" FORCE)
-    set(BANJO_RENUT_SHADER_CACHE_CPP "${_sa2_renut_shaders}/shader_cache_switch.cpp" CACHE FILEPATH
+    set(BANJO_RENUT_SHADER_CACHE_CPP "${_ds2_renut_shaders}/shader_cache_switch.cpp" CACHE FILEPATH
         "Renut's shader cache for the Switch build (from a PC build: tools/renut_switch_shader_cache.py)" FORCE)
     function(banjo_renut_shader_cache_override TARGET)
         if(NOT EXISTS "${BANJO_RENUT_SHADER_CACHE_CPP}")
@@ -91,7 +91,7 @@ endif()
 
 include("${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/gpu.cmake")
 
-add_library(sa2_renut_gpu OBJECT
+add_library(ds2_renut_gpu OBJECT
     "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_select.cpp"
     "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_tuning.cpp"
     "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_checks.cpp"
@@ -101,50 +101,50 @@ add_library(sa2_renut_gpu OBJECT
     "${CMAKE_SOURCE_DIR}/src/renut_engine/perf/frame_stats.cpp"
     # sa2-nx: banjo-nx's SDK and generated-code pieces the renderer uses (the frame latency probe from futari-nx, the
     # store cards switched off), app-side here.
-    "${CMAKE_SOURCE_DIR}/src/renut_engine/sa2_compat/frame_latency.cpp"
-    "${CMAKE_SOURCE_DIR}/src/renut_engine/sa2_compat/sa2_compat.cpp"
+    "${CMAKE_SOURCE_DIR}/src/renut_engine/ds2_compat/frame_latency.cpp"
+    "${CMAKE_SOURCE_DIR}/src/renut_engine/ds2_compat/ds2_compat.cpp"
     # sa2-nx: the game's frames at its presentation interval (the console's vertical blank).
-    "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/sa2_renut_pacing.cpp")
-target_include_directories(sa2_renut_gpu PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/ds2_renut_pacing.cpp")
+target_include_directories(ds2_renut_gpu PRIVATE
     "${CMAKE_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}/src"
     # sa2-nx: banjo-nx's headers the renderer's tuning includes, answered by SA2's (cpu/banjo_enhancements.h, ...).
-    "${CMAKE_SOURCE_DIR}/src/renut_engine/sa2_compat"
+    "${CMAKE_SOURCE_DIR}/src/renut_engine/ds2_compat"
     "${REXGLUE_ENTRYPOINT_INCLUDE_DIR}"
     # banjo_renut_tuning.cpp: the Switch thread helpers (threading_switch.h, through src/me/me_platform_compat.h).
     "${REXSDK_DIR}/src/core")
-target_link_libraries(sa2_renut_gpu PRIVATE rex::runtime)
+target_link_libraries(ds2_renut_gpu PRIVATE rex::runtime)
 if(REXGLUE_PLATFORM_SWITCH)
     # banjo-nx (2026-10-17): the deko3d back end's glue and the game shaders' GLSL package (docs/deko3d-renderer.md).
-    target_sources(sa2_renut_gpu PRIVATE "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_deko3d.cpp")
+    target_sources(ds2_renut_gpu PRIVATE "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_deko3d.cpp")
     if(EXISTS "${BANJO_DEKO3D_GLSL_CPP}")
-        target_sources(sa2_renut_gpu PRIVATE "${BANJO_DEKO3D_GLSL_CPP}")
+        target_sources(ds2_renut_gpu PRIVATE "${BANJO_DEKO3D_GLSL_CPP}")
         set_source_files_properties("${BANJO_DEKO3D_GLSL_CPP}" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
-    elseif(SA2_RENUT_RELEASE_SHADERS)
-        message(STATUS "sa2: no GLSL package built in (SA2_RENUT_RELEASE_SHADERS): deko3d_glsl.bin beside the NRO")
+    elseif(DS2_RENUT_RELEASE_SHADERS)
+        message(STATUS "ds2: no GLSL package built in (DS2_RENUT_RELEASE_SHADERS): deko3d_glsl.bin beside the NRO")
     else()
         message(WARNING "No ${BANJO_DEKO3D_GLSL_CPP}: renut_gpu_backend = deko3d will have no game shaders "
                         "(tools/deko3d_shader_package.py)")
     endif()
 endif()
 if(COMMAND rexglue_apply_target_settings)
-    rexglue_apply_target_settings(sa2_renut_gpu)
+    rexglue_apply_target_settings(ds2_renut_gpu)
 endif()
-renut_gpu_setup(sa2_renut_gpu)
-target_compile_definitions(sa2_renut_gpu PRIVATE SA2_RENUT_RENDERER=1)
+renut_gpu_setup(ds2_renut_gpu)
+target_compile_definitions(ds2_renut_gpu PRIVATE DS2_RENUT_RENDERER=1)
 if(REXGLUE_PLATFORM_SWITCH AND REXGLUE_SWITCH_NO_NVK)
-    # sa2-nx (2026-10-20): no Vulkan driver in this build: Renut on deko3d whatever sa2_renderer / renut_gpu_backend
+    # sa2-nx (2026-10-20): no Vulkan driver in this build: Renut on deko3d whatever ds2_renderer / renut_gpu_backend
     # say (per source, so nothing else recompiles).
     set_property(SOURCE "${CMAKE_SOURCE_DIR}/src/renut_engine/gpu/banjo_renut_select.cpp"
                         "${RENUT_GPU_DIR}/backend/backend.cpp"
-                 APPEND PROPERTY COMPILE_DEFINITIONS SA2_SWITCH_NO_NVK=1)
+                 APPEND PROPERTY COMPILE_DEFINITIONS DS2_SWITCH_NO_NVK=1)
 endif()
 if(REXGLUE_PLATFORM_SWITCH)
     # sa2-nx (2026-10-20): line tables for the renderer's code, so the console profile's samples
     # (tools/switch_profile_report.py on the build's ELF) resolve to lines. GCC's code does not change with -g; the NRO
     # is built from the stripped ELF.
-    target_compile_options(sa2_renut_gpu PRIVATE -g1)
+    target_compile_options(ds2_renut_gpu PRIVATE -g1)
 endif()
-# The game's hooks into it (src/me, src/cpu: sa2_renut_yield.h) and the app's wiring (sa2_app.h).
-target_link_libraries(sa2 PRIVATE sa2_renut_gpu)
-target_compile_definitions(sa2 PRIVATE SA2_RENUT_RENDERER=1)
+# The game's hooks into it (src/me, src/cpu: ds2_renut_yield.h) and the app's wiring (ds2_app.h).
+target_link_libraries(ds2 PRIVATE ds2_renut_gpu)
+target_compile_definitions(ds2 PRIVATE DS2_RENUT_RENDERER=1)

@@ -2,7 +2,9 @@
 # The generated code must already exist (tools\codegen.ps1 with the PC SDK): a cross build cannot run rexglue.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\win\build_switch.ps1 [-Jobs 8] [-LtoJobs 8] [-Reconfigure]
-#       [-Pgo none|generate|use] [-Lto] [-BuildDir out\nx]
+#       [-Pgo none|generate|use] [-Lto] [-BuildDir out\nx] [-NoNvk] [-ReleaseShaders]
+# deko3d (sa2-nx 1.0.3, docs/deko3d.md): -NoNvk links no Vulkan driver (REXGLUE_SWITCH_NO_NVK: Renut on deko3d only)
+# and -ReleaseShaders builds no translated game shader in (DS2_RENUT_RELEASE_SHADERS: deko3d_glsl.bin beside the NRO).
 # -BuildDir: each kind of build keeps its own folder, because switching the flags of one folder recompiles the whole
 # game (about 100 minutes on a 2-core PC): out\nx the everyday build (no LTO, no PGO), out\nx_pgo the instrumented
 # one (-Pgo generate), out\nx_rel the optimised one (-Lto and/or -Pgo use). -Lto turns link-time optimisation on in
@@ -17,7 +19,9 @@ param(
     [switch]$Reconfigure,
     [ValidateSet('', 'none', 'generate', 'use')][string]$Pgo = '',
     [switch]$Lto,
-    [string]$BuildDir = 'out\nx'
+    [string]$BuildDir = 'out\nx',
+    [switch]$NoNvk,
+    [switch]$ReleaseShaders
 )
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 . (Join-Path $PSScriptRoot 'env.ps1')  # VS CMake and Ninja on PATH (the compilers come from the toolchain file)
@@ -56,6 +60,8 @@ $env:PATH = "$make;$env:PATH"
 $pgoArgs = @()
 if ($Pgo) { $pgoArgs = @("-DDS2_PGO=$(if ($Pgo -eq 'none') { '' } else { $Pgo })") }
 if ($Lto) { $pgoArgs += '-DDS2_SWITCH_LTO=ON' }
+$pgoArgs += @("-DREXGLUE_SWITCH_NO_NVK=$(if ($NoNvk) { 'ON' } else { 'OFF' })",
+              "-DDS2_RENUT_RELEASE_SHADERS=$(if ($ReleaseShaders) { 'ON' } else { 'OFF' })")
 & cmake $build "-DDS2_SWITCH_LTO_JOBS=$LtoJobs" @pgoArgs | Out-Null
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 & cmake --build $build -j $Jobs

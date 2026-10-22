@@ -16,5 +16,3 @@ window_start_minimized = true
 ds2_renderer_native = false
 # The emulated GPU's host API: empty = the SDK's choice (Direct3D 12 on Windows), "vulkan" for the path the Switch uses.
 ds2_gpu_backend = ""
-# Stage 2 tracing of the game's Direct3D (app/src/ds2_d3d_trace.cpp): calls, callers and arguments every 5 s.
-ds2_d3d_trace = false

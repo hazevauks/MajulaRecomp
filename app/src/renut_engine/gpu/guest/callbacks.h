@@ -31,7 +31,7 @@ uint64_t LastCallback();
 // Runs the callbacks the render thread has reached, in order, on this thread.
 void RunReadyCallbacks();
 
-// sa2-nx (2026-10-20, sa2_renut_callbacks_fast): the hooks' first calls (RunReadyCallbacks, FlushDeferredVertices,
+// sa2-nx (2026-10-20, ds2_renut_callbacks_fast): the hooks' first calls (RunReadyCallbacks, FlushDeferredVertices,
 // FlushRecordedVertices) return without their locks when nothing waits. A plain flag, set at the first call (1 on, -1
 // off; the same value whichever thread sets it): an inline read instead of a call with a static's guard.
 extern std::atomic<int> g_hook_fast_paths;

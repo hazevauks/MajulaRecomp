@@ -164,6 +164,10 @@ static constexpr std::pair<DeclUsage, size_t> INTERPOLATORS[] =
     { DeclUsage::Normal, 2 },
     { DeclUsage::Tangent, 0 },
     { DeclUsage::Binormal, 0 },
+    // ds2-nx (2026-10-22): Dark Souls II's shaders also pass COLOR2 ("undeclared identifier iColor2 / oColor2" in its
+    // vertex and pixel shaders; this port's shaders/XenosRecomp has COLOR2..5 for the same reason). Last, so every
+    // other interpolator keeps its location.
+    { DeclUsage::Color, 2 },
 #endif
 };
 
@@ -584,6 +588,27 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         out += ";\n";
     }
 #endif
+
+    // ds2-nx (2026-10-22, from this port's shaders/XenosRecomp): a fetch whose destination keeps or sets every
+    // component to a constant writes no fetched value; it came out as "r0. = tfetch2D(...).;" ("expected
+    // unqualified-id" in Dark Souls II pixel shaders). Only the constant components are written then.
+    bool writesFetchedComponent = false;
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        const auto swizzle = getDestSwizzle(instr.dstSwizzle, i);
+        writesFetchedComponent |= swizzle >= FetchDestinationSwizzle::X && swizzle <= FetchDestinationSwizzle::W;
+    }
+    if (!writesFetchedComponent)
+    {
+        printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
+        if (instr.isPredicated)
+        {
+            --indentation;
+            indent();
+            out += "}\n";
+        }
+        return;
+    }
 
     indent();
     print("r{}.", instr.dstRegister);

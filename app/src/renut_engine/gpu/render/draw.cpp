@@ -35,7 +35,7 @@
 #include "renut_engine/gpu/d3d/d3d.h"
 #include "renut_engine/gpu/render/format.h"
 #include "renut_engine/gpu/guest/guest_memory.h"
-#include "renut_engine/gpu/sa2_line_compare.h"
+#include "renut_engine/gpu/ds2_line_compare.h"
 #include "renut_engine/gpu/guest/guest_records.h"
 #include "renut_engine/gpu/log.h"
 #include "renut_engine/gpu/render/pipeline.h"
@@ -68,45 +68,45 @@ REXCVAR_DEFINE_STRING(banjo_renut_diag_blend_skip_exclude, "", "Banjo/Renut",
                       "Diagnostic: pixel shader hashes (hex, comma separated) banjo_gpu_blend_skip leaves alone");
 
 // sa2-nx (2026-10-20): see DrawStateLocked.
-REXCVAR_DEFINE_BOOL(sa2_renut_chain_reuse, true, "SA2/Renderer",
-                    "Renut's renderer (with sa2_renut_snapshot_deltas): a draw of the delta chain takes the previous "
+REXCVAR_DEFINE_BOOL(ds2_renut_chain_reuse, true, "DS2/Renderer",
+                    "Renut's renderer (with ds2_renut_snapshot_deltas): a draw of the delta chain takes the previous "
                     "draw's pipeline key when nothing the key is made from changed (the device's render state chunks, "
                     "the shaders, the declaration, the targets, the primitive) instead of making it again")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_chain_reuse_verify, false, "SA2/Renderer",
-                    "Tests (sa2_renut_chain_reuse): the key is made anyway and compared with the one taken; a "
+REXCVAR_DEFINE_BOOL(ds2_renut_chain_reuse_verify, false, "DS2/Renderer",
+                    "Tests (ds2_renut_chain_reuse): the key is made anyway and compared with the one taken; a "
                     "difference is logged and the made one used")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_inline_line_compare, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_inline_line_compare, true, "DS2/Renderer",
                     "Renut's renderer on deko3d: the pushed shared constants' 64-byte lines are compared with what the "
                     "GPU holds by inline loads instead of a memcmp call per line (21 a draw). Off: memcmp")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_stream_mask, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_stream_mask, true, "DS2/Renderer",
                     "Renut's renderer: a draw's vertex streams are walked by the layout's mask of used streams instead "
                     "of a check of all 16")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_texture_defaults_copy, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_texture_defaults_copy, true, "DS2/Renderer",
                     "Renut's renderer: a draw's default texture and sampler words are one copy of a block made once")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_fetch_slots_skip, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_fetch_slots_skip, true, "DS2/Renderer",
                     "Renut's renderer on deko3d: a draw without vertex fetches skips the compare of the shared "
                     "constants' fetch slots when the last push had none either (both zero)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_fetch_data_unread, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_fetch_data_unread, true, "DS2/Renderer",
                     "Renut's renderer on deko3d: a draw whose shaders fetch nothing by address gets fetch data address "
                     "and size 0 (they never read them) instead of a new allocation's, and no fetch binding")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_shared_partial_clear, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_shared_partial_clear, true, "DS2/Renderer",
                     "Renut's renderer: a draw's shared constants are zeroed from the booleans on (848 of 1,360 bytes); "
                     "the texture and sampler words before them are all written by FillTextures. Off: all zeroed")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(sa2_renut_lean_diagnostics, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_lean_diagnostics, true, "DS2/Renderer",
                     "Renut's renderer: the per-draw counts only the 10 s log lines read (the draw kinds, the fetch "
                     "alignment census) are kept only while those lines are logged (log_level info or lower), and the "
                     "draw and stream dumps' checks are made once instead of a call per draw")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
-REXCVAR_DECLARE(bool, sa2_renut_neon_compare);  // sa2-nx (2026-10-20): backend/queued.cpp
+REXCVAR_DECLARE(bool, ds2_renut_neon_compare);  // sa2-nx (2026-10-20): backend/queued.cpp
 
 namespace renut::gpu {
 
@@ -114,11 +114,11 @@ ChainHint g_chain_hint;  // sa2-nx (2026-10-20): draw.h
 
 namespace {
 
-// sa2-nx (2026-10-20, sa2_renut_lean_diagnostics): whether the per-draw diagnostic counts are kept (their lines are
+// sa2-nx (2026-10-20, ds2_renut_lean_diagnostics): whether the per-draw diagnostic counts are kept (their lines are
 // logged), once.
 bool DiagCountsOn() {
   static const bool on = [] {
-    if (!REXCVAR_GET(sa2_renut_lean_diagnostics))
+    if (!REXCVAR_GET(ds2_renut_lean_diagnostics))
       return true;
     auto *logger = ::rex::GetLoggerRaw(::rex::log::core());
     return logger && logger->should_log(spdlog::level::info);
@@ -1206,7 +1206,7 @@ bool BindTargets(const Targets &t) {
     TransitionSurfaceLocked(t.colors[i], plume::RenderTextureLayout::COLOR_WRITE);
   if (t.depth)
     TransitionSurfaceLocked(t.depth, plume::RenderTextureLayout::DEPTH_WRITE);
-  // sa2-nx (2026-10-20, sa2_renut_chain_reuse): the last bind's framebuffer again for the same surfaces while no target
+  // sa2-nx (2026-10-20, ds2_renut_chain_reuse): the last bind's framebuffer again for the same surfaces while no target
   // was built, retired or rebound (their generations with it) and no framebuffer retired: GetFramebufferLocked would
   // find that one.
   struct FramebufferReuse {
@@ -1217,8 +1217,8 @@ bool BindTargets(const Targets &t) {
     plume::RenderFramebuffer *framebuffer = nullptr;
   };
   static FramebufferReuse last;
-  static const bool fb_reuse = REXCVAR_GET(sa2_renut_chain_reuse);
-  static const bool fb_verify = fb_reuse && REXCVAR_GET(sa2_renut_chain_reuse_verify);
+  static const bool fb_reuse = REXCVAR_GET(ds2_renut_chain_reuse);
+  static const bool fb_verify = fb_reuse && REXCVAR_GET(ds2_renut_chain_reuse_verify);
   const uint64_t surface_epoch = SurfaceEpochLocked(), framebuffer_epoch = FramebufferEpochLocked();
   bool same = fb_reuse && last.framebuffer && last.count == t.color_count && last.depth == t.depth &&
               last.surface_epoch == surface_epoch && last.framebuffer_epoch == framebuffer_epoch;
@@ -1232,7 +1232,7 @@ bool BindTargets(const Targets &t) {
       if (made != framebuffer) {
         static uint32_t logged = 0;
         if (logged++ < 8)
-          RGPU_WARN("sa2_renut_chain_reuse_verify: the reused framebuffer differs from the one looked up");
+          RGPU_WARN("ds2_renut_chain_reuse_verify: the reused framebuffer differs from the one looked up");
         framebuffer = made;
       }
     }
@@ -1739,7 +1739,7 @@ void PushFloatConstants(plume::RenderCommandList *cmd, const FloatConstants &con
   const uint64_t dirty = tracked ? *constants.dirty : ~uint64_t(0);
   // The groups to update (bit 63 - group, as UsedGroups).
   uint64_t push = 0;
-  // sa2-nx (2026-10-20, sa2_renut_snapshot_deltas_constants): within a tracked replay (the chain's draws are one) with
+  // sa2-nx (2026-10-20, ds2_renut_snapshot_deltas_constants): within a tracked replay (the chain's draws are one) with
   // none of the shader's groups dirty, a group is pushed only for a register the buffer does not hold: when every
   // register the shader reads (but its own literal ones) is held, the loop below would push nothing. Word by word.
   bool all_held = tracked && (dirty & summary.groups) == 0;
@@ -1863,18 +1863,18 @@ void PushFloatConstants(plume::RenderCommandList *cmd, const FloatConstants &con
 }
 
 // SharedConstants: the lines that differ from what the buffer holds.
-// sa2-nx (2026-10-20, sa2_renut_inline_line_compare): whether a line of the shared constants differs from the held
+// sa2-nx (2026-10-20, ds2_renut_inline_line_compare): whether a line of the shared constants differs from the held
 // one: a whole 64-byte line as fixed-size loads the compiler keeps inline (a memcmp call per line before: 21 calls a
 // draw, the render thread's memcmp of the first console profile); the 16-byte tail by memcmp.
 inline bool SharedLineDiffers(const u8 *a, const u8 *b, u32 n) {
-  static const bool inline_on = REXCVAR_GET(sa2_renut_inline_line_compare);
-  static const bool neon = REXCVAR_GET(sa2_renut_neon_compare);  // sa2-nx (2026-10-20): sa2_line_compare.h
+  static const bool inline_on = REXCVAR_GET(ds2_renut_inline_line_compare);
+  static const bool neon = REXCVAR_GET(ds2_renut_neon_compare);  // sa2-nx (2026-10-20): ds2_line_compare.h
   if (n != 64 || !inline_on)
     return std::memcmp(a, b, n) != 0;
-  return sa2::renut::Line64Differs(a, b, neon);
+  return ds2::renut::Line64Differs(a, b, neon);
 }
 
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): the pushes counted; 'equal_lines' (bit i = 64-byte line i) are lines the
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): the pushes counted; 'equal_lines' (bit i = 64-byte line i) are lines the
 // buffer holds already: the texture words of a chain draw that are the previous draw's when it pushed last, and the
 // vertex fetch slots a draw without fetches leaves zero when the last push's were zero too.
 uint64_t g_shared_pushes = 0;
@@ -1952,14 +1952,14 @@ struct TextureSlotMemo {
 constexpr uint32_t kTextureMemoEntries = 512;
 TextureSlotMemo g_texture_slot_memo[kTextureMemoEntries];
 
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): 'slot_fx' (32 entries, or null) receives each bound slot's effects (its
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): 'slot_fx' (32 entries, or null) receives each bound slot's effects (its
 // memo entry's on a hit, the bind's otherwise) and 'all_memo' whether every bound slot went through the memo (a
 // texture header to key it), for the chain's reuse of the next draw.
 void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc, BindEffects *slot_fx = nullptr,
                   bool *all_memo = nullptr) {
   if (all_memo)
     *all_memo = banjo::renut_gpu::CpuMemosOn();
-  // sa2-nx (2026-10-20, sa2_renut_texture_defaults_copy): the null words as one copy of a block made once (160 stores a
+  // sa2-nx (2026-10-20, ds2_renut_texture_defaults_copy): the null words as one copy of a block made once (160 stores a
   // draw before).
   struct DefaultWords {
     u32 indices[3][32];
@@ -1975,7 +1975,7 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
     }
     return w;
   }();
-  static const bool defaults_copy = REXCVAR_GET(sa2_renut_texture_defaults_copy);
+  static const bool defaults_copy = REXCVAR_GET(ds2_renut_texture_defaults_copy);
   if (defaults_copy) {
     std::memcpy(sc.texture_indices, kDefaults.indices, sizeof(sc.texture_indices));
     std::memcpy(sc.sampler_indices, kDefaults.samplers, sizeof(sc.sampler_indices));
@@ -2600,9 +2600,9 @@ bool BindStreams(const GuestDevice &device, const DrawCall &call, const ShaderRe
                  const u32 *shader_strides, const HostVertexLayout &layout, uint64_t layout_hash,
                  const Geometry &g, const GpuStreams &gpu_streams) {
   plume::RenderCommandList *cmd = State().command_list;
-  // sa2-nx (2026-10-20, sa2_renut_stream_mask): the used streams by their mask, in the same order (16 checks a draw
+  // sa2-nx (2026-10-20, ds2_renut_stream_mask): the used streams by their mask, in the same order (16 checks a draw
   // before, 1.3 % of the render thread in the second console run).
-  static const bool stream_mask = REXCVAR_GET(sa2_renut_stream_mask);
+  static const bool stream_mask = REXCVAR_GET(ds2_renut_stream_mask);
   for (u32 left = stream_mask ? layout.used_mask : (1u << kMaxVertexStreams) - 1u; left; left &= left - 1) {
     const u32 stream = u32(std::countr_zero(left));
     const HostVertexStream &hs = layout.streams[stream];
@@ -2641,8 +2641,8 @@ bool BindStreams(const GuestDevice &device, const DrawCall &call, const ShaderRe
     const u8 *guest = fills ? src.data + size_t(first) * src.stride : nullptr;
     const bool queued = fills && !(stream == 0 && call.up_vertices);
     const StreamKey key{guest, layout_hash, stream, src.stride, count, src.endian};
-    // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics): the dump's check once, not a call per stream.
-    static const bool stream_dump = !REXCVAR_GET(sa2_renut_lean_diagnostics) ||
+    // sa2-nx (2026-10-20, ds2_renut_lean_diagnostics): the dump's check once, not a call per stream.
+    static const bool stream_dump = !REXCVAR_GET(ds2_renut_lean_diagnostics) ||
                                     !REXCVAR_GET(banjo_renut_diag_stream_dump_vs).empty();
     const bool dumped = stream_dump && StreamDumpLog(vs, stream, src, hs, guest, first, count, call);
     CachedStream *cached = nullptr;
@@ -3997,7 +3997,7 @@ void DrawLog(const DrawCall &call, const Geometry &geometry, const ShaderRecord 
             export_count);
 }
 
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): the previous chain draw's targets and viewport (DrawStateLocked).
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): the previous chain draw's targets and viewport (DrawStateLocked).
 struct TargetsReuse {
   uint64_t seq = 0, epoch = 0;
   u32 va[d3d::kMaxRenderTargets + 1] = {};       // the device's render target words and its depth word
@@ -4130,11 +4130,11 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   if (!host_vs || (ps && !host_ps))
     return false;  // missing from the shader cache (captured for the next build)
 
-  // sa2-nx (2026-10-20, sa2_renut_chain_reuse): the previous chain draw's targets when the device's target words (bytes
+  // sa2-nx (2026-10-20, ds2_renut_chain_reuse): the previous chain draw's targets when the device's target words (bytes
   // 12816-12835) did not change, no target was built, retired or rebound since (the surface epoch), and the targets'
   // descriptor words (which GetHostSurfaceLocked reads in guest memory) are the same.
-  static const bool targets_reuse_on = REXCVAR_GET(sa2_renut_chain_reuse);
-  static const bool targets_verify = targets_reuse_on && REXCVAR_GET(sa2_renut_chain_reuse_verify);
+  static const bool targets_reuse_on = REXCVAR_GET(ds2_renut_chain_reuse);
+  static const bool targets_verify = targets_reuse_on && REXCVAR_GET(ds2_renut_chain_reuse_verify);
   const ChainHint &chain = g_chain_hint;
   Targets targets;
   bool targets_reused = false;
@@ -4154,7 +4154,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       if (!GatherTargets(device, made) || !SameTargets(made, targets)) {
         static uint32_t logged = 0;
         if (logged++ < 8)
-          RGPU_WARN("sa2_renut_chain_reuse_verify: the reused targets differ from those gathered");
+          RGPU_WARN("ds2_renut_chain_reuse_verify: the reused targets differ from those gathered");
         targets = made;
       }
     }
@@ -4235,10 +4235,10 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
 
   // Everything that records copies or barriers comes before the framebuffer.
   SharedConstants sc;
-  // sa2-nx (2026-10-20, sa2_renut_shared_partial_clear): FillTextures writes all 128 texture and 32 sampler words (its
+  // sa2-nx (2026-10-20, ds2_renut_shared_partial_clear): FillTextures writes all 128 texture and 32 sampler words (its
   // first loop, or the chain's copy of a previous draw's), so only what follows them is zeroed (848 of 1,360 bytes).
   static_assert(offsetof(SharedConstants, booleans) == sizeof(sc.texture_indices) + sizeof(sc.sampler_indices));
-  static const bool partial_clear = REXCVAR_GET(sa2_renut_shared_partial_clear);
+  static const bool partial_clear = REXCVAR_GET(ds2_renut_shared_partial_clear);
   if (partial_clear)
     std::memset(&sc.booleans, 0, sizeof(sc) - offsetof(SharedConstants, booleans));
   else
@@ -4247,7 +4247,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   const u32 texture_mask =
       (vs->entry ? vs->entry->textureFetchMask : 0) | (ps && ps->entry ? ps->entry->textureFetchMask : 0);
   g_handover_targets = &targets;  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
-  // sa2-nx (2026-10-20, sa2_renut_chain_reuse): the previous chain draw's texture and sampler words when FillTextures'
+  // sa2-nx (2026-10-20, ds2_renut_chain_reuse): the previous chain draw's texture and sampler words when FillTextures'
   // memo would answer every bound slot as it did then: the device's fetch constants and texture words unchanged
   // (bytes 1152-1775, 12920-13023), the same slots, frame, texture and depth epochs and depth target, and each bound
   // texture's header words the same. The memo hit's work is done again for each slot (its transitions and counters).
@@ -4302,7 +4302,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
           std::memcmp(made.sampler_indices, sc.sampler_indices, sizeof(sc.sampler_indices)) != 0) {
         static uint32_t logged = 0;
         if (logged++ < 8)
-          RGPU_WARN("sa2_renut_chain_reuse_verify: the reused texture words differ from those filled");
+          RGPU_WARN("ds2_renut_chain_reuse_verify: the reused texture words differ from those filled");
         std::memcpy(sc.texture_indices, made.texture_indices, sizeof(sc.texture_indices));
         std::memcpy(sc.sampler_indices, made.sampler_indices, sizeof(sc.sampler_indices));
       }
@@ -4360,7 +4360,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       sc.alpha_threshold = 0.5f;
     }
   }
-  // sa2-nx (2026-10-20, sa2_renut_chain_reuse): the previous chain draw's viewport when nothing ComputeViewport reads
+  // sa2-nx (2026-10-20, ds2_renut_chain_reuse): the previous chain draw's viewport when nothing ComputeViewport reads
   // changed: the window, values and control packets (bytes 10432-10599), the word at 0x29C0, the predication, the
   // targets' sizes and scale, the tiles and the replay's predication.
   ViewportState viewport;
@@ -4379,7 +4379,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       if (std::memcmp(&made, &viewport, sizeof(made)) != 0) {
         static uint32_t logged = 0;
         if (logged++ < 8)
-          RGPU_WARN("sa2_renut_chain_reuse_verify: the reused viewport differs from the one computed");
+          RGPU_WARN("ds2_renut_chain_reuse_verify: the reused viewport differs from the one computed");
         viewport = made;
       }
     }
@@ -4458,11 +4458,11 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   // indexed by the address's low word (shader_common.h, g_DkAddressWindow): the binding starts at the address rounded
   // down to 256 bytes, and the word becomes the offset from there. One binding over every buffer (runs 14-15) cost
   // Ryujinx ~12 s a frame: it brings a storage binding's whole range up to date with guest memory at each draw.
-  // sa2-nx (2026-10-20, sa2_renut_fetch_data_unread): a draw whose shaders fetch nothing by address (fetch_mask 0:
+  // sa2-nx (2026-10-20, ds2_renut_fetch_data_unread): a draw whose shaders fetch nothing by address (fetch_mask 0:
   // the vertex shader's memory fetches and its bound fetches) never reads the fetch data's address or size: they stay
   // 0 instead of this draw's new allocation, so the shared constants' line with them does not change at every draw,
   // and no binding is made.
-  static const bool fetch_data_unread = REXCVAR_GET(sa2_renut_fetch_data_unread);
+  static const bool fetch_data_unread = REXCVAR_GET(ds2_renut_fetch_data_unread);
   if (IsDeko3D() && fetch_mask == 0 && fetch_data_unread) {
     sc.vertex_fetch_data = 0;
     sc.vertex_fetch_bytes = 0;
@@ -4472,7 +4472,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     plume::Deko3DBindFetchData(s.command_list, base, u32(address - base) + sc.vertex_fetch_bytes);
     sc.vertex_fetch_data = address - base;
     // banjo-nx (2026-10-20): the 16-byte multiples tools/deko3d_glsl_opt.py's aw4 pass relies on.
-    if (DiagCountsOn()) {  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics)
+    if (DiagCountsOn()) {  // sa2-nx (2026-10-20, ds2_renut_lean_diagnostics)
       u32 bits = u32(sc.vertex_fetch_data) | sc.vertex_fetch_bytes;
       for (u32 m = fetch_mask; m; m &= m - 1)
         bits |= sc.vertex_fetch_slots[64 + std::countr_zero(m)] & ~3u;
@@ -4527,15 +4527,15 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   UploadAllocation sc_alloc;
   if (pushed) {
 #if defined(PLUME_DEKO3D)
-    // sa2-nx (2026-10-20, sa2_renut_chain_reuse): a chain draw whose texture words are the previous draw's, when that
+    // sa2-nx (2026-10-20, ds2_renut_chain_reuse): a chain draw whose texture words are the previous draw's, when that
     // draw pushed last (no push since, the same command list's buffer): its first 512 bytes are held already.
     static uint64_t texture_push_seq = 0, texture_push_count = 0;
     const bool texture_lines_held = textures_reused && !targets_verify && chain.seq &&
                                     texture_push_seq + 1 == chain.seq && texture_push_count == g_shared_pushes &&
                                     g_bound.pushed_shared_valid;
-    // sa2-nx (2026-10-20, sa2_renut_fetch_slots_skip): no fetches in this draw and none in the last push: both have
+    // sa2-nx (2026-10-20, ds2_renut_fetch_slots_skip): no fetches in this draw and none in the last push: both have
     // the fetch slots zero (sc is zeroed there; only UploadVertexFetchData writes them, for the fetch mask's bits).
-    static const bool fetch_slots_skip = REXCVAR_GET(sa2_renut_fetch_slots_skip);
+    static const bool fetch_slots_skip = REXCVAR_GET(ds2_renut_fetch_slots_skip);
     const bool fetch_slots_equal = fetch_slots_skip && fetch_mask == 0 && g_held_fetch_slots_zero &&
                                    g_bound.pushed_shared_valid;
     PushSharedConstants(s.command_list, sc,
@@ -4563,7 +4563,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   if (!fetch_alloc || (!pushed && (!vs_alloc || !ps_alloc || !sc_alloc)) || !memexport)
     return false;
 
-  // sa2-nx (2026-10-20, sa2_renut_chain_reuse): a chain draw takes the previous draw's key when nothing MakeKey reads
+  // sa2-nx (2026-10-20, ds2_renut_chain_reuse): a chain draw takes the previous draw's key when nothing MakeKey reads
   // changed: the device's bool constants and render state packets (bytes 10112-10599: VertexShaderB / PixelShaderB,
   // the clip planes, the destination, window, values and control packets), the shaders' cache entries, the
   // declaration's layout, the primitive, the instancing, the alpha test, the targets (their surfaces and the surface
@@ -4580,8 +4580,8 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     PipelineKey key{};
   };
   static KeyReuse reuse;
-  static const bool reuse_on = REXCVAR_GET(sa2_renut_chain_reuse);
-  static const bool reuse_verify = reuse_on && REXCVAR_GET(sa2_renut_chain_reuse_verify);
+  static const bool reuse_on = REXCVAR_GET(ds2_renut_chain_reuse);
+  static const bool reuse_verify = reuse_on && REXCVAR_GET(ds2_renut_chain_reuse_verify);
   const ChainHint &hint = chain;
   const ShaderCacheEntry *const ps_entry = ps ? ps->entry : nullptr;
   const int ab_off = banjo::renut_gpu::g_ab_off.load(std::memory_order_relaxed);
@@ -4603,7 +4603,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       if (std::memcmp(&made, &key, sizeof(key)) != 0) {
         static uint32_t logged = 0;
         if (logged++ < 8)
-          RGPU_WARN("sa2_renut_chain_reuse_verify: the reused pipeline key differs from the one made (VS {:016X})",
+          RGPU_WARN("ds2_renut_chain_reuse_verify: the reused pipeline key differs from the one made (VS {:016X})",
                     vs->hash);
         key = made;
       }
@@ -4629,7 +4629,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     if (!reused)
       reuse.key = key;
   }
-  if (DiagCountsOn()) {  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics)
+  if (DiagCountsOn()) {  // sa2-nx (2026-10-20, ds2_renut_lean_diagnostics)
     // banjo-nx (package 28, a census): draws that write no colour, nothing at all, or part of a target's channels.
     const u32 used_mask = key.color_count ? key.color_mask & ((1u << (4 * key.color_count)) - 1u) : 0u;
     const bool no_colour = used_mask == 0;
@@ -4649,7 +4649,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
                                     !key.alpha_to_coverage && ps != nullptr,
                                     no_colour && !depth_writes && !stencil_writes && !exports, partial);
   }
-  // sa2-nx (2026-10-20, sa2_renut_chain_reuse): the previous draw's pipeline for its key again when no lookup was made
+  // sa2-nx (2026-10-20, ds2_renut_chain_reuse): the previous draw's pipeline for its key again when no lookup was made
   // since and no prebuilt pipeline came in (PipelineLookupsLocked): GetPipelineLocked would answer the same.
   struct PipelineReuse {
     uint64_t seq = 0, lookups = 0, epoch = 0;
@@ -4669,7 +4669,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       if (made != pipeline) {
         static uint32_t logged = 0;
         if (logged++ < 8)
-          RGPU_WARN("sa2_renut_chain_reuse_verify: the reused pipeline differs from the one looked up");
+          RGPU_WARN("ds2_renut_chain_reuse_verify: the reused pipeline differs from the one looked up");
         pipeline = made;
       }
     }
@@ -4773,8 +4773,8 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       gpu_profile::Mark(s, label);
     gpu_profile::CountDraw(s, label);
   }
-  // sa2-nx (2026-10-20, sa2_renut_lean_diagnostics): the draw log's check once, not a call per draw.
-  static const bool draw_log = !REXCVAR_GET(sa2_renut_lean_diagnostics) ||
+  // sa2-nx (2026-10-20, ds2_renut_lean_diagnostics): the draw log's check once, not a call per draw.
+  static const bool draw_log = !REXCVAR_GET(ds2_renut_lean_diagnostics) ||
                                REXCVAR_GET(banjo_renut_diag_draw_log_s) > 0;
   if (draw_log)
     DrawLog(call, geometry, vs, ps, targets, key, sc, export_count);

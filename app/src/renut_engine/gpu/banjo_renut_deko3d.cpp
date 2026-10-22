@@ -46,7 +46,7 @@ static_assert(sizeof(PackageEntry) == 56, "tools/deko3d_shader_package.py's entr
 
 // One GLSL package: the one built into the NRO, or (peggle2-nx, 2026-10-20; sa2-nx 1.0.3) deko3d_glsl.bin beside it,
 // which the web installer makes from the player's own game files (a build for distribution carries no translated
-// game shader: SA2_RENUT_RELEASE_SHADERS).
+// game shader: DS2_RENUT_RELEASE_SHADERS).
 struct Package {
   bool ok = false;
   std::vector<uint8_t> file;  // the file's bytes (the built-in package is used in place)

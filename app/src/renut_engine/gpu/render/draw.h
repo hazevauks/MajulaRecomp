@@ -83,8 +83,8 @@ struct ReplayConstants {
 bool DrawStateLocked(const u8 *device_state, const DrawCall &call,
                      const ReplayConstants *replay = nullptr);
 
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): set by backend/queued.cpp around a draw of its delta chain
-// (sa2_renut_snapshot_deltas): the device chunks that changed since the chain's previous draw. The chain's chunks: the
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): set by backend/queued.cpp around a draw of its delta chain
+// (ds2_renut_snapshot_deltas): the device chunks that changed since the chain's previous draw. The chain's chunks: the
 // 30 of 64 bytes before the float constants (device bytes 0-1919), then 47 from the bool constants on (10112-13087,
 // the last one 32 bytes). 'seq' numbers the chain's draws (consecutive, from 2; a whole copy marks every chunk); 0 for
 // any other draw. A memo of a draw's derived state is valid for the next draw when its seq is the memo's + 1 and none

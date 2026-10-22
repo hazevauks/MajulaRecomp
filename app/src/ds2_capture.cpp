@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -40,6 +41,10 @@ REXCVAR_DEFINE_BOOL(ds2_snap_live, false, "DS2",
                     "the executable, the game image is written to captures/snap.rgba (+ snap.txt, half resolution "
                     "with ds2_video_half) and the request file is removed");
 
+// Frames the game has presented: Renut's Swap hook counts them (renut_engine/gpu/d3d/hooks/device.cpp). In sa2-nx it
+// lived in its Direct3D trace module, which this port removed on 2026-10-22.
+std::atomic<uint64_t> g_ds2_game_frames{0};
+
 namespace ds2::capture {
 namespace {
 
@@ -54,7 +59,19 @@ bool WaitUntil(std::chrono::steady_clock::time_point when) {
   return g_cv.wait_until(lock, when, [] { return g_stop; });
 }
 
-void Record(std::function<rex::ui::Presenter*()> get_presenter, int start_s, int frame_count) {
+// Renut's lockstep (RenutLockstepFrame, from sa2-nx 1.0.3): one frame handed from its Swap hook to the recorder. This
+// port's recorder has no lockstep mode yet, so g_renut_lockstep stays false and the Swap hook never waits on it.
+std::atomic<bool> g_renut_lockstep{false};
+std::mutex g_renut_mutex;
+std::condition_variable g_renut_cv;
+bool g_renut_full = false;
+bool g_renut_ok = false;
+uint64_t g_renut_label = 0;
+rex::ui::RawImage g_renut_image;
+
+// grab: the presented frame, from the SDK's presenter (Start) or from Renut's renderer (StartWithSource).
+void Record(std::function<bool(rex::ui::RawImage&)> grab, int start_s, int frame_count, bool /*allow_lockstep*/,
+            bool /*renut*/) {
   const auto started_at = std::chrono::steady_clock::now();
   if (WaitUntil(started_at + std::chrono::seconds(start_s))) {
     return;
@@ -89,9 +106,8 @@ void Record(std::function<rex::ui::Presenter*()> get_presenter, int start_s, int
       break;
     }
     next += period;
-    rex::ui::Presenter* presenter = get_presenter ? get_presenter() : nullptr;
     rex::ui::RawImage image;
-    if (!presenter || !presenter->CaptureGuestOutput(image) || !image.width || !image.height) {
+    if (!grab || !grab(image) || !image.width || !image.height) {
       ++missed;
       continue;
     }
@@ -184,8 +200,40 @@ void Start(std::function<rex::ui::Presenter*()> get_presenter) {
     std::lock_guard lock(g_mutex);
     g_stop = false;
   }
-  g_thread = std::thread(Record, std::move(get_presenter), int(REXCVAR_GET(ds2_video_s)),
-                         int(REXCVAR_GET(ds2_video_frames)));
+  auto grab = [get_presenter = std::move(get_presenter)](rex::ui::RawImage& image) {
+    rex::ui::Presenter* presenter = get_presenter ? get_presenter() : nullptr;
+    return presenter && presenter->CaptureGuestOutput(image);
+  };
+  g_thread = std::thread(Record, std::move(grab), int(REXCVAR_GET(ds2_video_s)), int(REXCVAR_GET(ds2_video_frames)),
+                         true, false);
+}
+
+void StartWithSource(std::function<bool(rex::ui::RawImage&)> grab) {
+  if (REXCVAR_GET(ds2_video_s) <= 0 || g_thread.joinable()) {
+    return;
+  }
+  {
+    std::lock_guard lock(g_mutex);
+    g_stop = false;
+  }
+  g_thread = std::thread(Record, std::move(grab), int(REXCVAR_GET(ds2_video_s)), int(REXCVAR_GET(ds2_video_frames)),
+                         false, true);
+}
+
+bool RenutLockstepOn() { return g_renut_lockstep.load(std::memory_order_acquire); }
+
+void RenutLockstepFrame(uint64_t game_frame, const rex::ui::RawImage* image) {
+  std::unique_lock lock(g_renut_mutex);
+  // The previous frame first (the recorder takes one at a time), then this one, then wait until it is taken.
+  const auto taken = [] { return !g_renut_full || !g_renut_lockstep.load(std::memory_order_acquire); };
+  g_renut_cv.wait_for(lock, std::chrono::seconds(5), taken);
+  if (!g_renut_lockstep.load(std::memory_order_acquire)) return;
+  g_renut_ok = image != nullptr;
+  if (image) g_renut_image = *image;
+  g_renut_label = game_frame;
+  g_renut_full = true;
+  g_renut_cv.notify_all();
+  g_renut_cv.wait_for(lock, std::chrono::seconds(5), taken);
 }
 
 void Stop() {

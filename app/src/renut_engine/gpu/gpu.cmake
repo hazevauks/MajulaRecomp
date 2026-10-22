@@ -262,7 +262,7 @@ function(renut_gpu_setup TARGET)
         ${RENUT_GPU_DIR}/guest/command_buffers.cpp
         ${RENUT_GPU_DIR}/guest/guest_records.cpp
         # sa2-nx: not guest/photo_capture.cpp and guest/widescreen.cpp (N&B's game code); SA2's screen size instead.
-        ${RENUT_GPU_DIR}/guest/sa2_screen.cpp
+        ${RENUT_GPU_DIR}/guest/ds2_screen.cpp
         # reNut's overlay and the SDK's menus.
         ${RENUT_GPU_DIR}/overlay/app_integration.cpp
         ${RENUT_GPU_DIR}/overlay/overlay_drawer.cpp

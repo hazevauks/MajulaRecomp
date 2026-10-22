@@ -472,24 +472,24 @@ void RegisterGuestDeclaration(u32 declaration_va, const GuestVertexElement *elem
 
 }  // namespace
 
-// void XGRegisterVertexShader(D3DVertexShader*, void *pPhysicalPart) [sub_8255E658; N&B 0x8264E7B8]
-BANJO_RENUT_HOOK_RAW(sub_8255E658) {
+// void XGRegisterVertexShader(D3DVertexShader*, void *pPhysicalPart) [sub_829B10E0; N&B 0x8264E7B8]
+BANJO_RENUT_HOOK_RAW(sub_829B10E0) {
   const u32 shader = ctx.r3.u32, physical = ctx.r4.u32;
-  __imp__sub_8255E658(ctx, base);
+  __imp__sub_829B10E0(ctx, base);
   RegisterGuestShader(shader, physical, false);
 }
 
-// void XGRegisterPixelShader(D3DPixelShader*, void *pPhysicalPart) [sub_8255DBF8; N&B 0x8264E670]
-BANJO_RENUT_HOOK_RAW(sub_8255DBF8) {
+// void XGRegisterPixelShader(D3DPixelShader*, void *pPhysicalPart) [sub_829AF490; N&B 0x8264E670]
+BANJO_RENUT_HOOK_RAW(sub_829AF490) {
   const u32 shader = ctx.r3.u32, physical = ctx.r4.u32;
-  __imp__sub_8255DBF8(ctx, base);
+  __imp__sub_829AF490(ctx, base);
   RegisterGuestShader(shader, physical, true);
 }
 
-// D3DVertexDeclaration *D3DDevice_CreateVertexDeclaration(const D3DVERTEXELEMENT9*) [sub_8255E198; N&B 0x8264EA90]
-BANJO_RENUT_HOOK_RAW(sub_8255E198) {
+// D3DVertexDeclaration *D3DDevice_CreateVertexDeclaration(const D3DVERTEXELEMENT9*) [sub_829AFA30; N&B 0x8264EA90]
+BANJO_RENUT_HOOK_RAW(sub_829AFA30) {
   const u32 elements_va = ctx.r3.u32;
-  __imp__sub_8255E198(ctx, base);
+  __imp__sub_829AFA30(ctx, base);
   const u32 declaration = ctx.r3.u32;
   if (const auto *elements = declaration ? GuestPtr<const GuestVertexElement>(elements_va) : nullptr)
     RegisterGuestDeclaration(declaration, elements);

@@ -103,6 +103,12 @@ code when its hook is ported.
 | CreateVertexDeclaration | `829AFA30` | `8255E198` | (elements) -> declaration: counts the 12-byte elements to the 0xFF stream, allocates, initialises (`829AF940`) |
 | D3DResource_Destroy | `829ACF00` | `8254A200` | Release (`829AD1A8`) calls it at zero; a switch on the resource type |
 
+Called by the device hook as well: `InitializeApiState` `829C1460` (SA2 `8255C150`) and
+`InitializePresentationParameters` `829C1E30` (SA2 `8255CB20`): the hardware path calls the second with (device,
+presentation parameters), and both sit at SA2's distances from it (0x9D0 and 0x280). Two globals of the device hook
+differ from SA2's: the qword copied to +11008 is at `0x8343B708` (`829C1B18`), and the title device is stored through
+the `VdGlobalDevice` import slot `0x82000728` (`0x8200072C` is `VdGlobalXamDevice`, used by a system process).
+
 Also DS2's own: `BeginIndexedVertices` `829C2848` and `DrawIndexedVerticesUP` `829C2D88` (SA2's linker dropped
 them); the header copies of the shaders `829B10A0` (+872) and `829B0F78` (+40), Renut's container offsets. **The game
 also initialises vertex declarations in its own memory** (`829AF940` called directly from `826A8F08`): that path needs

@@ -15,6 +15,17 @@ project(ds2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# -mearly-ra=none for everything compiled for the console (sa2-nx, 2026-10-19; peggle2-nx, sasrt-nx and banjo-nx build
+# this way). devkitA64 GCC 16.1 runs an AArch64 "early register allocation" pass at -O2 and above (-mearly-ra=all). In
+# Peggle 2's console build it dropped table lookups of the XDK's streaming copy (the two-register lookup of the NEON
+# vperm helper) and large textures came out as garbage on the console only. Here, before the SDK is added, so its
+# libraries and the LTO link get it too. DS2_SWITCH_EARLY_RA=ON puts the compiler's default back.
+option(DS2_SWITCH_EARLY_RA "Leave GCC's AArch64 early register allocation pass on (Switch; miscompiles, see above)" OFF)
+if(REXGLUE_PLATFORM_SWITCH AND NOT DS2_SWITCH_EARLY_RA)
+    add_compile_options(-mearly-ra=none)
+    add_link_options(-mearly-ra=none)
+endif()
+
 # The SDK is built from source in this repository unless another tree is given.
 set(REXSDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sdk" CACHE PATH "Path to the ReXGlue SDK source tree")
 
@@ -44,8 +55,6 @@ set(DS2_SOURCES
     src/ds2_pgo.cpp
     # Scripted pad for unattended test runs (cvar ds2_input_script; tools/win/boot_test.ps1 -Pad).
     src/ds2_input_script.cpp
-    # Stage 2, phase A: wraps the game's Direct3D candidates and logs them (cvar ds2_d3d_trace, off by default).
-    src/ds2_d3d_trace.cpp
     # Stage 2: the native renderer (src/me, masseffect-nx's PM4-ring Vulkan renderer as adapted by banjo-nx and
     # sa2-nx). It replaces the emulated Xenos GPU with ds2_renderer_native = true; off by default on the PC until it
     # draws this game right.
@@ -99,6 +108,19 @@ endif()
 
 # Link the SDK. Stage 1 draws with ReXGlue's Xenos GPU emulation; the native renderer replaces it later.
 rexglue_setup_target(ds2 GPU_PLUGINS xenos)
+# An emulator starts NROs without argv[0]: the SDK then takes the NRO's usual place on the SD for its folder
+# (sdk/src/core/filesystem_posix.cpp, from banjo-nx through sa2-nx). hbloader on the console always passes argv[0].
+if(REXGLUE_PLATFORM_SWITCH AND TARGET rexcore)
+    target_compile_definitions(rexcore PRIVATE REX_SWITCH_FALLBACK_EXE="/switch/ds2-nx/ds2.nro")
+endif()
+
+# Renut's Direct3D-level renderer (reNut by masterspike52, through banjo-nx and sa2-nx 1.0.3; docs/deko3d.md): no PM4
+# ring, no EDRAM; plume's Vulkan / D3D12 back ends on the PC and banjo-nx's deko3d back end on the Switch. Linked in
+# with this option, chosen at boot with ds2_renderer = "renut".
+option(DS2_RENUT_RENDERER "Link Renut's Direct3D-level renderer (ds2_renderer = renut)" ON)
+if(DS2_RENUT_RENDERER)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ds2_renut_gpu.cmake")
+endif()
 
 # SPIR-V initializers of the native renderer's EDRAM transfer / utility shaders (src/me/native/shaders), compiled
 # on the host with glslangValidator (tools/win/build_glslang.ps1 builds it from the SDK's glslang). The Switch build
@@ -276,7 +298,9 @@ if(REXGLUE_PLATFORM_SWITCH)
         message(FATAL_ERROR "DS2_PGO must be empty, generate or use (got ${DS2_PGO})")
     endif()
     if(DS2_PGO)
-        foreach(target ds2_recomp ds2)
+        # sa2-nx (2026-10-20): Renut's renderer (ds2_renut_gpu: the hooks, the capture, the render thread) and plume
+        # (its deko3d back end) too: with Renut they are a large part of the game thread and all of the render thread.
+        foreach(target ds2_recomp ds2 ds2_renut_gpu plume)
             if(TARGET ${target})
                 target_compile_options(${target} PRIVATE ${_ds2_pgo})
             endif()

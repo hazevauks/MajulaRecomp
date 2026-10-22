@@ -1,5 +1,5 @@
 /**
- * @file    gpu/guest/sa2_screen.cpp
+ * @file    gpu/guest/ds2_screen.cpp
  * @brief   sa2-nx (2026-10-20): the game's screen width for Renut's renderer.
  *
  * Renut's guest/widescreen.cpp widens N&B's screen through N&B's own code; SA2

@@ -106,7 +106,7 @@ struct PipelineInputs {
 // Built pipeline for the key, compiling it on first use unless the pipeline
 // list (below) built it ahead. nullptr on failure (logged once per key).
 plume::RenderPipeline *GetPipelineLocked(const PipelineKey &key, const PipelineInputs &inputs);
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): GetPipelineLocked's calls so far, and the prebuild epoch.
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): GetPipelineLocked's calls so far, and the prebuild epoch.
 uint64_t PipelineLookupsLocked();
 uint64_t PrebuildEpochLocked();
 

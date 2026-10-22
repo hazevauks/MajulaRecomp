@@ -33,7 +33,7 @@ void Queue(std::function<void()> work);
 // The same without taking State().mutex, for work that takes it itself
 // (Video::Present, record destruction).
 void QueueUnlocked(std::function<void()> work);
-// sa2-nx (2026-10-20, sa2_renut_prefetch_next): as Queue, and the two addresses (each may be null) are prefetched while
+// sa2-nx (2026-10-20, ds2_renut_prefetch_next): as Queue, and the two addresses (each may be null) are prefetched while
 // the item before it runs.
 void QueuePrefetched(const void *prefetch0, const void *prefetch1, std::function<void()> work);
 

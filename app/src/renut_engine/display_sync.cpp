@@ -25,7 +25,7 @@
 #endif
 
 // sa2-nx (2026-10-20): on by default in SA2 (the user's call: Banjo's latency set); SA2's frame pacing
-// (gpu/sa2_renut_pacing.cpp) takes its releases from here.
+// (gpu/ds2_renut_pacing.cpp) takes its releases from here.
 REXCVAR_DEFINE_BOOL(banjo_display_sync, true, "Banjo/Enhancements",
                     "OFF by default (2026-10-19): in Ryujinx every run with the thread active stalled or hung (runs 65, "
                     "67, 68), the runs without it did not; to be tried on the console with configs/"

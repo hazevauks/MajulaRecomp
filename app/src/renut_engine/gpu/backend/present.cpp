@@ -52,7 +52,7 @@ REXCVAR_DEFINE_DOUBLE(banjo_renut_diag_show_gamma, 1.0, "Banjo/Renut",
 // display controller applies it to every pixel it sends; the emulated GPU and sa2-nx's native renderer do the same
 // (DC_LUT registers). Renut presented without it: every frame came out lighter than both (12-16 levels in the
 // midtones, renut-renderer.md). Same lookup as theirs: each channel's 8-bit value picks its entry.
-REXCVAR_DEFINE_BOOL(sa2_renut_gamma_ramp, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_gamma_ramp, true, "DS2/Renderer",
                     "Renut's renderer: apply the game's display gamma ramp at scan-out, as the Xbox 360's display "
                     "controller, the emulated GPU and the native renderer do (off: the frame as rendered, lighter)");
 
@@ -124,7 +124,7 @@ FrameFit FitFrame(uint32_t out_w, uint32_t out_h, uint32_t src_w, uint32_t src_h
   return fit;
 }
 
-// sa2-nx (2026-10-20, sa2_renut_gamma_ramp): the game's display gamma ramp (Video::SetGammaRamp), a 256 x 1 float
+// sa2-nx (2026-10-20, ds2_renut_gamma_ramp): the game's display gamma ramp (Video::SetGammaRamp), a 256 x 1 float
 // texture in a bindless slot that the present shader reads.
 struct GammaRamp {
   // The game thread's last copy (SetGammaRamp's compare, that thread only).
@@ -151,7 +151,7 @@ constexpr plume::RenderFormat kGammaRampFormat = plume::RenderFormat::R32G32B32A
 void UpdateGammaRampLocked(VideoState &s) {
   GammaRamp &g = g_gamma;
   const uint64_t version = g.version.load(std::memory_order_acquire);
-  if (!version || !REXCVAR_GET(sa2_renut_gamma_ramp))
+  if (!version || !REXCVAR_GET(ds2_renut_gamma_ramp))
     return;
   if (!g.texture) {
     g.texture = s.device->createTexture(plume::RenderTextureDesc::Texture2D(256, 1, 1, kGammaRampFormat));
@@ -180,7 +180,7 @@ void UpdateGammaRampLocked(VideoState &s) {
       std::lock_guard lock(g.mutex);
       std::memcpy(words, g.words, sizeof(words));
     }
-    // The native renderer's table (sa2_native_targets.cpp RecomputeRamp): the 10-bit value / 1023, alpha 1.
+    // The native renderer's table (ds2_native_targets.cpp RecomputeRamp): the 10-bit value / 1023, alpha 1.
     for (uint32_t i = 0; i < 256; ++i) {
       for (uint32_t c = 0; c < 3; ++c) {
         const uint8_t *w = words + (c * 256 + i) * 2;
@@ -201,7 +201,7 @@ void UpdateGammaRampLocked(VideoState &s) {
   cmd->barriers(plume::RenderBarrierStage::GRAPHICS,
                 plume::RenderTextureBarrier(g.texture.get(), plume::RenderTextureLayout::SHADER_READ));
   if (changed)
-    RGPU_INFO("sa2-nx: the game's display gamma ramp at scan-out (sa2_renut_gamma_ramp): [0] {:.0f}, [64] {:.0f}, "
+    RGPU_INFO("sa2-nx: the game's display gamma ramp at scan-out (ds2_renut_gamma_ramp): [0] {:.0f}, [64] {:.0f}, "
               "[128] {:.0f}, [255] {:.0f} of 1023 (red)",
               texels[0] * 1023.0f, texels[64 * 4] * 1023.0f, texels[128 * 4] * 1023.0f, texels[255 * 4] * 1023.0f);
   g.uploaded = version;
@@ -242,7 +242,7 @@ void RecordScanOut(VideoState &s, const PresentImage &image, uint32_t out_w, uin
   // sa2-nx: the game's gamma ramp (not on banjo_renut_diag_show_texture's texture): its slot as param1's bits, 0 =
   // none (slots 0-2 are the null textures, never the ramp's).
   const uint32_t ramp_slot = image.gamma <= 0.0f && g_gamma.uploaded && g_gamma.slot != kInvalidDescriptor &&
-                                     REXCVAR_GET(sa2_renut_gamma_ramp)
+                                     REXCVAR_GET(ds2_renut_gamma_ramp)
                                  ? g_gamma.slot
                                  : 0u;
   push.param1 = std::bit_cast<float>(ramp_slot);

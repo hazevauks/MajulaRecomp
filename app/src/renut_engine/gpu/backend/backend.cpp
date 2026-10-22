@@ -55,7 +55,7 @@ namespace renut::gpu {
 namespace {
 
 Backend ResolveBackend() {
-#if SA2_SWITCH_NO_NVK && defined(PLUME_DEKO3D)
+#if DS2_SWITCH_NO_NVK && defined(PLUME_DEKO3D)
   // sa2-nx (2026-10-20): no Vulkan driver in this build (REXGLUE_SWITCH_NO_NVK): deko3d whatever the key says.
   RGPU_INFO("renut_gpu_backend: deko3d (this build links no Vulkan driver: REXGLUE_SWITCH_NO_NVK)");
   return Backend::Deko3D;

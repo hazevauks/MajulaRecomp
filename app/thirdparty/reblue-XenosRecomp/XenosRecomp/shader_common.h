@@ -51,7 +51,11 @@
     X(TexCoord,  7, 19) \
     X(TexCoord,  8, 20) \
     X(TexCoord,  9, 21) \
-    X(TexCoord, 10, 22)
+    X(TexCoord, 10, 22) \
+    /* ds2-nx (2026-10-22): Dark Souls II's model shaders also read TANGENT1 (6 vertex shaders) and COLOR2 */ \
+    /* (6): without a location DXC refuses them ("partial explicit stage input location assignment"). */ \
+    X(Tangent,   1, 23) \
+    X(Color,     2, 24)
 
 // SPEC_CONSTANTS_ONLY keeps the HLSL below out of host C++ TUs, which IntelliSense would otherwise parse.
 #if (!defined(__cplusplus) || defined(__INTELLISENSE__)) && !defined(SHADER_COMMON_SPEC_CONSTANTS_ONLY)

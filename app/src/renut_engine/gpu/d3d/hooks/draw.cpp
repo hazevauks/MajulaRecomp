@@ -565,8 +565,8 @@ void D3DDevice_SetPixelShader_hook(u32 device, u32 shader) {
 // ---------------------------------------------------------------------------
 // sa2-nx (2026-10-20): SA2's hooks (N&B's addresses in brackets)
 // ---------------------------------------------------------------------------
-// The draws are Renut's at SA2's addresses (same signatures; sa2-nx's own hooks there, src/me/sa2_me_hooks.cpp and
-// src/me/sa2_d3d_api.cpp, hand over to these when Renut's renderer is chosen). SA2 does not tile, export, record
+// The draws are Renut's at SA2's addresses (same signatures; sa2-nx's own hooks there, src/me/ds2_me_hooks.cpp and
+// src/me/ds2_d3d_api.cpp, hand over to these when Renut's renderer is chosen). SA2 does not tile, export, record
 // command buffers or draw tessellated, and its Present is left to its own code (its Resolve and Swap are hooked).
 //
 // Clear and Resolve: the host work is queued from the device as it is at the call (the same snapshot N&B's hooks
@@ -599,14 +599,14 @@ void QueueHostResolve(u32 device, u32 flags, const ClearRect *rect, u32 dest_tex
 
 }  // namespace
 
-BANJO_RENUT_HOOK_SHARED(sub_82565C60, D3DDevice_DrawVertices_hook);  // D3DDevice_DrawVertices [0x8222C7A0]
-BANJO_RENUT_HOOK_SHARED(sub_82566078, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices [0x826567C8]
-BANJO_RENUT_HOOK_SHARED(sub_82565C18, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP [0x8222E520]
-BANJO_RENUT_HOOK_SHARED(sub_82565758, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices [0x8222CC50]
+BANJO_RENUT_HOOK_SHARED(sub_829C2E28, D3DDevice_DrawVertices_hook);  // D3DDevice_DrawVertices [0x8222C7A0]
+BANJO_RENUT_HOOK_SHARED(sub_829C3240, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices [0x826567C8]
+BANJO_RENUT_HOOK_SHARED(sub_829C2800, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP [0x8222E520]
+BANJO_RENUT_HOOK_SHARED(sub_829C2340, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices [0x8222CC50]
 
 // void D3DDevice_ClearF(D3DDevice*, DWORD Flags, const D3DRECT *pRect, const D3DVECTOR4 *pColor, float Z,
-//     DWORD Stencil) [sub_82563978; N&B 0x822811A0]: Z in f1 (r7's slot), Stencil in r8.
-BANJO_RENUT_HOOK_RAW(sub_82563978) {
+//     DWORD Stencil) [sub_829CCC28; N&B 0x822811A0]: Z in f1 (r7's slot), Stencil in r8.
+BANJO_RENUT_HOOK_RAW(sub_829CCC28) {
   const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, color_va = ctx.r6.u32;
   ClearRect rect;
   const bool has_rect = rect_va && ReadRect(rect_va, rect);
@@ -614,16 +614,16 @@ BANJO_RENUT_HOOK_RAW(sub_82563978) {
   if (color_va)
     ReadVector4(color_va, color);
   QueueHostClear(device, flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
-  __imp__sub_82563978(ctx, base);
+  __imp__sub_829CCC28(ctx, base);
 }
 
 // void D3DDevice_Resolve(D3DDevice*, DWORD Flags, const D3DRECT *pSourceRect, D3DBaseTexture *pDestTexture,
 //     const D3DPOINT *pDestPoint, UINT DestLevel, UINT DestSliceOrFace, const D3DVECTOR4 *pClearColor, float ClearZ,
-//     DWORD ClearStencil, const D3DRESOLVE_PARAMETERS *pParameters) [sub_825656F8; N&B 0x8222D6C8]: ClearZ in f1,
-// ClearStencil and pParameters in the caller's argument words at +92 and +100 (sub_825656F8 reads them there). Every
+//     DWORD ClearStencil, const D3DRESOLVE_PARAMETERS *pParameters) [sub_829B60E8; N&B 0x8222D6C8]: ClearZ in f1,
+// ClearStencil and pParameters in the caller's argument words at +92 and +100 (sub_829B60E8 reads them there). Every
 // resolve of SA2 comes here: the game's, the Present's and Direct3D's own (sub_825645A0, the core, has no other
 // caller).
-BANJO_RENUT_HOOK_RAW(sub_825656F8) {
+BANJO_RENUT_HOOK_RAW(sub_829B60E8) {
   const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, dest_texture = ctx.r6.u32;
   const u32 point_va = ctx.r7.u32, dest_level = ctx.r8.u32, dest_slice = ctx.r9.u32, color_va = ctx.r10.u32;
   const u32 clear_stencil = LoadU32(ctx.r1.u32 + 92);
@@ -636,5 +636,5 @@ BANJO_RENUT_HOOK_RAW(sub_825656F8) {
   }
   QueueHostResolve(device, flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level, dest_slice,
                    color_va, float(ctx.f1.f64), clear_stencil);
-  __imp__sub_825656F8(ctx, base);
+  __imp__sub_829B60E8(ctx, base);
 }

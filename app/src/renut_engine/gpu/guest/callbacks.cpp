@@ -18,7 +18,7 @@
 #include "renut_engine/gpu/banjo_renut_checks.h"  // banjo-nx (package 27c)
 
 // sa2-nx (2026-10-20): see g_waiting.
-REXCVAR_DEFINE_BOOL(sa2_renut_callbacks_fast, true, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_callbacks_fast, true, "DS2/Renderer",
                     "Renut's renderer: every draw, clear and resolve hook first runs the guest's GPU callbacks the "
                     "render thread has reached; with none waiting (nearly always: SA2 inserts few) it returns without "
                     "taking the two locks it took to find that out. Off: the locks every time")
@@ -39,7 +39,7 @@ std::deque<Callback> g_callbacks;  // inserted, not run yet, in order
 uint64_t g_last_seq = 0;
 // Set while a thread runs callbacks: they run one at a time, in order.
 bool g_running = false;
-// sa2-nx (2026-10-20, sa2_renut_callbacks_fast): g_callbacks.size(), kept with it under g_mutex and read without it.
+// sa2-nx (2026-10-20, ds2_renut_callbacks_fast): g_callbacks.size(), kept with it under g_mutex and read without it.
 // A hook that reads 0 while another thread inserts one runs it at its next call; on the inserting thread the count is
 // in program order.
 std::atomic<size_t> g_waiting{0};
@@ -70,7 +70,7 @@ uint64_t LastCallback() {
 std::atomic<int> g_hook_fast_paths{0};  // sa2-nx: callbacks.h
 
 bool HookFastPathsInit() {
-  const bool on = REXCVAR_GET(sa2_renut_callbacks_fast);
+  const bool on = REXCVAR_GET(ds2_renut_callbacks_fast);
   g_hook_fast_paths.store(on ? 1 : -1, std::memory_order_relaxed);
   return on;
 }

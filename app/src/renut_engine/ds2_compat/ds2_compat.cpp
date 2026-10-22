@@ -1,5 +1,5 @@
 // sa2-nx (2026-10-20): what Renut's renderer (through banjo-nx) expects from banjo-nx's SDK and generated code, for
-// SA2's. Whether the generated code marks the store cards (g_banjo_store_cards): src/cpu/sa2_hot_guest.cpp, which sees
+// SA2's. Whether the generated code marks the store cards (g_banjo_store_cards): src/cpu/ds2_hot_guest.cpp, which sees
 // the generated header.
 #include <cstdint>
 

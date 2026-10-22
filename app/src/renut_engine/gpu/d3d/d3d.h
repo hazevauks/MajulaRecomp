@@ -225,7 +225,7 @@ static_assert(sizeof(ControlPacket) == 48);
 
 // Public D3DDevice (0x2B00 bytes in N&B's XDK) followed by the CDevice-private
 // tail of the allocation Direct3D_CreateDevice makes: 0x6080 bytes in SA2's
-// (sub_8254FC10 allocates 24704, aligned 128; N&B 0x5E00).
+// (sub_829BA480 allocates 24704, aligned 128; N&B 0x5E00).
 constexpr u32 kDeviceAllocSize = 0x6080;
 constexpr u32 kDeviceAlignment = 0x80;
 
@@ -278,14 +278,14 @@ static_assert(offsetof(Device, m_ZFilter) == 0x2A8A);
 
 // CDevice-private fields Direct3D_CreateDevice initialises (byte offsets into
 // the allocation, from its decompilation at 0x8264DF28).
-// sa2-nx: SA2's sub_8255C808 and sub_8254FC10 (N&B 10888, 10892, 23980).
+// sa2-nx: DS2's sub_8255C808 and sub_829BA480 (N&B 10888, 10892, 23980).
 constexpr u32 kDeviceOffsetCreationThreadId = 11016;  // GetCurrentThreadId()
 constexpr u32 kDeviceOffsetIsTitleProcess = 11020;    // KeGetCurrentProcessType() == 2
 constexpr u32 kDeviceOffsetBehaviorFlags = 24392;     // Direct3D_CreateDevice arg 4
 
 // Bound objects the Set* calls store in the CDevice-private area (guest VAs).
 // sa2-nx: SA2's "is the resource bound" test (sub_825498C8) reads every one of
-// these but the strides (sub_82565758, BeginVertices). N&B's in brackets.
+// these but the strides (sub_829C2340, BeginVertices). N&B's in brackets.
 constexpr u32 kDeviceOffsetVertexDeclaration = 12240;  // SetVertexDeclaration [0x2E2C]
 constexpr u32 kDeviceOffsetIndexBuffer = 12812;        // SetIndices [0x3094]
 constexpr u32 kDeviceOffsetRenderTargets = 12816;      // SetRenderTarget, [4] [0x3098]
@@ -309,7 +309,7 @@ constexpr u32 kDeviceOffsetMinTessellationLevel = 0x2980;
 // tiles, and the renderer reads it only while tiling (PredicatedTile).
 constexpr u32 kDeviceOffsetPredication = 13084;
 // D3DCommandBuffer being recorded (BeginCommandBuffer sets, End clears).
-// sa2-nx: SA2's AllocateInlineData (sub_8254D9A8) reads it (N&B 13516).
+// sa2-nx: DS2's AllocateInlineData (sub_829A8450) reads it (N&B 13516).
 constexpr u32 kDeviceOffsetCommandBuffer = 13920;
 // The leading part of the device the draw, clear and resolve paths read (up
 // to and including kDeviceOffsetPredication); a copy of it stands in for the
@@ -318,11 +318,11 @@ constexpr u32 kDeviceSnapshotSize = 13088;  // sa2-nx (N&B 0x31A8)
 static_assert(kDeviceOffsetVertexShader + 4 <= kDeviceSnapshotSize);
 static_assert(kDeviceOffsetPredication + 4 <= kDeviceSnapshotSize);
 // m_pRing the inline end of BeginVertices / BeginIndexedVertices restores.
-// sa2-nx: SA2's BeginVertices (sub_82565758) stores it, and the game's 11
+// sa2-nx: DS2's BeginVertices (sub_829C2340) stores it, and the game's 11
 // inline ends load it (N&B 0x3484).
 constexpr u32 kDeviceOffsetVerticesRingEnd = 13844;
-// Swap bookkeeping (D3DDevice_Swap 0x82287590; SA2's sub_82558E98, which
-// also sets the pending flag in SynchronizeToPresentationInterval sub_825589D8).
+// Swap bookkeeping (D3DDevice_Swap 0x82287590; DS2's sub_829BB520, which
+// also sets the pending flag in SynchronizeToPresentationInterval sub_829BB060).
 constexpr u32 kDeviceOffsetSwapCount = 16968;        // [0x40B0]
 constexpr u32 kDeviceOffsetFenceTag = 11036;         // current fence tag [0x2A9C]
 constexpr u32 kDeviceOffsetSwapFenceTag = 11056;     // fence tag at the last Swap [0x2AB0]

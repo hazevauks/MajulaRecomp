@@ -289,7 +289,7 @@ public:
   // is busy.
   static void PresentOverlayOnly();
 
-  // sa2-nx (2026-10-20, sa2_renut_gamma_ramp): the game's display gamma ramp, as its Direct3D keeps it in the device
+  // sa2-nx (2026-10-20, ds2_renut_gamma_ramp): the game's display gamma ramp, as its Direct3D keeps it in the device
   // (768 big-endian words: red, green, blue, 256 each, the 10-bit value << 6), for the scan-out to apply as the Xbox
   // 360's display controller does. Any thread; a copy that has not changed costs a compare.
   static void SetGammaRamp(const uint8_t *big_endian_words);

@@ -108,7 +108,7 @@ void LatchResolutionScaleLocked();
 // The host target for the D3DSurface at 'surface_va', created or rebuilt as
 // needed. nullptr for 0 or when the target cannot be created.
 HostSurface *GetHostSurfaceLocked(u32 surface_va);
-// sa2-nx (2026-10-20, sa2_renut_chain_reuse): banjo-nx's surface epoch (bumped by every target built, retired,
+// sa2-nx (2026-10-20, ds2_renut_chain_reuse): banjo-nx's surface epoch (bumped by every target built, retired,
 // unused or rebound, the resolution scale latched and the tiling extent set).
 uint64_t SurfaceEpochLocked();
 // sa2-nx (2026-10-20): banjo-nx's framebuffer epoch (bumped when a framebuffer is retired).

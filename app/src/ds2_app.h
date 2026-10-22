@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
+#include <optional>
 #include <system_error>
 
 #include <rex/cvar.h>
@@ -26,6 +28,13 @@
 #include "ds2_trophies.h"
 #include "me/ds2_render_mode.h"
 #include "me/me_native_system.h"
+// sa2-nx 1.0.3 (2026-10-20): Renut's Direct3D-level renderer (src/renut_engine/gpu, from reNut by masterspike52 through
+// banjo-nx), chosen at boot with ds2_renderer = "renut" (docs/deko3d.md).
+#if DS2_RENUT_RENDERER
+#include "renut_engine/gpu/banjo_renut_select.h"
+#include "renut_engine/gpu/overlay/app_integration.h"
+#include "renut_engine/gpu/banjo_renut_capture.h"
+#endif
 
 // Which host API the emulated Xenos GPU draws with. The SDK takes Direct3D 12 on Windows when both are built in; the
 // Switch build has Vulkan only, so "vulkan" on the PC is the same code path the console's first frames use.
@@ -93,6 +102,14 @@ class Ds2App : public rex::ReXApp {
   // An explicit backend for the emulated GPU (ds2_gpu_backend); otherwise ReXApp loads the plugin with its default.
   void OnPreSetup(rex::RuntimeConfig& config) override {
     ds2::enh::ApplyGpuBoost();
+#if DS2_RENUT_RENDERER
+    if (banjo::renut_gpu::Active()) {
+      // No SDK graphics system and no GPU plugin: the renderer is the app's (its own window swapchain and thread).
+      renut::gpu::ConfigureRuntime(config);
+      REXLOG_INFO("graphics: Renut's Direct3D-level renderer (ds2_renderer = renut: no PM4 ring, no EDRAM)");
+      return;
+    }
+#endif
     // Stage 2: with ds2_renderer_native = true the graphics system is the app's own native Vulkan renderer (src/me),
     // and the emulated Xenos GPU plugin is not loaded (ReXApp only loads it when config.graphics is empty).
     if (me::native::Enabled()) {
@@ -108,6 +125,24 @@ class Ds2App : public rex::ReXApp {
     }
   }
 
+#if DS2_RENUT_RENDERER
+  // Renut's renderer draws the SDK's menus through its own plume drawer, resizes its swapchain itself, and starts once
+  // the window exists (here, before the game: the paths are final).
+  std::unique_ptr<rex::ui::ImmediateDrawer> OnCreateImmediateDrawer() override {
+    if (banjo::renut_gpu::Active()) return renut::gpu::CreateOverlayDrawer();
+    return rex::ReXApp::OnCreateImmediateDrawer();
+  }
+  void OnWindowPixelSizeChanged(uint32_t pixel_width, uint32_t pixel_height) override {
+    rex::ReXApp::OnWindowPixelSizeChanged(pixel_width, pixel_height);
+    if (banjo::renut_gpu::Active()) renut::gpu::OnWindowResized();
+  }
+  std::optional<rex::PathConfig> OnFinalizePaths(const rex::PathConfig& defaults,
+                                                 std::function<void(rex::PathConfig)> resume) override {
+    if (banjo::renut_gpu::Active()) renut::gpu::StartRenderer(app_context(), [this] { return imgui_drawer(); });
+    return rex::ReXApp::OnFinalizePaths(defaults, std::move(resume));
+  }
+#endif
+
   // Recording of the game image for testing (ds2_video_s = N seconds after start; 0 = off). Taken from the
   // presenter's guest output, so it works minimized and nothing can cover it.
   void OnPostSetup() override {
@@ -119,6 +154,11 @@ class Ds2App : public rex::ReXApp {
     ds2::enh::StartReport();
     // PC: the key that simulates docking / undocking (render resolution, bind_ds2_docked = F9).
     ds2::render::RegisterKeys();
+#if DS2_RENUT_RENDERER
+    if (banjo::renut_gpu::Active())
+      ds2::capture::StartWithSource([](rex::ui::RawImage& image) { return renut::gpu::CaptureFrame(image); });
+    else
+#endif
     ds2::capture::Start([this]() -> rex::ui::Presenter* {
       const auto* rt = runtime();
       const auto* graphics = rt ? rt->graphics_system() : nullptr;
@@ -164,6 +204,9 @@ class Ds2App : public rex::ReXApp {
   }
 
   void OnShutdown() override {
+#if DS2_RENUT_RENDERER
+    if (banjo::renut_gpu::Active()) renut::gpu::ShutdownRenderer();
+#endif
     ds2::capture::Stop();
     ds2::pgo::Stop();
   }

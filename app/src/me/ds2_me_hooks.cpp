@@ -1,6 +1,6 @@
 // Dark Souls II hooks for the native renderer (src/me, from masseffect-nx through banjo-nx and sa2-nx), with this
 // game's addresses (docs/ds2-notes.md, "Direct3D do jogo": found by the PM4 headers each function builds and confirmed
-// at run time with ds2_d3d_trace).
+// at run time with the Direct3D trace module of the time, removed on 2026-10-22).
 //
 // The renderer reads the game's PM4 ring by itself; these hooks only feed it what the ring cannot say:
 //
@@ -25,6 +25,7 @@
 #include <rex/ppc.h>
 
 #include "me/me_native_system.h"
+#include "renut_engine/gpu/ds2_renut_yield.h"  // ds2_renderer = "renut": these hooks hand over
 
 namespace {
 
@@ -48,6 +49,7 @@ const bool g_device_layout_set = [] {
 // Draw-time shader load (FlushState's shader part, called from every Draw*).
 REX_EXTERN(__imp__sub_829BF328);
 REX_HOOK_RAW(sub_829BF328) {
+  DS2_RENUT_YIELD(sub_829BF328)
   const uint32_t device = ctx.r3.u32;
   if (device >= 0x40000000 && device < 0x7F000000) {
     const uint32_t vs = Load32(base, device + kDeviceVertexShader), ps = Load32(base, device + kDevicePixelShader);
@@ -61,18 +63,21 @@ REX_HOOK_RAW(sub_829BF328) {
 
 REX_EXTERN(__imp__sub_829C2E28);
 REX_HOOK_RAW(sub_829C2E28) {  // D3DDevice_DrawVertices
+  DS2_RENUT_YIELD_SHARED(sub_829C2E28)
   me::native::NoteDrawCall(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
   __imp__sub_829C2E28(ctx, base);
 }
 
 REX_EXTERN(__imp__sub_829C3240);
 REX_HOOK_RAW(sub_829C3240) {  // D3DDevice_DrawIndexedVertices
+  DS2_RENUT_YIELD_SHARED(sub_829C3240)
   me::native::NoteDrawCall(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
   __imp__sub_829C3240(ctx, base);
 }
 
 REX_EXTERN(__imp__sub_829C2800);
 REX_HOOK_RAW(sub_829C2800) {  // D3DDevice_DrawVerticesUP
+  DS2_RENUT_YIELD_SHARED(sub_829C2800)
   me::native::NoteDrawCall(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
   __imp__sub_829C2800(ctx, base);
 }

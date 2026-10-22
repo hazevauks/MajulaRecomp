@@ -20,20 +20,20 @@
 #include "renut_engine/gpu/guest/widescreen.h"
 #include "renut_engine/gpu/log.h"
 #include "renut_engine/gpu/backend/video.h"
-#include "me/sa2_render_mode.h"  // sa2-nx (1.0.3.1): the console's mode and the heights set for it
+#include "me/ds2_render_mode.h"  // sa2-nx (1.0.3.1): the console's mode and the heights set for it
 #if defined(PLUME_DEKO3D)
 #include <plume_deko3d.h>                             // sa2-nx (1.0.3.1): Deko3DSetSwapChainSize
 #include "renut_engine/gpu/banjo_renut_deko3d.h"     // sa2-nx (1.0.3.1): PackageScales
 #endif
 
 // sa2-nx (2026-10-20, 1.0.3.1, the user's request: 1920x1080 docked, as the native renderer drew it up to 1.0.2.1):
-// the render resolution follows the console's mode (sa2::render::Docked: libnx's operation mode, Reverse-NX obeyed; the
+// the render resolution follows the console's mode (ds2::render::Docked: libnx's operation mode, Reverse-NX obeyed; the
 // PC's simulated one, F9) at the next frame, at the heights the native renderer's keys set. On deko3d the swapchain
 // takes the display's size with it (1920x1080 docked), and a GLSL package made for 1x only keeps 1280x720.
-REXCVAR_DEFINE_BOOL(sa2_renut_dock_resolution, true, "SA2/Renderer",
-                    "Renut's renderer: render at sa2_render_height_docked (1080 = 1920x1080) when docked and at "
-                    "sa2_render_height_handheld (720 = the game's 1280x720) in handheld mode, switching at the next "
-                    "frame (the PC: sa2_render_docked, F9). Heights of 480, 720, 1080, 1440 or 2160. Off: "
+REXCVAR_DEFINE_BOOL(ds2_renut_dock_resolution, true, "DS2/Renderer",
+                    "Renut's renderer: render at ds2_render_height_docked (1080 = 1920x1080) when docked and at "
+                    "ds2_render_height_handheld (720 = the game's 1280x720) in handheld mode, switching at the next "
+                    "frame (the PC: ds2_render_docked, F9). Heights of 480, 720, 1080, 1440 or 2160. Off: "
                     "renut_resolution");
 
 REXCVAR_DEFINE_STRING(renut_resolution, "720p", "Nuts&Bolts/Graphics",
@@ -42,10 +42,10 @@ REXCVAR_DEFINE_STRING(renut_resolution, "720p", "Nuts&Bolts/Graphics",
     .allowed({"480p", "720p", "1080p", "1440p", "4K"});
 // sa2-nx (2026-10-20, the user's request: MSAA for the final build, 2x): SA2 makes every render target single-sample,
 // so Renut's multisampling (N&B's targets are multisampled: banjo-nx's resolves, depth resolves and readbacks of them)
-// never ran. The game's single-sample targets get this many samples on the host, as the native renderer's sa2_msaa did;
+// never ran. The game's single-sample targets get this many samples on the host, as the native renderer's ds2_msaa did;
 // the game's resolves downsample them. Its 4x surfaces (Direct3D's fast Clear aliases) stay as they are.
 // sa2-nx (1.0.3.1, the user's call: 2x cost the console a little too much CPU): off by default again.
-REXCVAR_DEFINE_INT32(sa2_renut_msaa, 0, "SA2/Renderer",
+REXCVAR_DEFINE_INT32(ds2_renut_msaa, 0, "DS2/Renderer",
                      "Renut's renderer: multisample anti-aliasing of the game's single-sample render targets: 0 = off "
                      "(the game's own, default), 2 = 2x, 4 = 4x, 8 = 8x. Smoother edges; each step costs more GPU and "
                      "CPU time and memory (8x: about 30 MB more for each 1280x720 target). Read at start")
@@ -207,9 +207,9 @@ bool BuildTarget(HostSurface &surface, const d3d::SurfaceDesc &desc, uint32_t mi
   surface.depth = d3d::IsDepthFormat(surface.format_word);
   surface.samples = SampleCount(surface.info_word);
   if (surface.samples == plume::RenderSampleCount::COUNT_1) {
-    // sa2-nx (2026-10-20, sa2_renut_msaa): the game's single-sample targets multisampled on the host.
+    // sa2-nx (2026-10-20, ds2_renut_msaa): the game's single-sample targets multisampled on the host.
     static const plume::RenderSampleCounts forced = [] {
-      const int32_t n = REXCVAR_GET(sa2_renut_msaa);
+      const int32_t n = REXCVAR_GET(ds2_renut_msaa);
       return n >= 8 ? plume::RenderSampleCounts(plume::RenderSampleCount::COUNT_8)
              : n >= 4 ? plume::RenderSampleCounts(plume::RenderSampleCount::COUNT_4)
              : n >= 2 ? plume::RenderSampleCounts(plume::RenderSampleCount::COUNT_2)
@@ -264,8 +264,8 @@ bool BuildTarget(HostSurface &surface, const d3d::SurfaceDesc &desc, uint32_t mi
 
 } // namespace
 
-uint64_t SurfaceEpochLocked() { return g_surface_epoch; }  // sa2-nx (2026-10-20, sa2_renut_chain_reuse)
-uint64_t FramebufferEpochLocked() { return g_framebuffer_epoch; }  // sa2-nx (2026-10-20, sa2_renut_chain_reuse)
+uint64_t SurfaceEpochLocked() { return g_surface_epoch; }  // sa2-nx (2026-10-20, ds2_renut_chain_reuse)
+uint64_t FramebufferEpochLocked() { return g_framebuffer_epoch; }  // sa2-nx (2026-10-20, ds2_renut_chain_reuse)
 
 RenderScale ResolutionScale() {
   return g_resolution_scale;
@@ -280,18 +280,18 @@ void LatchResolutionScaleLocked() {
                     : resolution == "1440p" ? 3u
                     : resolution == "4K"    ? 4u
                                             : 0u};
-  // sa2-nx (2026-10-20, 1.0.3.1): the console's mode picks the resolution (sa2_renut_dock_resolution).
-  static const bool follow_mode = REXCVAR_GET(sa2_renut_dock_resolution);
-  const bool docked = follow_mode && sa2::render::Docked();
+  // sa2-nx (2026-10-20, 1.0.3.1): the console's mode picks the resolution (ds2_renut_dock_resolution).
+  static const bool follow_mode = REXCVAR_GET(ds2_renut_dock_resolution);
+  const bool docked = follow_mode && ds2::render::Docked();
   if (follow_mode) {
-    const int32_t height = sa2::render::RenderHeightOf(docked);
+    const int32_t height = ds2::render::RenderHeightOf(docked);
     RenderScale mode;
     // The render resolutions only (codes 0-4: 720p, 480p, 1080p, 1440p, 2160p).
     if (height <= 0 || !RenderScale::FromRatio(uint32_t(height), 720, mode) || mode.code > 4) {
       static bool logged = false;
       if (!logged) {
         logged = true;
-        RGPU_WARN("sa2_render_height_{} = {} is not one of 480, 720, 1080, 1440, 2160: 720 (1280x720)",
+        RGPU_WARN("ds2_render_height_{} = {} is not one of 480, 720, 1080, 1440, 2160: 720 (1280x720)",
                   docked ? "docked" : "handheld", height);
       }
       mode = {};

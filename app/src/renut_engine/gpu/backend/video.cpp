@@ -37,7 +37,7 @@
 #include "renut_engine/gpu/banjo_renut_tuning.h"
 #include "renut_engine/gpu/banjo_renut_record.h"  // banjo-nx (package 28b): banjo_renut_record_worker
 #include <rex/frame_latency.h>  // banjo-nx (2026-10-20): the latency probe's "input -> GPU done"
-#include <rex/cvar.h>  // sa2-nx (2026-10-20): sa2_renut_double_buffer
+#include <rex/cvar.h>  // sa2-nx (2026-10-20): ds2_renut_double_buffer
 #if defined(PLUME_DEKO3D)
 #include <plume_deko3d.h>  // banjo-nx (2026-10-20, banjo_deko3d_latency_trim): fence copies
 #endif
@@ -77,7 +77,7 @@
 #include "host_shaders/resolve_copy_ps.dxil.h"
 #endif
 
-REXCVAR_DEFINE_BOOL(sa2_renut_double_buffer, false, "SA2/Renderer",
+REXCVAR_DEFINE_BOOL(ds2_renut_double_buffer, false, "DS2/Renderer",
                     "Renut's renderer: a swapchain of 2 images instead of 3 (input latency: a finished frame is shown at "
                     "the next refresh instead of queueing behind one already waiting). Off by default: a frame that "
                     "misses a refresh then waits a whole one, which hurts where frames are close to the budget (split "
@@ -932,12 +932,12 @@ bool Video::CreateHostDevice() {
   }
 
   // One image beyond the frames in flight, so acquiring never waits on scanout.
-  // sa2-nx (2026-10-20, sa2_renut_double_buffer): two images, so a finished frame is shown at the next refresh instead
+  // sa2-nx (2026-10-20, ds2_renut_double_buffer): two images, so a finished frame is shown at the next refresh instead
   // of queueing behind one already waiting for it; a frame that misses a refresh then waits a whole one.
-  static const bool double_buffer = REXCVAR_GET(sa2_renut_double_buffer);
+  static const bool double_buffer = REXCVAR_GET(ds2_renut_double_buffer);
   const uint32_t images = double_buffer ? 2u : kFramesInFlight + 1;
   plume::RenderSwapChainDesc swap_desc(render_window, kSwapChainFormat, images, false, kFramesInFlight);
-  RGPU_INFO("Swapchain: {} images{}", images, double_buffer ? " (sa2_renut_double_buffer)" : "");
+  RGPU_INFO("Swapchain: {} images{}", images, double_buffer ? " (ds2_renut_double_buffer)" : "");
   s.swap_chain = s.queue->createSwapChain(swap_desc);
   // plume's Vulkan swapchain is created lazily by resize().
   if (s.swap_chain && IsVulkan())

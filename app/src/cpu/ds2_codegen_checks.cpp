@@ -28,6 +28,15 @@
 #include <rex/platform.h>
 #include <rex/sys_counters.h>
 
+// sa2-nx 1.0.3 (as banjo-nx): whether the generated code marks the store cards (tools/store_cards.py ran and
+// REX_STORE_CARDS_OFF is not set). Renut proves its cached vertex, index and texture copies by them only then
+// (banjo_renut_store_cards); this port does not run that step yet, so Renut hashes them.
+#if defined(REX_CARD) && !defined(REX_STORE_CARDS_OFF)
+extern "C" const bool g_banjo_store_cards = true;
+#else
+extern "C" const bool g_banjo_store_cards = false;
+#endif
+
 REXCVAR_DEFINE_STRING(ds2_diag_indirect_census, "", "DS2 enhancements",
                       "Diagnostic (PC): a file that gets, with every '[enh] uses' report, the census of the game's "
                       "indirect calls (per call site: calls and targets). tools/indirect_promotions.py makes "
