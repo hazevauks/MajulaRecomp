@@ -638,6 +638,39 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
     emit_println(body, "}}\n");
   }
 
+  // --- setjmp sites: copy every C++-local register into env, and back after a longjmp ---
+  if (localVariables.env) {
+    std::string save, restore;
+    auto add = [&](const std::string& reg) {
+      save += fmt::format("env.{0} = {0}; ", reg);
+      restore += fmt::format("{0} = env.{0}; ", reg);
+    };
+    if (localVariables.ctr)
+      add("ctr");
+    if (localVariables.xer)
+      add("xer");
+    if (localVariables.reserved)
+      add("reserved");
+    for (size_t i = 0; i < 8; i++)
+      if (localVariables.cr[i])
+        add(fmt::format("cr{}", i));
+    for (size_t i = 0; i < 32; i++)
+      if (localVariables.r[i])
+        add(fmt::format("r{}", i));
+    for (size_t i = 0; i < 32; i++)
+      if (localVariables.f[i])
+        add(fmt::format("f{}", i));
+    for (size_t i = 0; i < 128; i++)
+      if (localVariables.v[i])
+        add(fmt::format("v{}", i));
+    auto replaceAll = [&](std::string_view marker, const std::string& with) {
+      for (size_t at = body.find(marker); at != std::string::npos; at = body.find(marker, at + with.size()))
+        body.replace(at, marker.size(), with);
+    };
+    replaceAll(kSetjmpSaveLocalsMarker, save);
+    replaceAll(kSetjmpRestoreLocalsMarker, restore);
+  }
+
   // --- Emit local variable declarations, then body ---
   if (localVariables.ctr)
     emit_println(out, "\tPPCRegister ctr{{}};");

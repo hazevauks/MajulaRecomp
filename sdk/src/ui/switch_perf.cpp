@@ -1072,7 +1072,10 @@ void ProfilerMain(void*) {
         if (R_SUCCEEDED(svcQueryMemory(&smi, &spi, ctx.sp)) && (smi.perm & Perm_R)) {
           const u64 lo = smi.addr, hi = smi.addr + smi.size;
           u64 fp = ctx.fp;
-          for (size_t k = 0; k < kFrames && fp >= lo && fp + 16 <= hi && (fp & 7) == 0; ++k) {
+          // sa2-nx (2026-10-20, from sasrt-nx): "fp + 16 <= hi" wrapped for a frame pointer near the top of the
+          // address space (recompiled code uses x29 as a general register: 0xFFFFFFFFFFFFFFF0 + 16 = 0 passed, and
+          // [fp + 8] faulted on this thread). The distance to the region's end, which cannot wrap.
+          for (size_t k = 0; k < kFrames && fp >= lo && fp < hi && hi - fp >= 16 && (fp & 7) == 0; ++k) {
             out.frames[k] = reinterpret_cast<const u64*>(fp)[1];
             const u64 next = reinterpret_cast<const u64*>(fp)[0];
             if (next <= fp) {

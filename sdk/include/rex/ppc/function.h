@@ -402,8 +402,10 @@ void _translate_args_to_guest(PPCContext& ctx, uint8_t* base, std::tuple<TArgs..
 //=============================================================================
 // Calls a native C++ function with arguments extracted from PPC context
 
+// banjo-nx (2026-10-19, CPU proposal 25): inlined into its one caller, the hook's REX_FUNC body (it was a second
+// call per export).
 template <auto Func>
-__attribute__((noinline)) void HostToGuestFunction(PPCContext& ctx, uint8_t* base) {
+[[gnu::always_inline]] inline void HostToGuestFunction(PPCContext& ctx, uint8_t* base) {
   using ret_t = decltype(std::apply(Func, function_args(Func)));
 
   auto args = function_args(Func);
@@ -414,8 +416,9 @@ __attribute__((noinline)) void HostToGuestFunction(PPCContext& ctx, uint8_t* bas
   } else {
     auto v = std::apply(Func, args);
 
-    // Memory barrier to ensure compiler doesn't reorder
-    asm volatile("" ::: "memory");
+    // banjo-nx (2026-10-19, CPU proposal 25): no compiler barrier here. It made everything the shim held go back to
+    // memory and ordered nothing another observer sees: ctx belongs to this thread, and the call to Func is opaque
+    // (whatever it wrote is in memory before it returns).
 
     if constexpr (std::is_pointer<ret_t>()) {
       if (v != nullptr) {

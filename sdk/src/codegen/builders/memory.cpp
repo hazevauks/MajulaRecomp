@@ -509,13 +509,23 @@ bool build_stfiwx(BuilderContext& ctx) {
   return true;
 }
 
+// fp_copy_pairs: the stored bits, the sign operations between included (fp_copy_forwarding).
+std::string CopyStoreBits(BuilderContext& ctx, const FloatCopySign& sign) {
+  std::string bits = fmt::format("rex::ppc::QuietSingleBits({}.u32)", ctx.f_bits(ctx.insn.operands[0]));
+  if (sign.keep != 0xFFFFFFFFu)
+    bits = fmt::format("({} & 0x{:08X}u)", bits, sign.keep);
+  if (sign.flip != 0)
+    bits = fmt::format("({} ^ 0x{:08X}u)", bits, sign.flip);
+  return bits;
+}
+
 bool build_stfs(BuilderContext& ctx) {
   // fp_copy_pairs: the register's bits local still holds what its lfs loaded.
-  const bool pair = ctx.float_copy_pair_store();
+  FloatCopySign sign;
+  const bool pair = ctx.float_copy_pair_store(&sign);
   const bool any_mode = !pair && ctx.single_conversion_any_mode();
   if (pair)
-    ctx.println("\t{}.u32 = rex::ppc::QuietSingleBits({}.u32);", ctx.temp(),
-                ctx.f_bits(ctx.insn.operands[0]));
+    ctx.println("\t{}.u32 = {};", ctx.temp(), CopyStoreBits(ctx, sign));
   else if (any_mode)
     ctx.println("\t{}.f32 = rex::ppc::DoubleToSingleAnyMode({}.f64);", ctx.temp(),
                 ctx.f(ctx.insn.operands[0]));
@@ -529,11 +539,11 @@ bool build_stfs(BuilderContext& ctx) {
 }
 
 bool build_stfsx(BuilderContext& ctx) {
-  const bool pair = ctx.float_copy_pair_store();
+  FloatCopySign sign;
+  const bool pair = ctx.float_copy_pair_store(&sign);
   const bool any_mode = !pair && ctx.single_conversion_any_mode();
   if (pair)
-    ctx.println("\t{}.u32 = rex::ppc::QuietSingleBits({}.u32);", ctx.temp(),
-                ctx.f_bits(ctx.insn.operands[0]));
+    ctx.println("\t{}.u32 = {};", ctx.temp(), CopyStoreBits(ctx, sign));
   else if (any_mode)
     ctx.println("\t{}.f32 = rex::ppc::DoubleToSingleAnyMode({}.f64);", ctx.temp(),
                 ctx.f(ctx.insn.operands[0]));

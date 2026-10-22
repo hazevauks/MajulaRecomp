@@ -206,6 +206,22 @@ inline simde__m128i simde_mm_perm_epi8_(simde__m128i a, simde__m128i b, simde__m
 #endif
 }
 
+// vperm with both sources the same vector (from sasrt-nx, 2026-10-14; sa2-nx's idea 8): byte i = a[15 - (c[i] & 15)],
+// bit 4 of c[i] choosing between two equal halves. One one-register table lookup (TBL with one table register and
+// the index (c & 0x0F) ^ 0x0F) instead of a two-register one, which needs a register pair. Exact: with a == b the
+// two-source form above takes the same byte from either half. tools/vperm_one_source.py writes it (REX_VPERM1);
+// sdk/tests/vmx_helpers_neon_test.cpp checks both forms against the two-source one.
+inline simde__m128i simde_mm_perm1_epi8_(simde__m128i a, simde__m128i c) {
+#if defined(REX_VMX_HELPERS_NEON)
+  const uint8x16_t index =
+      veorq_u8(vandq_u8(simde__m128i_to_neon_u8(c), vdupq_n_u8(0x0F)), vdupq_n_u8(0x0F));
+  return simde__m128i_from_neon_u8(vqtbl1q_u8(simde__m128i_to_neon_u8(a), index));
+#else
+  simde__m128i d = simde_mm_set1_epi8(0xF);
+  return simde_mm_shuffle_epi8(a, simde_mm_sub_epi8(d, simde_mm_and_si128(c, d)));
+#endif
+}
+
 // Unsigned 8-bit compare greater than
 inline simde__m128i simde_mm_cmpgt_epu8(simde__m128i a, simde__m128i b) {
 #if defined(REX_VMX_HELPERS_NEON)

@@ -208,10 +208,15 @@ void BuilderContext::emit_function_call(uint32_t address) {
   if (address == cfg.setJmpAddress) {
     // Save PPCContext for restoration after longjmp
     println("\t{} = ctx;", env());
+    // Registers kept in C++ locals (cr/ctr/xer_as_local, non_volatile_as_local, ...) are not in ctx: copy them
+    // into env as well and take them back after a longjmp (from banjo-nx). The guest's longjmp gives the setjmp
+    // caller its registers as they were at the setjmp; C++ leaves a local that changed in between indeterminate.
+    // The full set of locals is known only at the end of the function, so FunctionGraph fills in the markers.
+    println("\t{}", kSetjmpSaveLocalsMarker);
     // Use custom ppc_setjmp that uses guest address as key
     println("\t{}.s64 = ppc_setjmp({}.u32);", temp(), r(3));
     // Restore PPCContext if returning from longjmp
-    println("\tif ({}.s64 != 0) ctx = {};", temp(), env());
+    println("\tif ({}.s64 != 0) {{ ctx = {}; {} }}", temp(), env(), kSetjmpRestoreLocalsMarker);
     println("\t{} = {};", r(3), temp());
     return;
   }
@@ -522,10 +527,21 @@ bool IsPlainIntegerInstruction(const ppc_insn& insn) {
 // must be an lfs / lfsx of it; before that only other lfs / lfsx / stfs / stfsx (they write their own register or
 // none) and plain integer instructions. No label after the load up to the store (a jump would arrive without the
 // load), no mid-asm hook from the load to the store (it could change the register).
-uint32_t FloatCopyLoadOf(const BuilderContext& ctx, uint32_t store, const uint32_t* storeData) {
+//
+// banjo-nx (fp_copy_forwarding): other instructions may stand between as well, unless they write the store's register
+// or branch; an fneg / fabs / fnabs of the register in place is followed through, and `sign` receives what the
+// sign operations do to the single's bits: (bits & keep) ^ flip.
+bool StartsWith(std::string_view name, std::string_view prefix) {
+  return name.substr(0, prefix.size()) == prefix;
+}
+
+uint32_t FloatCopyLoadOf(const BuilderContext& ctx, uint32_t store, const uint32_t* storeData,
+                         FloatCopySign* sign = nullptr) {
   if (!ctx.config().fpCopyPairs || ctx.labels == nullptr) {
     return 0;
   }
+  const bool forwarding = ctx.config().fpCopyForwarding;
+  FloatCopySign ops;
   ppc_insn self;
   rex::codegen::ppc::Disassemble(storeData, 4, store, self);
   const auto& hooks = ctx.config().midAsmHooks;
@@ -550,7 +566,39 @@ uint32_t FloatCopyLoadOf(const BuilderContext& ctx, uint32_t store, const uint32
     rex::codegen::ppc::Disassemble(p, 4, address, previous);
     if (IsSingleLoad(previous)) {
       if (previous.operands[0] == self.operands[0]) {
+        if (sign) {
+          *sign = ops;
+        }
         return address;  // a label AT the load is fine: whoever jumps there runs the load
+      }
+    } else if (forwarding) {
+      if (previous.opcode == nullptr || previous.opcode->name == nullptr) {
+        return 0;
+      }
+      const std::string_view name = previous.opcode->name;
+      if (StartsWith(name, "b") || StartsWith(name, "sc") || StartsWith(name, "tw") || StartsWith(name, "td")) {
+        return 0;
+      }
+      // The instructions that write a float register write their first operand: every f* but the compares, every
+      // lf*, mffs. (Stores, mtfsf / mtfsb, vector and integer instructions write none.)
+      const bool fpr_write =
+          (StartsWith(name, "f") && !StartsWith(name, "fcmp")) || StartsWith(name, "lf") || StartsWith(name, "mffs");
+      if (fpr_write && previous.operands[0] == self.operands[0]) {
+        uint32_t keep, flip;
+        if (StartsWith(name, "fneg")) {
+          keep = 0xFFFFFFFFu, flip = 0x80000000u;
+        } else if (StartsWith(name, "fabs")) {
+          keep = 0x7FFFFFFFu, flip = 0;
+        } else if (StartsWith(name, "fnabs")) {
+          keep = 0x7FFFFFFFu, flip = 0x80000000u;
+        } else {
+          return 0;
+        }
+        if (previous.operands[1] != self.operands[0]) {
+          return 0;  // from another register
+        }
+        // This operation comes before the ones found so far: those apply to its result.
+        ops = FloatCopySign{keep & ops.keep, (flip & ops.keep) ^ ops.flip};
       }
     } else if (!IsSingleStore(previous) && !IsPlainIntegerInstruction(previous)) {
       return 0;
@@ -561,16 +609,43 @@ uint32_t FloatCopyLoadOf(const BuilderContext& ctx, uint32_t store, const uint32
   }
   return 0;
 }
+
+// fp_copy_forwarding: whether a store after the load at `base` in its block writes the bits it loads (the store's
+// own test, FloatCopyLoadOf, names this load).
+bool FeedsCopyStore(const BuilderContext& ctx, uint32_t load, const uint32_t* loadData) {
+  uint32_t end = 0;
+  for (const auto& block : ctx.fn.blocks()) {
+    if (load >= block.base && load < block.end()) {
+      end = block.end();
+      break;
+    }
+  }
+  const uint32_t* p = loadData + 1;
+  for (uint32_t address = load + 4, n = 0; address < end && n < kFloatCopyReach; address += 4, ++p, ++n) {
+    ppc_insn next;
+    rex::codegen::ppc::Disassemble(p, 4, address, next);
+    if (IsSingleStore(next) && FloatCopyLoadOf(ctx, address, p) == load) {
+      return true;
+    }
+  }
+  return false;
+}
 }  // namespace
 
 bool BuilderContext::float_copy_pair_load() const {
-  return config().fpCopyPairs && IsSingleLoad(insn) && !has_mid_asm_hook() && float_copy_pair_pays();
+  if (!config().fpCopyPairs || !IsSingleLoad(insn) || has_mid_asm_hook()) {
+    return false;
+  }
+  // fp_copy_forwarding: also whenever one of its stores takes the form (they need the bits local).
+  return float_copy_pair_pays() || (config().fpCopyForwarding && FeedsCopyStore(*this, base, data));
 }
 
-bool BuilderContext::float_copy_pair_store() const {
+bool BuilderContext::float_copy_pair_store(FloatCopySign* sign) const {
   // Its load took the copy form: the tracked mode can only have become FPU between the two (nothing there sets
-  // VMX mode or forgets the mode), and then this store does not take the form either.
-  return config().fpCopyPairs && float_copy_pair_pays() && FloatCopyLoadOf(*this, base, data) != 0;
+  // VMX mode or forgets the mode), and then this store does not take the form either. fp_copy_forwarding: any mode;
+  // the load takes the form because this store names it (FeedsCopyStore).
+  return config().fpCopyPairs && (float_copy_pair_pays() || config().fpCopyForwarding) &&
+         FloatCopyLoadOf(*this, base, data, sign) != 0;
 }
 
 void BuilderContext::emit_flush_mode_for_modeless() {

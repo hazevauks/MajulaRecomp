@@ -58,7 +58,12 @@ enum : unsigned {
   kCensusLookupHeap = 70,     // Memory::LookupHeap calls (one inside every Memory::TranslateVirtual)
   kCensusRetainRelease = 71,  // XObject::Retain and Release calls
   kCensusKernelState = 72,    // rex::system::kernel_state() calls
-  kCensusCount = 76,
+  // banjo-nx (2026-10-14): the rounding mode of each guest FPSCR write (mtfsf). tools/fp_sign_ops.py (float negation
+  // folds) is exact only while the game never selects round-up or round-down.
+  kCensusRoundNearest = 76,   // guest FPSCR writes with RN = round to nearest
+  kCensusRoundZero = 77,      // ... RN = toward zero
+  kCensusRoundUpDown = 78,    // ... RN = toward +infinity or -infinity
+  kCensusCount = 79,
 };
 
 #if !defined(__SWITCH__)

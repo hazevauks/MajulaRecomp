@@ -1,0 +1,361 @@
+diff --git a/app/thirdparty/plume/CMakeLists.txt b/app/thirdparty/plume/CMakeLists.txt
+index f3b7785..8e49fdd 100644
+--- a/app/thirdparty/plume/CMakeLists.txt
++++ b/app/thirdparty/plume/CMakeLists.txt
+@@ -28,6 +28,10 @@ if(PLUME_PLATFORM_SWITCH)
+     set(PLUME_SWITCH_NVK_ROOT "/opt/nvk-switch" CACHE PATH "Mesa/NVK Switch build or install root")
+     set(PLUME_SWITCH_NVK_LIBRARY "${PLUME_SWITCH_NVK_ROOT}/lib/libvulkan.a"
+         CACHE FILEPATH "Mesa/NVK Switch Vulkan static archive")
++    # sa2-nx (2026-10-20): the driver not linked (the parent defines vk_icdGetInstanceProcAddr and
++    # vk_icdNegotiateLoaderICDInterfaceVersion as "no driver": ReXGlue's REXGLUE_SWITCH_NO_NVK); the Vulkan back end
++    # still compiles, and cannot start.
++    option(PLUME_SWITCH_NO_NVK "Do not link the NVK driver (the parent provides failing ICD entry points)" OFF)
+ endif()
+ 
+ # Windows-specific definitions
+@@ -155,6 +159,10 @@ if(PLUME_PLATFORM_SWITCH)
+ 
+     # One group, so the linker rescans the driver and its dependencies until nothing new
+     # resolves (the driver and its helper archives reference each other).
++    if(PLUME_SWITCH_NO_NVK)
++        message(STATUS "plume: NVK driver not linked (PLUME_SWITCH_NO_NVK)")
++        target_link_libraries(plume PUBLIC zstd z nx)
++    else()
+     target_link_libraries(plume PUBLIC
+         "-Wl,-u,vk_icdGetInstanceProcAddr"
+         "-Wl,-u,vk_icdNegotiateLoaderICDInterfaceVersion"
+@@ -166,6 +174,7 @@ if(PLUME_PLATFORM_SWITCH)
+         nx
+         "-Wl,--end-group"
+     )
++    endif()
+ 
+     # banjo-nx (2026-10-17): the deko3d back end (plume_deko3d*.cpp, banjo-nx docs/deko3d-renderer.md): devkitPro's
+     # deko3d and uam (PLUME_SWITCH_UAM_DIR: banjo-nx vendors SwitchWakerHD's patched copy, whose CMake builds the static
+diff --git a/app/thirdparty/plume/plume_deko3d.cpp b/app/thirdparty/plume/plume_deko3d.cpp
+index 869de66..f3084cd 100644
+--- a/app/thirdparty/plume/plume_deko3d.cpp
++++ b/app/thirdparty/plume/plume_deko3d.cpp
+@@ -728,6 +728,22 @@ namespace plume {
+             DkImageDescriptor local;
+             dkImageDescriptorInitialize(&local, &view, loadStore, false);
+             memcpy(d, &local, sizeof(local));
++            // banjo-nx (2026-10-19, GPU, txq): the size a texture query of this view returns at level 0: the image's
++            // size at the view's first level; the depth of a 3D image there, else the view's layers (all from its first
++            // when it names no count). tools/deko3d_glsl_opt.py's txq verify (constant 908 = 2) checks it on the GPU.
++            const uint32_t id = descriptorIndex - imageFirst;
++            if (imageSizes.size() <= id)
++                imageSizes.resize(id + 1);
++            const uint32_t m = view.mipLevelOffset;
++            const uint32_t w = std::max(1u, t->desc.width >> m), h = std::max(1u, t->desc.height >> m);
++            const DkImageType type = view.type != DkImageType_None ? view.type : t->type;
++            uint32_t z;
++            if (type == DkImageType_3D)
++                z = std::max(1u, t->desc.depth >> m);
++            else
++                z = view.layerCount ? view.layerCount
++                                    : (t->desc.arraySize > view.layerOffset ? t->desc.arraySize - view.layerOffset : 1u);
++            imageSizes[id] = {w, h, z};
+         }
+         g_deko3dStats.descriptorWrites++;
+         device->descriptorEpoch.fetch_add(1, std::memory_order_release);
+@@ -826,6 +842,11 @@ namespace plume {
+             return false;
+         memset(dkMemBlockGetCpuAddr(pushBlock), 0, DK_MEMBLOCK_ALIGNMENT);
+         pushAddr = dkMemBlockGetGpuAddr(pushBlock);
++        texSizeBlock = makeBlock(DK_MEMBLOCK_ALIGNMENT, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached, "texture sizes");
++        if (!texSizeBlock)
++            return false;
++        memset(dkMemBlockGetCpuAddr(texSizeBlock), 0, DK_MEMBLOCK_ALIGNMENT);
++        texSizeAddr = dkMemBlockGetGpuAddr(texSizeBlock);
+         zeroBlock = makeBlock(ZeroSize, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached, "zero vertex buffer");
+         if (!zeroBlock)
+             return false;
+@@ -1113,6 +1134,7 @@ namespace plume {
+         usage.uboMask = uint32_t(strtoul(field("ubo=").c_str(), nullptr, 16));
+         usage.ssboMask = uint32_t(strtoul(field("ssbo=").c_str(), nullptr, 16));
+         usage.textures = field("tex=") == "1";
++        usage.txqMask = uint32_t(strtoul(field("txq=").c_str(), nullptr, 16));  // banjo-nx (2026-10-19)
+         // texb=k:textureWord:samplerWord,... in binding order
+         const std::string texb = field("texb=");
+         size_t q = 0;
+@@ -1267,6 +1289,24 @@ namespace plume {
+                     logf("uam: compile %u (stage %u, %zu bytes of GLSL; heap %" PRIu64 " MB free, process %" PRIu64 " MB unused)",
+                          logged, uint32_t(job->stage), job->source->size(), hf >> 20, pf >> 20);
+                 }
++                // banjo-nx (2026-10-20): every run-time compile's specialization (its constants), so the variants
++                // a cache lacks can be found (tools/deko3d_variant_cache.py rebuilds their keys from these).
++                static uint32_t named = 0;
++                if (named < 64) {
++                    named++;
++                    std::string defines;
++                    const std::string &src = *job->source;
++                    const char *key = "#define SPIRV_CROSS_CONSTANT_ID_";
++                    for (size_t p = src.find(key); p != std::string::npos; p = src.find(key, p + 1)) {
++                        const size_t end = src.find('\n', p);
++                        defines += src.substr(p + strlen(key), end == std::string::npos ? std::string::npos : end - p - strlen(key));
++                        defines += ';';
++                        if (defines.size() > 900)
++                            break;
++                    }
++                    logf("uam: run-time variant (stage %u, %zu bytes): %s", uint32_t(job->stage), src.size(),
++                         defines.c_str());
++                }
+             }
+             uam::Result r = uam::compile(stages[std::min<uint32_t>(job->stage, 5)], job->source->c_str());
+             g_deko3dStats.shaderCompileNs += armTicksToNs(armGetSystemTick()) - t0;
+@@ -1621,6 +1661,7 @@ namespace plume {
+             p->uboMask[i] = stages[i]->usage.uboMask;
+             p->ssboMask[i] = stages[i]->usage.ssboMask;
+             p->texBindings[i] = stages[i]->usage.texBindings;
++            p->txqMask[i] = stages[i]->usage.txqMask;
+             p->boundTextures = p->boundTextures || !p->texBindings[i].empty();
+             p->textures = p->textures || stages[i]->usage.textures;
+         }
+@@ -1891,6 +1932,20 @@ namespace plume {
+         return copy.done;
+     }
+ 
++    bool Deko3DFenceCopyWait(Deko3DFenceCopy &copy, RenderDevice *device) {
++        if (copy.done || !copy.valid)
++            return copy.done;
++        Deko3DDevice *d = static_cast<Deko3DDevice *>(device);
++        for (;;) {
++            if (dkFenceWait(&copy.fence, 2'000'000'000ll) == DkResult_Success) {
++                copy.done = true;
++                return true;
++            }
++            if (!d || !d->queue || dkQueueIsInErrorState(d->queue))
++                return false;
++        }
++    }
++
+     bool Deko3DDeviceLost(RenderDevice *device) {
+         Deko3DDevice *d = static_cast<Deko3DDevice *>(device);
+         return d && d->queue && dkQueueIsInErrorState(d->queue);
+diff --git a/app/thirdparty/plume/plume_deko3d.h b/app/thirdparty/plume/plume_deko3d.h
+index 2f325b1..0b1c39b 100644
+--- a/app/thirdparty/plume/plume_deko3d.h
++++ b/app/thirdparty/plume/plume_deko3d.h
+@@ -14,6 +14,7 @@
+ 
+ #include <deko3d.h>
+ 
++#include <array>
+ #include <atomic>
+ #include <condition_variable>
+ #include <cstdint>
+@@ -147,6 +148,10 @@ namespace plume {
+         uint32_t outputMask = 0;
+         // A vertex shader's outputs it writes as zero (its "// banjo-vszero=0x..." line): constant 906 of the pixel shader.
+         uint32_t zeroOutputMask = 0;
++        // banjo-nx (2026-10-19, GPU): the texture bindings whose level-0 size the shader reads from the texture size
++        // buffer (UBO binding 3, entry k of the pixel stage, 32 + k of the vertex stage) instead of a texture query
++        // (the banjo-dk line's txq=; tools/deko3d_glsl_opt.py, pass txq).
++        uint32_t txqMask = 0;
+     };
+ 
+     struct Deko3DShader : RenderShader {
+@@ -200,6 +205,9 @@ namespace plume {
+         uint32_t imageFirst = 0, samplerFirst = 0; // descriptor index of the first image / sampler descriptor
+         // Buffers (constant and storage): address and size per descriptor index.
+         std::vector<DkBufExtents> buffers;
++        // banjo-nx (2026-10-19, GPU): per image id, the level-0 size of the view written there as a texture query
++        // reads it (width, height, depth or layers), for the texture size buffer (txq).
++        std::vector<std::array<uint32_t, 3>> imageSizes;
+ 
+         Deko3DDescriptorSet(Deko3DDevice *device, const RenderDescriptorSetDesc &desc);
+         ~Deko3DDescriptorSet() override;
+@@ -247,6 +255,7 @@ namespace plume {
+         // UBO / SSBO slots each stage reads (vertex, geometry, fragment).
+         uint32_t uboMask[3] = {}, ssboMask[3] = {};
+         std::vector<Deko3DShaderUsage::TexBinding> texBindings[3];
++        uint32_t txqMask[3] = {};  // banjo-nx (2026-10-19): Deko3DShaderUsage::txqMask of each stage
+         bool boundTextures = false;
+         bool textures = false;
+         uint64_t stateHash = 0; // equal hashes: the same fixed-function state (binds skipped)
+@@ -323,6 +332,11 @@ namespace plume {
+         const Deko3DPipelineLayout *graphicsLayout = nullptr, *computeLayout = nullptr;
+         DkGpuAddr boundImageSet = 0, boundSamplerSet = 0;
+         uint32_t boundImageCount = 0, boundSamplerCount = 0;
++        // banjo-nx (2026-10-19, GPU): the descriptor set whose image table is bound (its sizes, Deko3DDescriptorSet::
++        // imageSizes), and what the texture size buffer holds after this list's updates so far (valid bit per entry).
++        const struct Deko3DDescriptorSet *boundImageSetObj = nullptr;
++        uint32_t texSizeShadow[64][4] = {};
++        uint64_t texSizeValid = 0;
+         DkBufExtents graphicsUbo[16]{}, graphicsSsbo[16]{};
+         uint32_t graphicsUboValid = 0, graphicsSsboValid = 0;
+         uint32_t uboBoundStages[16] = {}, ssboBoundStages[16] = {}; // DkStage bits a slot was bound for
+@@ -526,6 +540,11 @@ namespace plume {
+         DkMemBlock pushBlock = nullptr;
+         DkGpuAddr pushAddr = 0;
+         static constexpr uint32_t PushSize = 256;
++        // banjo-nx (2026-10-19, GPU): the texture size buffer (UBO binding 3: 64 uvec4, pixel bindings then vertex),
++        // updated in command order like the push constants.
++        DkMemBlock texSizeBlock = nullptr;
++        DkGpuAddr texSizeAddr = 0;
++        static constexpr uint32_t TexSizeSize = 64 * 16;
+         // Zeros for missing vertex buffers (Vulkan's null buffer).
+         DkMemBlock zeroBlock = nullptr;
+         DkGpuAddr zeroAddr = 0;
+@@ -621,6 +640,11 @@ namespace plume {
+     bool Deko3DSetSharedWords(RenderCommandList *commandList, const void *cpu, uint32_t size);
+     // banjo-nx: the queue lost (dkQueueIsInErrorState).
+     bool Deko3DDeviceLost(RenderDevice *device);
++    // sa2-nx (2026-10-20, 1.0.3.1): the size the swapchain should have, the console display's (1920x1080 docked,
++    // 1280x720 handheld); 0 x 0 = the window's, as before. A swapchain of another size asks for a resize
++    // (needsResize), which gives the window that size while no buffer is registered (nwindowSetDimensions) and makes
++    // the images again. Any thread.
++    void Deko3DSetSwapChainSize(uint32_t width, uint32_t height);
+     // banjo-nx (2026-10-19, latency batch 3): a copy of what a command fence's last submit signals, taken on the thread
+     // that submits (the fence itself is re-armed by the next submit of its slot), and whether the GPU has signalled it
+     // (dkFenceWait with no wait): any thread may test its own copy.
+@@ -631,6 +655,8 @@ namespace plume {
+     };
+     Deko3DFenceCopy Deko3DCopyFence(const RenderCommandFence *fence);
+     bool Deko3DFenceCopyDone(Deko3DFenceCopy &copy);
++    // banjo-nx (2026-10-20, input latency): waits until the copy's signal arrives (or the queue fails); true when it did.
++    bool Deko3DFenceCopyWait(Deko3DFenceCopy &copy, RenderDevice *device);
+ 
+     // banjo-nx (2026-10-18, GPU bandwidth): options read when the device and its textures are made; set them before
+     // CreateDeko3DInterface. depthCompression: depth/stencil targets get hardware compression (as colour targets do).
+diff --git a/app/thirdparty/plume/plume_deko3d_commands.cpp b/app/thirdparty/plume/plume_deko3d_commands.cpp
+index aca52f1..9c15ea9 100644
+--- a/app/thirdparty/plume/plume_deko3d_commands.cpp
++++ b/app/thirdparty/plume/plume_deko3d_commands.cpp
+@@ -24,6 +24,7 @@ namespace plume {
+ 
+     // The push constants' UBO binding in every stage, and the address window's storage binding (tools/deko3d_glsl.py).
+     static constexpr uint32_t PushUboSlot = 5;
++    static constexpr uint32_t TexSizeUboSlot = 3;  // banjo-nx (2026-10-19, txq)
+     static constexpr uint32_t AddressWindowSlot = 15;
+     static constexpr uint32_t CommandBlockSize = 1u << 20;
+     static constexpr uint32_t TransientBlockSize = 256u << 10;
+@@ -137,6 +138,11 @@ namespace plume {
+         // draw's own range (Deko3DBindFetchData).
+         graphicsUbo[PushUboSlot] = {device->pushAddr, Deko3DDevice::PushSize};
+         graphicsUboValid |= 1u << PushUboSlot;
++        // banjo-nx (2026-10-19, GPU, txq): the texture size buffer, for the shaders whose usage has UBO bit 3.
++        graphicsUbo[TexSizeUboSlot] = {device->texSizeAddr, Deko3DDevice::TexSizeSize};
++        graphicsUboValid |= 1u << TexSizeUboSlot;
++        boundImageSetObj = nullptr;
++        texSizeValid = 0;
+         // Whatever the GPU holds of descriptors and shader code from before is dropped.
+         dkCmdBufBarrier(cmd, DkBarrier_None, DkInvalidateFlags_Descriptors | DkInvalidateFlags_Shader);
+         descriptorEpoch = currentEpoch();
+@@ -348,6 +354,32 @@ namespace plume {
+                 handles[k] = (texture & 0xFFFFFu) | (sampler & 0xFFF00000u);
+                 same = same && handles[k] == boundTex[st][k];
+             }
++            // banjo-nx (2026-10-19, GPU, txq): the sizes of the bindings the shader reads from the texture size
++            // buffer (entry k for the pixel stage, 32 + k for the vertex stage), updated where they changed. Also when
++            // the handles are the same: a descriptor slot may hold another texture now.
++            if (p->txqMask[st]) {
++                const uint32_t base = st == 2 ? 0u : 32u;
++                for (uint32_t mask = p->txqMask[st]; mask;) {
++                    const uint32_t k = uint32_t(__builtin_ctz(mask));
++                    mask &= mask - 1;
++                    if (k >= n || k >= 32)
++                        continue;
++                    const uint32_t id = handles[k] & 0xFFFFFu;
++                    uint32_t size[4] = {0, 0, 0, 0};
++                    if (boundImageSetObj && id < boundImageSetObj->imageSizes.size()) {
++                        const auto &dims = boundImageSetObj->imageSizes[id];
++                        size[0] = dims[0];
++                        size[1] = dims[1];
++                        size[2] = dims[2];
++                    }
++                    const uint32_t e = base + k;
++                    if (((texSizeValid >> e) & 1) && !memcmp(texSizeShadow[e], size, sizeof(size)))
++                        continue;
++                    dkCmdBufPushConstants(cmd, device->texSizeAddr, Deko3DDevice::TexSizeSize, e * 16, 16, size);
++                    memcpy(texSizeShadow[e], size, sizeof(size));
++                    texSizeValid |= uint64_t(1) << e;
++                }
++            }
+             if (same)
+                 continue;
+             dkCmdBufBindTextures(cmd, GraphicsStages[st], 0, handles, n);
+@@ -483,6 +515,7 @@ namespace plume {
+                 cl.boundImageSet = addr;
+                 cl.boundImageCount = set->imageCount;
+             }
++            cl.boundImageSetObj = set;  // banjo-nx (2026-10-19, txq): its sizes
+         }
+         if (set->samplerBlock) {
+             const DkGpuAddr addr = dkMemBlockGetGpuAddr(set->samplerBlock);
+@@ -1193,6 +1226,13 @@ namespace plume {
+ 
+     // ---- Deko3DSwapChain
+ 
++    // sa2-nx (2026-10-20, 1.0.3.1): Deko3DSetSwapChainSize's size (width << 32 | height; 0 = the window's).
++    static std::atomic<uint64_t> g_wantedSwapChainSize{0};
++
++    void Deko3DSetSwapChainSize(uint32_t width, uint32_t height) {
++        g_wantedSwapChainSize.store(width && height ? (uint64_t(width) << 32 | height) : 0, std::memory_order_relaxed);
++    }
++
+     Deko3DSwapChain::Deko3DSwapChain(Deko3DCommandQueue *queue, const RenderSwapChainDesc &desc) : queue(queue), device(queue->device), desc(desc) {
+         resize();
+     }
+@@ -1217,13 +1257,26 @@ namespace plume {
+         // swapchain.
+         uint32_t w = 0, h = 0;
+         NWindow *window = desc.renderWindow ? desc.renderWindow : nwindowGetDefault();
+-        if (nwindowGetDimensions(window, &w, &h) != 0 || w < 64 || h < 64) {
++        // sa2-nx (2026-10-20, 1.0.3.1): a size set by Deko3DSetSwapChainSize (the console's display: 1080p docked)
++        // comes first; the window takes it below, once the old swapchain has let go of its buffers.
++        const uint64_t wanted = g_wantedSwapChainSize.load(std::memory_order_relaxed);
++        if (wanted) {
++            w = uint32_t(wanted >> 32);
++            h = uint32_t(wanted);
++        } else if (nwindowGetDimensions(window, &w, &h) != 0 || w < 64 || h < 64) {
+             w = width ? width : 1280;
+             h = height ? height : 720;
+         }
+         if (swapchain && w == width && h == height)
+             return true;
+         destroy();
++        if (wanted) {
++            uint32_t cw = 0, ch = 0;
++            if (nwindowGetDimensions(window, &cw, &ch) != 0 || cw != w || ch != h) {
++                const Result rc = nwindowSetDimensions(window, w, h);
++                logf("window: %ux%u -> %ux%u (%s)", cw, ch, w, h, R_SUCCEEDED(rc) ? "set" : "failed");
++            }
++        }
+         width = w;
+         height = h;
+         DkImageFormat format = toDkFormat(desc.format);
+@@ -1265,7 +1318,13 @@ namespace plume {
+         return true;
+     }
+ 
+-    bool Deko3DSwapChain::needsResize() const { return swapchain == nullptr; }
++    bool Deko3DSwapChain::needsResize() const {
++        if (swapchain == nullptr)
++            return true;
++        // sa2-nx (2026-10-20, 1.0.3.1): another size wanted (docking or undocking).
++        const uint64_t wanted = g_wantedSwapChainSize.load(std::memory_order_relaxed);
++        return wanted && (uint32_t(wanted >> 32) != width || uint32_t(wanted) != height);
++    }
+ 
+     void Deko3DSwapChain::setVsyncEnabled(bool vsyncEnabled) {
+         vsync = vsyncEnabled;
+diff --git a/app/thirdparty/plume/plume_vulkan.cpp b/app/thirdparty/plume/plume_vulkan.cpp
+index 8a20155..900382e 100644
+--- a/app/thirdparty/plume/plume_vulkan.cpp
++++ b/app/thirdparty/plume/plume_vulkan.cpp
+@@ -5404,6 +5404,13 @@ namespace plume {
+         }
+ 
+         volkInitializeCustom(getInstanceProcAddr);
++        // sa2-nx (2026-10-20, from banjo-nx via Peggle 2): without the driver (PLUME_SWITCH_NO_NVK, the failing ICD
++        // stubs) volk finds nothing, and the code below would call vkEnumerateInstanceExtensionProperties through null:
++        // no instance (isValid() false, CreateVulkanInterface returns null).
++        if (vkCreateInstance == nullptr || vkEnumerateInstanceExtensionProperties == nullptr) {
++            fprintf(stderr, "plume: no Vulkan driver (vkCreateInstance not found).\n");
++            return;
++        }
+         VkResult res = VK_SUCCESS;
+ #else
+         VkResult res = volkInitialize();

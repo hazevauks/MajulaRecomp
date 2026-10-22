@@ -183,6 +183,10 @@ struct FPSCRRegister {
   }
 
   inline void storeFromGuest(uint32_t value) noexcept {
+    REX_SYS_CENSUS((value & kRoundMask) == kRoundNearest  ? rex::syscount::kCensusRoundNearest
+                   : (value & kRoundMask) == kRoundTowardZero ? rex::syscount::kCensusRoundZero
+                                                              : rex::syscount::kCensusRoundUpDown,
+                   1);
     csr &= ~RoundMaskVal;
     csr |= Platform::GuestToHost[value & kRoundMask];
     setcsr(csr);

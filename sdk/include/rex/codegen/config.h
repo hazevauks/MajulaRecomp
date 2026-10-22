@@ -123,6 +123,14 @@ struct RecompilerConfig {
   // mask reaches the upper half, so the result is the same; the compiler then sees a plain shift, bit-field
   // extract or AND (one instruction instead of three on AArch64).
   bool rotateWordNarrow = false;
+  // banjo-nx (2026-10-16, measured by its CPU codegen agent; ported to sa2-nx 2026-10-19): rlwinm / rlwimi with an
+  // immediate shift and a mask that does not wrap (mb <= me) written as the plain 32-bit operation the mask makes of it:
+  // a left shift when the mask takes only bits the left shift supplies, a right shift when it takes only bits the right
+  // shift supplies, a 32-bit rotate otherwise (and an AND when the mask is narrower). GCC makes lsl / lsr / ubfiz / ubfx
+  // of those (one instruction) where the 64-bit rotate of the duplicated word took two or three. Same zero-extended
+  // value (banjo-nx's sdk/tests/rotate_word_test.cpp, every shift and mask). Takes precedence over rotate_word_narrow
+  // for rlwinm / rlwimi; rlwnm (a register shift) unchanged.
+  bool rotateWordShifts = false;
   // sa2-nx (second CPU round, 2026-10-12): fctid, fctiw and fctidz as rex::ppc::fctid / fctiw / fctidz
   // (rex/ppc/diet_ops.h) instead of an isnan test, a range compare and simde's scalar conversion around each. On
   // AArch64 they are `fcvtzs` (after `frinti` for the two that round) and a NaN select. For fctid and fctiw this
@@ -141,6 +149,13 @@ struct RecompilerConfig {
   // Used where VMX mode is known to be current: there the plain forms would switch the mode off and back, and the
   // any-mode helpers they otherwise go through cost a test and a conversion each.
   bool fpCopyPairs = false;
+  // banjo-nx (2026-10-19, CPU proposal 15; ported to sa2-nx 2026-10-19): with fpCopyPairs, a store of loaded bits
+  // whatever the mode, and through other instructions: going back from the stfs / stfsx in its block, the first
+  // instruction that writes its register must be the lfs / lfsx of it or an fneg / fabs / fnabs of the register in
+  // place (bit 31 of the bits flipped, cleared or set: the double's sign is the single's), and nothing between is a
+  // branch, call or trap. An lfs / lfsx whose bits such a store writes takes the copy form as well, so the bits local is
+  // always written: the two decisions are the same test. The forms need no mode.
+  bool fpCopyForwarding = false;
   // sa2-nx (second CPU round): with fpCopyPairs, also in every copy-only function (no instruction that needs FPU
   // mode, every lfs / stfs form an lfs / lfsx or a store of loaded bits), whatever the mode: such a function then
   // has no mode statement at all, and a caller in VMX mode no longer pays a switch into it and one back. A BET, and

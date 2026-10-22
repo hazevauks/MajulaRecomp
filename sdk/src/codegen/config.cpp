@@ -117,8 +117,12 @@ void ApplyToml(const toml::table& toml, RecompilerConfig& cfg, const std::string
             hasBool("fp_mode_lookahead_past_branch"), "fp_mode_lookahead_past_branch");
   MergeBool(cfg.rotateWordNarrow, toml["rotate_word_narrow"].value_or(false), hasBool("rotate_word_narrow"),
             "rotate_word_narrow");
+  MergeBool(cfg.rotateWordShifts, toml["rotate_word_shifts"].value_or(false), hasBool("rotate_word_shifts"),
+            "rotate_word_shifts");
   MergeBool(cfg.fctiInline, toml["fcti_inline"].value_or(false), hasBool("fcti_inline"), "fcti_inline");
   MergeBool(cfg.fpCopyPairs, toml["fp_copy_pairs"].value_or(false), hasBool("fp_copy_pairs"), "fp_copy_pairs");
+  MergeBool(cfg.fpCopyForwarding, toml["fp_copy_forwarding"].value_or(false), hasBool("fp_copy_forwarding"),
+            "fp_copy_forwarding");
   MergeBool(cfg.fpCopyOnlyFunctions, toml["fp_copy_only_functions"].value_or(false),
             hasBool("fp_copy_only_functions"), "fp_copy_only_functions");
   MergeBool(cfg.dcbtPrefetch, toml["dcbt_prefetch"].value_or(false), hasBool("dcbt_prefetch"), "dcbt_prefetch");
