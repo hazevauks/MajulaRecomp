@@ -19,6 +19,28 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Twenty-sixth build (2026-10-23): deko3d, the 3D fixed
+
+Copy over: `ds2-dk.nro` (the only file that changed). You can delete `deko3d_shaders.bin` and `pipeline_list.bin`
+next to the NRO: the shaders changed, so the old compiled ones would only be thrown away.
+
+What the twenty-fifth build's test showed, and what changed:
+
+- **The black 3D at 1 frame a second.** The game draws its scenery as triangle strips joined by a "restart" marker.
+  The new renderer treated the marker as an ordinary vertex (and deko3d had restarts off), so every draw became
+  screen-wide triangles of garbage: a second of GPU a frame, a black picture with the HUD over it. Fixed for both.
+- **Then a flat grey 3D (seen on the PC).** The game copies its HDR scene (the 360's 7e3 format) through a 10-bit
+  view of the same memory and decodes the colours itself with the texture's exponent adjustment; the new renderer
+  did neither. Fixed: on the PC Majula now draws right (character, sky, HUD).
+
+Still known: the save list's portraits, and 720p in handheld mode (540p is not ready on this renderer).
+
+**Test:** first session: load the save at the bonfire, look around and walk a little (expect stutters while the
+shaders compile, the first time only). Second session: the four measuring points, ~30 s each, and note the frame
+rate in each. If anything draws wrong (missing objects, wrong colours, flashes), a photo helps.
+
+Then the `logs/` folder (into `switch-logs`).
+
 ## Twenty-fifth build (2026-10-23): the first deko3d build
 
 Copy over: `ds2-dk.nro` (new), `ds2.toml` and the `configs/` folder. `ds2.nro` and `ds2-opt.nro` stay for comparison.
