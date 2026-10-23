@@ -113,3 +113,19 @@ Also DS2's own: `BeginIndexedVertices` `829C2848` and `DrawIndexedVerticesUP` `8
 them); the header copies of the shaders `829B10A0` (+872) and `829B0F78` (+40), Renut's container offsets. **The game
 also initialises vertex declarations in its own memory** (`829AF940` called directly from `826A8F08`): that path needs
 the declaration hook too, or those declarations never reach Renut.
+
+## Status (2026-10-22)
+
+1. Census: done (above).
+2. Renut on the PC: built (`DS2_RENUT_RENDERER`, `ds2_renderer = "renut"`), on plume's Vulkan back end on lavapipe.
+   What it took for this game, besides the census:
+   - the vertex declaration hook on the initialisation `829AF940`, not on `CreateVertexDeclaration`: the game
+     initialises declarations in its own memory too, and every draw was dropped;
+   - Renut's translator: a fetch that writes no fetched component, TANGENT1 and COLOR2 vertex inputs (locations 23
+     and 24), the COLOR2 interpolator (all three found before in this port's own `shaders/XenosRecomp`); all 1,481
+     containers translate;
+   - the fetch constant's clamp policy bit (dword 1 bit 11) does not change the data: the game's device fetch
+     constants set it where the texture headers do not, and every sampled resolve (the save portraits) was thrown
+     away.
+   Drawn right on the PC: the warning, the logos, the title screen, the main menu, the save list, the prologue video,
+   the loading screen.

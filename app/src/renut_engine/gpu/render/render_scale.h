@@ -20,8 +20,11 @@ namespace renut::gpu {
 // (renutTextureScale in shader_common.h).
 struct RenderScale {
   static constexpr uint32_t kCount = 8;
-  static constexpr uint32_t kNumerators[kCount] = {1, 2, 3, 2, 3, 4, 6, 4};
-  static constexpr uint32_t kDenominators[kCount] = {1, 3, 2, 1, 1, 1, 1, 3};
+  // ds2-nx (2026-10-22): code 6 is 3/4 (540p, Dark Souls II's handheld resolution), not 6x. Shaders get the code in
+  // three bits, so there was no free one; 6x was only the ambient occlusion rendered at twice 4K's scale (the PC's
+  // renut_ambient_occlusion = "Full" at 4K), which Times(2) now leaves at 4K's.
+  static constexpr uint32_t kNumerators[kCount] = {1, 2, 3, 2, 3, 4, 3, 4};
+  static constexpr uint32_t kDenominators[kCount] = {1, 3, 2, 1, 1, 1, 4, 3};
 
   uint32_t code = 0;
 

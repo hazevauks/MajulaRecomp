@@ -276,6 +276,7 @@ void LatchResolutionScaleLocked() {
   const std::string resolution = REXCVAR_GET(renut_resolution);
   // Codes of RenderScale.
   RenderScale scale{resolution == "480p"    ? 1u
+                    : resolution == "540p"  ? 6u  // ds2-nx: 3/4, render_scale.h
                     : resolution == "1080p" ? 2u
                     : resolution == "1440p" ? 3u
                     : resolution == "4K"    ? 4u
@@ -286,12 +287,12 @@ void LatchResolutionScaleLocked() {
   if (follow_mode) {
     const int32_t height = ds2::render::RenderHeightOf(docked);
     RenderScale mode;
-    // The render resolutions only (codes 0-4: 720p, 480p, 1080p, 1440p, 2160p).
-    if (height <= 0 || !RenderScale::FromRatio(uint32_t(height), 720, mode) || mode.code > 4) {
+    // The render resolutions only (codes 0-4: 720p, 480p, 1080p, 1440p, 2160p; ds2-nx: and 6, 540p).
+    if (height <= 0 || !RenderScale::FromRatio(uint32_t(height), 720, mode) || (mode.code > 4 && mode.code != 6)) {
       static bool logged = false;
       if (!logged) {
         logged = true;
-        RGPU_WARN("ds2_render_height_{} = {} is not one of 480, 720, 1080, 1440, 2160: 720 (1280x720)",
+        RGPU_WARN("ds2_render_height_{} = {} is not one of 480, 540, 720, 1080, 1440, 2160: 720 (1280x720)",
                   docked ? "docked" : "handheld", height);
       }
       mode = {};
