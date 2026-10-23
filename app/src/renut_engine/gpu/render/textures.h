@@ -164,6 +164,10 @@ struct TextureBinding {
 // RENUT_STACKED_LAYER_LINEAR and RENUT_STACKED_LAYER_WRAP in
 // shader_common.h). The layer wraps when the fetch constant's Z address mode
 // does: the host sampler's W mode does not reach an array index.
+// ds2-nx (2026-10-23): renutFetchAdjust's fields of the descriptor word (shader_common.h): the 7e3 code view and
+// the fetch constant's exp_adjust. The index keeps bits 0-18.
+constexpr uint32_t kTexture7e3CodeBit = 0x00080000u;
+constexpr uint32_t kTextureExpAdjustShift = 20;
 constexpr uint32_t kStackedTextureBit = 0x80000000u;
 constexpr uint32_t kStackedLayerLinearBit = 0x40000000u;
 constexpr uint32_t kStackedLayerWrapBit = 0x20000000u;

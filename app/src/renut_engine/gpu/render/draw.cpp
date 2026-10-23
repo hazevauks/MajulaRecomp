@@ -2033,6 +2033,16 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
     // shader_common.h), with the fetch constant's filter between layers and
     // its Z address mode.
     u32 index = binding.slot | binding.scale.code << kResolutionScaleShift;
+    // ds2-nx (2026-10-23): renutFetchAdjust's fields (shader_common.h). The fetch constant's exp_adjust, and the 7e3
+    // code view for a float image (a resolve of a 7e3 target, RGBA16F on the host) read through a fixed-point
+    // 2_10_10_10 fetch: Dark Souls II copies its 7e3 scene that way and decodes the codes itself; the host image
+    // holds the values, so the shader encodes them back.
+    index |= fetch.ExpAdjustBits() << kTextureExpAdjustShift;
+    if (const HostTexture *source = fx.transition[0];
+        source && source->host_format == plume::RenderFormat::R16G16B16A16_FLOAT &&
+        (fetch.Format() == GpuTextureFormat::Fmt2_10_10_10 ||
+         fetch.Format() == GpuTextureFormat::Fmt2_10_10_10_As16_16_16_16))
+      index |= kTexture7e3CodeBit;
     if (binding.stacked) {
       index |= kStackedTextureBit;
       if (fetch.VolumeMagFilter() != TextureFilter::Point ||

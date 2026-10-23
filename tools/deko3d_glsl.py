@@ -91,7 +91,8 @@ def strip_index_mask(expr):
     for _ in range(4):
         while e.startswith('(') and matching(e, 0, '(', ')') == len(e) - 1:
             e = e[1:-1].strip()
-        m = re.match(r'^(.*?)\s*&\s*67108863u$', e, re.S)
+        # ds2-nx (2026-10-23): 524287u (0x0007FFFF) since the descriptor word carries renutFetchAdjust's fields.
+        m = re.match(r'^(.*?)\s*&\s*(?:67108863u|524287u)$', e, re.S)
         if not m:
             break
         left = m.group(1).strip()

@@ -440,6 +440,19 @@ HostSurface *GetHostSurfaceSlow(u32 surface_va, const d3d::SurfaceDesc *desc) {
     if (seen & 2)
       format = DepthTargetFormat();
   }
+  // ds2-nx (2026-10-23): a 2_10_10_10 integer view (RB_COLOR_INFO format 2, or 10 "as 10_10_10_10") over the EDRAM of
+  // a 7e3 target (2_10_10_10_FLOAT, RGBA16F here) is that target: on the console both name the same bits. Dark Souls
+  // II draws its scene in 7e3 and copies it through such a view, then decodes the 7e3 codes itself; as a target of
+  // its own the view was never drawn into, the copy came out empty and the 3D a flat grey. The copy now takes the
+  // float image, and a fixed-point 2_10_10_10 fetch of it gets the codes back (renutFetchAdjust, shader_common.h).
+  if (!depth && format == plume::RenderFormat::R16G16B16A16_UNORM) {
+    const u32 color_format = (u32(desc->ColorInfo) >> 16) & 0xF;
+    if (color_format == 2 || color_format == 10) {
+      const auto it = g_targets.find(TargetKey(*desc, false, plume::RenderFormat::R16G16B16A16_FLOAT, scale));
+      if (it != g_targets.end() && it->second && it->second->texture)
+        format = plume::RenderFormat::R16G16B16A16_FLOAT;
+    }
+  }
   const uint64_t key = TargetKey(*desc, depth, format, scale);
   auto [bound, first_use] = g_surface_keys.try_emplace(surface_va, key);
   if (first_use) {

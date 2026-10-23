@@ -156,7 +156,8 @@ class Ds2App : public rex::ReXApp {
     ds2::render::RegisterKeys();
 #if DS2_RENUT_RENDERER
     if (banjo::renut_gpu::Active())
-      ds2::capture::StartWithSource([](rex::ui::RawImage& image) { return renut::gpu::CaptureFrame(image); });
+      // 8 s: on the PC (lavapipe) a 3D frame takes 1.5-2.5 s, and Renut's 1-s default caught none.
+      ds2::capture::StartWithSource([](rex::ui::RawImage& image) { return renut::gpu::CaptureFrame(image, 8000); });
     else
 #endif
     ds2::capture::Start([this]() -> rex::ui::Presenter* {

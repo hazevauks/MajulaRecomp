@@ -102,6 +102,8 @@ struct TextureFetch {
   u32 BasePage() const { return dword[1] >> 12; }
 
   u32 Swizzle() const { return (dword[3] >> 1) & 0xFFF; }
+  // ds2-nx (2026-10-23): exp_adjust, 6 bits signed (renutFetchAdjust in shader_common.h).
+  u32 ExpAdjustBits() const { return (dword[3] >> 13) & 0x3F; }
   TextureFilter MagFilter() const { return TextureFilter((dword[3] >> 19) & 3); }
   TextureFilter MinFilter() const { return TextureFilter((dword[3] >> 21) & 3); }
   TextureFilter MipFilter() const { return TextureFilter((dword[3] >> 23) & 3); }

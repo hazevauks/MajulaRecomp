@@ -623,6 +623,11 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         if (subtractFromOne)
             out += "1.0 - ";
     #endif
+    #ifdef RENUT_RECOMP
+        // ds2-nx (2026-10-23): the fetch constant's exp_adjust and the 7e3 code view (renutFetchAdjust,
+        // shader_common.h), from the texture's descriptor word.
+        out += "renutFetchAdjust(";
+    #endif
 
         out += "tfetch";
         break;
@@ -729,6 +734,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         out += instr.useRegLod ? ", lod" : ", 0.0";
 #endif
 
+#ifdef RENUT_RECOMP
+    if (instr.opcode == FetchOpcode::TextureFetch)
+        print("), {}_Texture{}DescriptorIndex", constNamePtr, dimension);  // ds2-nx: renutFetchAdjust's word
+#endif
     out += ").";
 
     printDstSwizzle(instr.dstSwizzle, true);

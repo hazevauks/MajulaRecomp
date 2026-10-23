@@ -243,7 +243,10 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
 // host renders at a ratio of the guest resolution, and the textures resolved from its render
 // targets are that ratio of their guest size (rounded); texel offsets and texel coordinates are in
 // guest texels, so the sizes the fetches use are the guest's.
-#define RENUT_DESCRIPTOR_INDEX_MASK 0x03FFFFFFu
+// ds2-nx (2026-10-23): 19 bits of index (the heaps hold 8,192), then the texture's fetch adjustments (renutFetchAdjust):
+// bit 19 the 7e3 code view, bits 20-25 the fetch constant's exp_adjust (signed). 0x03FFFFFF before.
+#define RENUT_DESCRIPTOR_INDEX_MASK 0x0007FFFFu
+#define RENUT_TEXTURE_7E3_CODE 0x00080000u
 #define RENUT_RESOLUTION_SCALE_SHIFT 26u
 
 uint renutDescriptor(uint resourceDescriptorIndex)
@@ -265,6 +268,32 @@ float renutTextureScale(uint resourceDescriptorIndex)
            select(code == 5u, 4.0,
            select(code == 6u, 0.75,
            select(code == 7u, 4.0 / 3.0, 1.0)))))));
+}
+
+// ds2-nx (2026-10-23): what the Xenos does to a fetched value that the host texture does not.
+//   - exp_adjust (texture fetch constant dword 3 bits 13-18): the value times 2^exp_adjust. Dark Souls II reads its
+//     scene's copy with exp_adjust 3 and decodes the 7e3 colour itself (floor and frac of the code times 8).
+//   - the 7e3 code view: a resolve of a 7e3 render target (a float image on the host) read through a fixed-point
+//     2_10_10_10 fetch gives, on the console, each channel's 10-bit 7e3 code over 1023 (the EDRAM's bits): the host
+//     float is encoded back (Float32To7e3, as this port's PM4 renderer and Xenia do) and the alpha to its 2 bits.
+float renut7e3Code(float value)
+{
+    uint f32 = asuint(clamp(value, 0.0, 31.875));
+    uint denormal = ((f32 & 0x7FFFFFu) | 0x800000u) >> min(125u - (f32 >> 23u), 24u);
+    uint normal = f32 - (124u << 23u);
+    uint biased = f32 < 0x3E800000u ? denormal : normal;
+    return float(((biased + 0x7FFFu + ((biased >> 16u) & 1u)) >> 16u) & 0x3FFu) / 1023.0;
+}
+
+float4 renutFetchAdjust(float4 value, uint resourceDescriptorIndex)
+{
+    if ((resourceDescriptorIndex & RENUT_TEXTURE_7E3_CODE) != 0u)
+        value = float4(renut7e3Code(value.x), renut7e3Code(value.y), renut7e3Code(value.z),
+                       round(saturate(value.w) * 3.0) / 3.0);
+    const int expAdjust = int(resourceDescriptorIndex << 6u) >> 26;
+    if (expAdjust != 0)
+        value *= exp2(float(expAdjust));
+    return value;
 }
 
 // A scaled texture's guest width and height from its host ones.
