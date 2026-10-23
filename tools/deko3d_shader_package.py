@@ -26,7 +26,9 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ZSTD = r'C:\devkitPro\msys2\usr\bin\zstd.exe'
+# ds2-nx: this machine's MSYS2 (banjo-nx's devkitPro MSYS2 at C:\devkitPro\msys2); ZSTD in the environment wins.
+ZSTD = os.environ.get('ZSTD') or next((p for p in (r'C:\msys64\usr\bin\zstd.exe', r'C:\devkitPro\msys2\usr\bin\zstd.exe')
+                                       if os.path.isfile(p)), 'zstd')
 
 
 def fwd(p):
