@@ -243,10 +243,12 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
 // host renders at a ratio of the guest resolution, and the textures resolved from its render
 // targets are that ratio of their guest size (rounded); texel offsets and texel coordinates are in
 // guest texels, so the sizes the fetches use are the guest's.
-// ds2-nx (2026-10-23): 19 bits of index (the heaps hold 8,192), then the texture's fetch adjustments (renutFetchAdjust):
-// bit 19 the 7e3 code view, bits 20-25 the fetch constant's exp_adjust (signed). 0x03FFFFFF before.
-#define RENUT_DESCRIPTOR_INDEX_MASK 0x0007FFFFu
-#define RENUT_TEXTURE_7E3_CODE 0x00080000u
+// ds2-nx (2026-10-23): 20 bits of index (the heaps hold 8,192; the deko3d shaders take the low 20 bits as the
+// texture handle, dkh in tools/deko3d_glsl.py), then the fetch constant's exp_adjust in bits 20-25 (signed). The 7e3
+// code view is bit 29 of a word without bit 31 (RENUT_STACKED_TEXTURE, whose words use bit 29 for the layer wrap).
+// First tried as bit 19: inside deko3d's handle, the console sampled a texture that did not exist (a black 3D).
+#define RENUT_DESCRIPTOR_INDEX_MASK 0x000FFFFFu
+#define RENUT_TEXTURE_7E3_CODE 0x20000000u
 #define RENUT_RESOLUTION_SCALE_SHIFT 26u
 
 uint renutDescriptor(uint resourceDescriptorIndex)
@@ -287,7 +289,7 @@ float renut7e3Code(float value)
 
 float4 renutFetchAdjust(float4 value, uint resourceDescriptorIndex)
 {
-    if ((resourceDescriptorIndex & RENUT_TEXTURE_7E3_CODE) != 0u)
+    if ((resourceDescriptorIndex & 0xA0000000u) == RENUT_TEXTURE_7E3_CODE)  // bit 29 and not stacked
         value = float4(renut7e3Code(value.x), renut7e3Code(value.y), renut7e3Code(value.z),
                        round(saturate(value.w) * 3.0) / 3.0);
     const int expAdjust = int(resourceDescriptorIndex << 6u) >> 26;

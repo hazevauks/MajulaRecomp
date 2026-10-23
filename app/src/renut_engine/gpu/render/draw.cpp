@@ -2039,7 +2039,7 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
     // holds the values, so the shader encodes them back.
     index |= fetch.ExpAdjustBits() << kTextureExpAdjustShift;
     if (const HostTexture *source = fx.transition[0];
-        source && source->host_format == plume::RenderFormat::R16G16B16A16_FLOAT &&
+        !binding.stacked && source && source->host_format == plume::RenderFormat::R16G16B16A16_FLOAT &&
         (fetch.Format() == GpuTextureFormat::Fmt2_10_10_10 ||
          fetch.Format() == GpuTextureFormat::Fmt2_10_10_10_As16_16_16_16))
       index |= kTexture7e3CodeBit;
