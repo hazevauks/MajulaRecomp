@@ -7,9 +7,10 @@ license_mask = 1
 
 # The native renderer (app/src/me) with the shader library ds2_shaders.mesp next to the .nro.
 ds2_renderer_native = true
-# 960x540 in handheld mode, scaled up to the 720p screen: 56 % of 720p's pixels. For the game's own resolution, 720
-# (configs/ds2_test_720p.toml; L3 + R3 held for a second switches live). Docked: the game's own resolution for now.
-ds2_render_height_handheld = 540
+# 2026-10-23, the first deko3d build (ds2-dk.nro): the game's own 1280x720 in handheld mode too. Renut at a reduced scale
+# (540 or 480) crashed on the PC on confirming a save, not yet understood; ds2.nro and ds2-opt.nro (the PM4 renderer)
+# read this too, and L3 + R3 held for a second still switches them to 540 live. 540 was 960x540, 56 % of 720p's pixels.
+ds2_render_height_handheld = 720
 ds2_render_height_docked = 720
 
 # The game's files go loose in the game_root/ folder (121 files, the biggest 2.8 GB): the set is 5.8 GB and a single

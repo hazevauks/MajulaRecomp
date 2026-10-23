@@ -19,6 +19,36 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Twenty-fifth build (2026-10-23): the first deko3d build
+
+Copy over: `ds2-dk.nro` (new), `ds2.toml` and the `configs/` folder. `ds2.nro` and `ds2-opt.nro` stay for comparison.
+
+What `ds2-dk.nro` is:
+
+- **The new renderer**: Renut, the Direct3D-level renderer of sa2-nx 1.0.3, on **deko3d**, the Switch's own graphics
+  API. No PM4 ring, no EDRAM emulation and no Vulkan driver (NVK) in the NRO (docs/deko3d.md).
+- The game's code generated again with sa2-nx 1.0.3's generator. No LTO/PGO yet (that comes after a collection on this
+  renderer).
+- **720p in handheld mode** (the game's own resolution). 540p is not ready on this renderer yet. `ds2.nro` and
+  `ds2-opt.nro` read the same `ds2.toml`, so they start at 720p too: L3 + R3 held for a second still switches them to
+  540p.
+
+What to expect the first time:
+
+- **Shader compiling.** deko3d compiles each shader variant on the console the first time a draw needs it, so the first
+  session stutters whenever something new appears. The results are kept in `deko3d_shaders.bin` next to the NRO;
+  close the game normally (HOME, then close) so they are saved, and the second session should not stutter for them.
+- **The save list's portraits** may come out as noise: known, the game reads them back from memory and this renderer
+  does not write them there yet. The saves themselves are fine.
+
+**Test 1 (first light):** open `ds2-dk.nro`. If it boots: the title, the menu, the save list, then load a save. If it
+crashes or the screen stays black, note at which moment and send `logs/` and Atmosphère's report folders.
+
+**Test 2 (if it plays):** the four measuring points, ~30 s each (the start of the game, the Fire Keepers' house, the
+Heide bonfire warp, the Forest bonfire warp), in a second session so most shaders are already compiled.
+
+Then the `logs/` folder.
+
 ## Twenty-fourth build (2026-10-17): the new code with LTO + PGO
 
 Copy over: `ds2-opt.nro`. `ds2.nro`, `ds2.toml` and `configs/` are the twenty-third build's. You can delete

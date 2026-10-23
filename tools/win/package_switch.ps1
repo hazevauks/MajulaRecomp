@@ -18,7 +18,9 @@ Copy-Item -Force $nro (Join-Path $dest 'ds2.nro')
 # The other builds, when they exist (tools\win\build_switch_all.ps1): the PGO-instrumented NRO, which collects the
 # profile on the console, and the optimised one (LTO, and PGO when pgo\ has a profile). They read the same ds2.toml,
 # game files and saves as ds2.nro.
-foreach ($extra in @(@('out\nx_pgo\ds2.nro', 'ds2-pgo.nro'), @('out\nx_rel\ds2.nro', 'ds2-opt.nro'))) {
+# ds2-nx (2026-10-23): and the deko3d one (out\nx_dk: Renut on deko3d, no Vulkan driver; docs/deko3d.md).
+foreach ($extra in @(@('out\nx_pgo\ds2.nro', 'ds2-pgo.nro'), @('out\nx_rel\ds2.nro', 'ds2-opt.nro'),
+                     @('out\nx_dk\ds2.nro', 'ds2-dk.nro'))) {
     $from = Join-Path $root $extra[0]
     if (Test-Path $from) { Copy-Item -Force $from (Join-Path $dest $extra[1]) }
 }

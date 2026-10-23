@@ -96,10 +96,18 @@ def main():
     # ds2-nx: the classic codegen is what is delivered until the optimised flavour is brought up for this game.
     print('flavour: ' + ('optimised codegen' if b'optimised codegen' in nro else 'classic codegen'))
     mesa = sorted(set(re.findall(rb'Mesa \d+\.\d+\.\d+ \(git-[0-9a-f]+\)', nro)))
-    sdk = sorted(set(re.findall(rb'Mesa \d+\.\d+\.\d+ \(git-[0-9a-f]+\)', open(a.sdk_vulkan, 'rb').read())))
-    print('Mesa in the NRO:', [m.decode() for m in mesa], '| in the SDK:', [m.decode() for m in sdk])
-    if not mesa or mesa != sdk:
-        failures.append('the NRO does not carry the SDK driver\'s Mesa string')
+    nvk = sum(1 for l in nm.splitlines() if ' nvk_' in l)
+    if nvk == 0:
+        # sa2-nx 1.0.3 (ported 2026-10-23): a build without the driver (REXGLUE_SWITCH_NO_NVK: Renut on deko3d,
+        # tools\win\build_switch.ps1 -NoNvk) must carry none of Mesa's driver: no nvk_ symbol and no Mesa string.
+        print('Vulkan driver: none linked (no nvk_ symbols); Mesa in the NRO:', [m.decode() for m in mesa])
+        if mesa:
+            failures.append('a build without the NVK driver carries a Mesa version string')
+    else:
+        sdk = sorted(set(re.findall(rb'Mesa \d+\.\d+\.\d+ \(git-[0-9a-f]+\)', open(a.sdk_vulkan, 'rb').read())))
+        print('Mesa in the NRO:', [m.decode() for m in mesa], '| in the SDK:', [m.decode() for m in sdk])
+        if not mesa or mesa != sdk:
+            failures.append('the NRO does not carry the SDK driver\'s Mesa string')
 
     # One streaming pass over the disassembly: per function, b-to-self and fused multiply-adds.
     proc = subprocess.Popen([DEVKITA64 + 'aarch64-none-elf-objdump' + EXE, '-d', '--no-show-raw-insn', a.elf],

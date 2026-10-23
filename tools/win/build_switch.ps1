@@ -25,8 +25,12 @@ param(
 )
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 . (Join-Path $PSScriptRoot 'env.ps1')  # VS CMake and Ninja on PATH (the compilers come from the toolchain file)
-$nvk = if ($env:NVK_SDK) { $env:NVK_SDK } else {
-    'C:/devkitPro/mesa-switch-main-nfsmw-source/mesa-switch-main/mesa-unified-install/opt/devkitpro/portlibs/switch' }
+# ds2-nx (2026-10-23): the SDK built in _tools (docs/ds2-notes.md) before the reference ports' path; a new build folder
+# (out\nx_dk, say) failed its first configure without NVK_SDK. The headers are needed with -NoNvk too.
+$nvk = @($env:NVK_SDK, (Join-Path $root '_tools\mesa-switch\mesa-unified-install\opt\devkitpro\portlibs\switch'),
+         'C:/devkitPro/mesa-switch-main-nfsmw-source/mesa-switch-main/mesa-unified-install/opt/devkitpro/portlibs/switch') |
+    Where-Object { $_ -and (Test-Path (Join-Path $_ 'lib\libvulkan.a')) } | Select-Object -First 1
+$nvk = "$nvk" -replace '\\', '/'
 # devkitPro's installer exports DEVKITPRO as an MSYS path (/opt/devkitpro) that Windows CMake cannot open.
 # DS2_DEVKITPRO (environment) names an install that is not at C:\devkitPro.
 $devkitpro = @($env:DS2_DEVKITPRO, $env:DEVKITPRO, 'C:/devkitPro', (Join-Path $HOME 'Downloads\devkitPro')) |
