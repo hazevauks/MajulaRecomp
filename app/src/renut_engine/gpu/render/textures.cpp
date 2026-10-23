@@ -653,7 +653,13 @@ void Retire(HostTexture &t) {
 // the same memory may still differ in pitch, swizzle or mip fields.
 bool SameData(const u32 a[6], const u32 b[6]) {
   constexpr u32 kDimensionMask = 0x600u;  // fetch dword 5 bits 9-10
-  return a[1] == b[1] && a[2] == b[2] && (a[5] & kDimensionMask) == (b[5] & kDimensionMask);
+  // ds2-nx (2026-10-22): dword 1 bit 11 is nearest_clamp_policy (D3D / OpenGL rounding of nearest samples), not the
+  // data. Dark Souls II's device fetch constants set it where the texture headers do not (14AE9086 -> 14AE9886), so
+  // every resolve the game then sampled, the save list's portraits first, was thrown away and read from guest memory
+  // the resolve never wrote (noise on Vulkan, green on deko3d).
+  constexpr u32 kClampPolicy = 0x800u;
+  return (a[1] & ~kClampPolicy) == (b[1] & ~kClampPolicy) && a[2] == b[2] &&
+         (a[5] & kDimensionMask) == (b[5] & kDimensionMask);
 }
 
 // The resolve destination another header wrote this texture's memory through,
