@@ -486,11 +486,14 @@ BANJO_RENUT_HOOK_RAW(sub_829AF490) {
   RegisterGuestShader(shader, physical, true);
 }
 
-// D3DVertexDeclaration *D3DDevice_CreateVertexDeclaration(const D3DVERTEXELEMENT9*) [sub_829AFA30; N&B 0x8264EA90]
-BANJO_RENUT_HOOK_RAW(sub_829AFA30) {
-  const u32 elements_va = ctx.r3.u32;
-  __imp__sub_829AFA30(ctx, base);
-  const u32 declaration = ctx.r3.u32;
+// ds2-nx (2026-10-22): the declaration's initialisation, not D3DDevice_CreateVertexDeclaration [sub_829AFA30; N&B
+// 0x8264EA90]. DS2's Create counts the elements, allocates the object and calls this (elements r3, object r4); the game
+// also calls it directly on declarations in its own memory (from 0x826A8F08), and with the hook on Create those never
+// reached the renderer ("Draw dropped: vertex declaration ... is not one the renderer knows", every frame from boot).
+// void D3DVertexDeclaration_Initialize(const D3DVERTEXELEMENT9*, D3DVertexDeclaration*) [sub_829AF940]
+BANJO_RENUT_HOOK_RAW(sub_829AF940) {
+  const u32 elements_va = ctx.r3.u32, declaration = ctx.r4.u32;
+  __imp__sub_829AF940(ctx, base);
   if (const auto *elements = declaration ? GuestPtr<const GuestVertexElement>(elements_va) : nullptr)
     RegisterGuestDeclaration(declaration, elements);
 }
