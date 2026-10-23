@@ -346,6 +346,9 @@ namespace plume {
         uint8_t computePush[256]{};
         uint32_t computePushSize = 0;
         DkIdxFormat indexFormat = DkIdxFormat_Uint16, boundIndexFormat = DkIdxFormat_Uint16;
+        // ds2-nx (2026-10-23): the primitive restart state set on this command list (drawIndexedInstanced).
+        bool restartEnabled = false;
+        uint32_t restartIndex = 0;
         uint32_t indexSize = 2;
         DkGpuAddr indexAddress = 0;
         bool descriptorsInvalidated = false;

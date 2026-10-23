@@ -124,6 +124,9 @@ namespace plume {
         viewportCount = scissorCount = 0;
         indexAddress = 0;
         boundIndexFormat = DkIdxFormat_Uint16;
+        // ds2-nx: unknown at the start of a list (the queue keeps the GPU state of the last one): set again.
+        restartEnabled = true;
+        restartIndex = 0;
         boundTexCount[0] = boundTexCount[1] = boundTexCount[2] = 0;
         sharedBase = 0;
         sharedSize = 0;
@@ -408,6 +411,20 @@ namespace plume {
         if (graphicsPipeline->boundTextures)
             bindTextures();
         flushBarriers();
+        // ds2-nx (2026-10-23): strips restart at the index of all ones for the index size, as plume's Vulkan back end
+        // does (primitiveRestartEnable for strip pipelines). deko3d had it off: Dark Souls II's scene is indexed
+        // triangle strips joined by restart markers, drawn as screen-wide triangles.
+        {
+            const bool strip = graphicsPipeline->primitive == DkPrimitive_TriangleStrip ||
+                               graphicsPipeline->primitive == DkPrimitive_LineStrip;
+            const uint32_t index = indexFormat == DkIdxFormat_Uint32 ? 0xFFFFFFFFu
+                                 : indexFormat == DkIdxFormat_Uint8 ? 0xFFu : 0xFFFFu;
+            if (strip != restartEnabled || (strip && index != restartIndex)) {
+                dkCmdBufSetPrimitiveRestart(cmd, strip, index);
+                restartEnabled = strip;
+                restartIndex = index;
+            }
+        }
         dkCmdBufDrawIndexed(cmd, graphicsPipeline->primitive, indexCount, instanceCount, startIndex, baseVertex, startInstance);
         ++statDraws;
     }

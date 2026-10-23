@@ -2219,6 +2219,22 @@ bool CachedIndexDraw(const IndexKey &key, const DrawCall &call, Geometry &g) {
 
 // After a draw read the range into g_indices: count how long it has held, and
 // give a range that has held long enough its persistent copy.
+// ds2-nx (2026-10-23): the strip-restart index of the draw being prepared (the guest's VGT_MULTI_PRIM_IB_RESET_INDX,
+// ValuesPacket::MultiPrimIbResetIndx, cut to the index size), or UINT32_MAX when the draw's primitive restarts nothing.
+// Dark Souls II draws its scene as indexed triangle strips joined by 0xFFFF. The marker was rebased with the other
+// indices (0xFFFF - lo, an ordinary index pointing past the strip's vertices) and counted in the vertex range (up to
+// 65,535 vertices converted a draw): on deko3d, which had no restart at all, and on Vulkan alike, the scene came out
+// as screen-wide triangles of garbage, a second of GPU a frame and a black picture, the HUD drawn right over it.
+u32 g_index_restart = UINT32_MAX;
+
+// A guest index as the host draws it: rebased to the range, or the host's restart value (all ones for its size, the
+// value plume's back ends restart at).
+inline u32 HostIndex(u32 index, u32 lo, bool wide) {
+  if (index == g_index_restart)
+    return wide ? 0xFFFFFFFFu : 0xFFFFu;
+  return index - lo;
+}
+
 void TrackIndices(const IndexKey &key, u32 lo, u32 max_index) {
   CachedIndices &c = g_index_memo.Get(g_index_cache, key, true)->second;
   c.last_used = g_stream_cache_frame;
@@ -2239,11 +2255,11 @@ void TrackIndices(const IndexKey &key, u32 lo, u32 max_index) {
   if (wide) {
     auto *out = reinterpret_cast<u32 *>(copy.cpu);
     for (size_t i = 0; i < g_indices.size(); ++i)
-      out[i] = g_indices[i] - lo;
+      out[i] = HostIndex(g_indices[i], lo, true);
   } else {
     auto *out = reinterpret_cast<uint16_t *>(copy.cpu);
     for (size_t i = 0; i < g_indices.size(); ++i)
-      out[i] = uint16_t(g_indices[i] - lo);
+      out[i] = uint16_t(HostIndex(g_indices[i], lo, false));
   }
   c.copy = copy;
   c.bytes = bytes;
@@ -2261,6 +2277,7 @@ bool PrepareGeometry(const GuestDevice &device, const DrawCall &call, Geometry &
     RGPU_WARN("Rectangle lists are drawn as triangle lists");
 
   u32 lo = 0, max_index = 0;  // host indices are g_indices - lo, the largest max_index
+  g_index_restart = UINT32_MAX;  // ds2-nx: set below for an indexed strip
   IndexKey index_key{};
   bool cacheable_indices = false;
   if (call.indexed) {
@@ -2295,12 +2312,22 @@ bool PrepareGeometry(const GuestDevice &device, const DrawCall &call, Geometry &
       ExpandIndices(call.primitive);
     if (g_indices.empty())
       return false;
+    // ds2-nx: the restart markers stay out of the range and are written as the host's (HostIndex).
+    if (!expand && (call.primitive == kTriangleStrip || call.primitive == kLineStrip)) {
+      const u32 reset = device.U32(u32(offsetof(d3d::Device, m_ValuesPacket) +
+                                       offsetof(d3d::ValuesPacket, MultiPrimIbResetIndx)));
+      g_index_restart = is32 ? reset : (reset & 0xFFFFu);
+    }
     lo = UINT32_MAX;
     u32 hi = 0;
     for (u32 index : g_indices) {
+      if (index == g_index_restart)
+        continue;
       lo = std::min(lo, index);
       hi = std::max(hi, index);
     }
+    if (lo > hi)
+      return false;  // nothing but restart markers
     if (hi - lo >= kMaxDrawVertices)
       return false;
     g.first_vertex = u32(int64_t(call.base_vertex) + lo);
@@ -2338,11 +2365,11 @@ bool PrepareGeometry(const GuestDevice &device, const DrawCall &call, Geometry &
     if (wide) {
       auto *out = static_cast<u32 *>(alloc.cpu);
       for (size_t i = 0; i < g_indices.size(); ++i)
-        out[i] = g_indices[i] - lo;
+        out[i] = HostIndex(g_indices[i], lo, true);
     } else {
       auto *out = static_cast<uint16_t *>(alloc.cpu);
       for (size_t i = 0; i < g_indices.size(); ++i)
-        out[i] = uint16_t(g_indices[i] - lo);
+        out[i] = uint16_t(HostIndex(g_indices[i], lo, false));
     }
     g.indexed = true;
     g.index_count = u32(g_indices.size());
@@ -3978,7 +4005,23 @@ void DrawLog(const DrawCall &call, const Geometry &geometry, const ShaderRecord 
   if (!first_frame) {
     if (std::chrono::steady_clock::now() - start < std::chrono::seconds(at))
       return;
-    first_frame = frame + 1;  // from the next whole frame
+    // ds2-nx (2026-10-23): and from a frame of 200 draws or more (the 3D: the menus and loading screens have a few), so
+    // the log does not depend on how long the loading took.
+    static uint64_t counted_frame = 0;
+    static uint32_t counted = 0;
+    if (frame != counted_frame) {
+      const bool busy = counted >= 200;
+      counted_frame = frame;
+      counted = 0;
+      if (!busy) {
+        ++counted;
+        return;
+      }
+      first_frame = frame + 1;  // from the next whole frame
+    } else {
+      ++counted;
+      return;
+    }
   }
   if (frame < first_frame || frame > first_frame + 1)
     return;
