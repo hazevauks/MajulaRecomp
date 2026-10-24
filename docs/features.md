@@ -28,6 +28,51 @@ The options page is a list of rows whose value changes with left / right. Two ro
   renderer's draw log, `banjo_renut_diag_draw_log_s`, and a trace of the menu's functions).
 - Both settings take effect live (below), so the rows need no restart.
 
+### What the menu code does (static reading, 2026-10-24)
+
+The system tab (gear) lists Game Options (2101030), Screen Options (2101031), Mouse / Keyboard Settings (PC
+leftovers) and Quit Game. Each options page is a class of its own over one base class (vtables of 36 slots); slot 26
+builds the page, slot 13 handles input, and the rows are "items" of the menu manager (`68(this)`), 44 bytes each,
+whose widgets sit at `+22576` and after.
+
+| Page | vtable | Build (26) | Input (13) | Items | Rows |
+|---|---|---|---|---|---|
+| Game Options | `82003B68` | `822A3E60` | `822A4720` | 59 to 73 | 15 |
+| Screen Options | `82003C10` | `822A34A8` | `822A3128` | 75 to 78 | 4 |
+| third page (tables empty on the 360) | `82003CB8` | `822A39A0` | `822A2DE8` | 80, 81 | 2 |
+
+- **Layout:** both pages draw into the same list of the In-Game layout (`menu\02.febnd.dcx`,
+  `l02_01_In-Game.flo`), which has exactly **15 row slots** (element ids 2010241, 2010240, 2010247, 2010254, 2010246,
+  2010245, 2010244, 2010243, 2010242, 2010334 to 2010329, top to bottom). Game Options fills all 15, so two rows
+  after its last one have no slot in the layout. Screen Options uses only the first 4: **slots 5 and 6 (2010246,
+  2010245) are already there, placed and empty**.
+- **Tables in the executable** (all indexed by row): Game Options' row names at `83413388`, its layout slots at
+  `8341334C`, help at `83413498`; Screen Options' row names at `83413404` (Blood, Subtitles, HUD, Brightness), its
+  slots at `834133F4`, help at `834133E4`, key guides at `834133C4` / `834133D4`. They are read past their end if
+  the row count grows, so the functions that read them are wrapped for our rows instead of the tables extended.
+- **Screen Options' values** are 4 bytes of the game's option object (`+16`: blood, subtitles, HUD, brightness),
+  changed by `822A2918(page, row, delta)` (rows past 3 change nothing there) and written back by `8238ADB0`; the
+  value's text comes from `822A22B8(page, row)`. Help and key guide: `822A2388`.
+- **Texts:** every menu text goes `82272778(widget, category, id)` → `8264D2D8` → `8264CF80` → `8264CF08(messages,
+  category, id)`, which returns the UTF-16 string (category 7 is `ingamemenu.fmg`; an unknown id gives an empty
+  string). A hook on `8264CF08` answers our new ids (row names, help lines) with strings of our own in guest
+  memory; the values reuse the game's "On" / "Off" (2603020 / 2603030).
+
+**Plan from this:** the two rows go at the end of **Screen Options** (after Adjust Brightness, in the layout's slots
+5 and 6). At the end of Game Options they would need new layout slots (the `.flo` changed in memory), which is much
+more work for the same result. The hooks:
+
+1. Build (`822A34A8`): run the game's, then add rows 5 and 6 as items 79 and 80 the same way it adds its own
+   (`82414020` puts the item in the page's list, `82312AD8` gives the manager its widget), with their name and value
+   texts.
+2. Value change (`822A2918`) and help (`822A2388`): rows 0 to 3 go to the game's; rows 4 and 5 are ours (flip the
+   setting, write `ds2.toml`, set the value text).
+3. Message lookup (`8264CF08`): our ids.
+
+To check on the PC (when builds are allowed): that up / down reaches the new rows (the base class walks the page's
+item list), that item 80 is free while Screen Options is open (the third page also uses it, but it looks unused on
+the 360), and how "Default" (the key guide's reset) treats our rows.
+
 ## 2. Gameplay
 
 ### Better fog walls (invulnerable while crossing)
