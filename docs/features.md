@@ -138,6 +138,17 @@ pickup included (to confirm: that the map does not copy its item at load). For t
 the simplest award is the game's own: the original row 10196160 (the Dull Ember alone) given through the game's
 lot-award function, found on the PC by tracing an item pickup.
 
+**The gift to saves past the giant (to do, static leads):**
+- "Past the giant" without an event flag: the Soldier Key (50600000) comes only from the Last Giant's lot and is
+  never used up, so a save holding it has beaten him. Holding the Dull Ember is checked the same way; a player who
+  already gave it to McDuff would get a second one (harmless), unless McDuff's flag is found.
+- The gift as the game makes a drop: `825E8AA8` (drop manager, lot id, f1..f3, v1 = position, r8) puts a lot on
+  the ground as a glowing pickup; its wrappers are `825E8D20` / `825E8D40`, and the drop manager is
+  `[[0x834797B8] + 80]` (as `825BF240` takes it). The Dull Ember alone is the original row 10196160. Missing: the
+  player's position (the player character from the same globals), on the PC.
+- The event flags: `825B4B58` loads the event params (`BossBattleParam`, `EventFlagListParam`, ...) into the event
+  manager; the flag reader itself is not found yet.
+
 ### Fog walls (static reading)
 
 - A fog wall is a "white door": `MapObjectWhiteDoorParam` (117 rows of 32 bytes): flags, a crossing distance (1.5),
@@ -201,6 +212,10 @@ edges, 80 in shade) and its shadow, cast 1.6 pixels down and to the right. A sph
 flames (the PlayStation trophy's silhouette) was tried first and read worse at the icon's size (about 40 pixels).
 The draft generator is a script of the investigation (pure Python), to become C++ next to `ds2_button_icons.cpp`,
 which already decodes and re-encodes the game's DXT5 pages.
+
+**The selected tab (seen on the PC):** the game draws no other picture for it: it adds a colour to the same medallion.
+Fitted on captures (selected against plain, per channel, the gain stays near 1): with the cursor on the tab
+(+116, +63, +8), a gold; with the tab's page open (+75, +17, +8), a red. The chalice takes the same two tints.
 
 **The content (a mock-up made only of the game's pieces, on the player's files):**
 
