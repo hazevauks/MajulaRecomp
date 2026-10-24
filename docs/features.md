@@ -138,6 +138,23 @@ pickup included (to confirm: that the map does not copy its item at load). For t
 the simplest award is the game's own: the original row 10196160 (the Dull Ember alone) given through the game's
 lot-award function, found on the PC by tracing an item pickup.
 
+**Scholar of the First Sin's place, on the 360's map (investigation, 2026-10-24):** in SotFS the Dull Ember is in
+the right one of two iron chests next to The Tower Apart bonfire, where the Pursuer's eagle drops the player in the
+Lost Bastille (m10_16). On the 360 the map's pickups are parts of `map\m10_16_00_00\m10_16_00_00.msb`: each part
+named `oXX_YYYY_ZZZZ` holds its lot id 0x2C bytes after its name and its position (x, y, z, floats) at 0x48. The
+models: `o00_0200` and `o00_0210` chests, `o00_0240` glowing items on the ground, `o00_0256` others. The lots follow
+the map: 10165xxx the chests, 10166xxx the ground items. Near the eagle's arrival (the guides put the Antiquated Key
+near the Tower Apart bonfire), a group of chests at x -82..-78, z 586..593: `o00_0210_0012` (lot 10165140, Antiquated
+Key and Covetous Silver Serpent Ring, the only iron one there), `o00_0200_0011` (Target Shield), `_0013` (Large
+Titanite Shard), `_0014` (Titanite Shard x5), `_0015` (Iron Arrow x10). The bonfire's own position is not in the MSB
+under its id (16660), so the group is placed by the guides, to be checked in the game.
+- The Dull Ember there, as data (no new object): its lot added to one of those lots, live and kept by the game's own
+  "taken" state. In the iron chest (SotFS's kind of place), or in a ground item for a glowing pickup (the nearest are
+  higher or farther: Soul of a Nameless Soldier at (-87, 15, 569), Scimitar at (-45, 2, 581)).
+- A glowing item at a free spot instead: the drop function below at a position near the bonfire, when the map loads
+  with the option on and the player has no Dull Ember. The game would not remember it (a drop is not a map pickup),
+  so our own per-save marker decides; more work, and the player's position or the map's loading is needed.
+
 **The gift to saves past the giant (to do, static leads):**
 - "Past the giant" without an event flag: the Soldier Key (50600000) comes only from the Last Giant's lot and is
   never used up, so a save holding it has beaten him. Holding the Dull Ember is checked the same way; a player who
@@ -256,6 +273,17 @@ To check on the PC: the bar's current item (to know the gear is selected and its
 on screen (the layout's units to pixels), and which texture page has the tab icons' frame and highlight. A real
 sixth node in the layout (the `.flo` rewritten in memory when the game reads it) stays the "full" option: the bar's
 container would need its child list and offsets rebuilt.
+
+### A tab of the port's own (investigation, 2026-10-24)
+
+The user's idea: the two options leave Game Options for a tab of things exclusive to the port. The hybrid tab above
+can carry it: the sixth medallion opens a dropdown of our own, drawn like the game's (Status, Message and System
+have one: an icon and a name per entry, the icon orange when selected, from `In-game_01.tpf`'s grey and orange icon
+rows), with "Trophies" and "Port options"; each opens a page drawn by us in the game's window (the mock-up's
+pieces), the options as rows with the game's value box and arrows, On / Off. Our input handling already takes the
+menu while our tab is active, so the rows need no game page; Voice chat and Cross-region play go back to the game.
+Missing for it: two dropdown icons in the game's style (a small chalice, and one for the options), and the
+dropdown's position and spacing (from the layout, or measured on the PC).
 
 ## 4. Later
 
