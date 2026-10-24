@@ -277,6 +277,31 @@ menu while our tab is active, so the rows need no game page; Voice chat and Cros
 Missing for it: two dropdown icons in the game's style (a small chalice, and one for the options), and the
 dropdown's position and spacing (from the layout, or measured on the PC).
 
+### The bar in the game's memory (PC, 2026-10-24)
+
+- **The layout stays loaded as it was read.** `l02_01_In-Game.flo` is kept in memory with its offsets made pointers.
+  A layout element (a node object, 0x80 bytes: vtable `82106C98`, parent and siblings at +0x10..+0x18, an identity
+  matrix at +0x40) points at its node record in the file at +0x2c. The record's +4 points at its property record,
+  whose first two floats are x and y.
+- **Moving an element.** Change that x before or while the menu shows: the gear's tab node (2010021, its highlight
+  and its dropdown's chevron), its dropdown (2010319) and the RB label (2010182) moved 108 units right at once, live.
+- **The bar is one sprite.** The chain and its five stone medallions are not the tab nodes: they are one sprite of node
+  599 (sprite record at file 0x6c40, texture In-game_01, its texture rectangle at file 0x8c50: (1.1, 779.2) to
+  (337.6, 850.9)), with the two arrows (0x6c70, the right one mirrored at x 1305.45; 0x6ca0). A selected tab is lit
+  by a separate sprite (the orange square at 475..553, 772..852), so nothing else reads the bar's rectangle.
+- **The file's tables, as far as needed:** the header's offsets (0x80: per-node lists of sprite records, 0x30 bytes
+  each: x, y, scale x, scale y, colour, texture entry, texture rectangle pointer; the rectangles, 16 bytes each, from
+  0x6d00; nodes, 0x20 bytes each, from 0xfca0; textures at 0x39d00: name, index and declared size; names at 0x3a420).
+  In-game_02 is declared 1024x32, so a sprite cannot use its free rows.
+- **Seven medallions drawn by the game:** the bar's rectangle grows by 108 (x2 445.6), the right arrow moves 108, and
+  In-game_01's page gets the new strip in x 230..446 (the chalice, the coiled sword, then the gear and the end). The
+  two icons that sat there (x 336..474, y 761..853, records 0x7cf0 / 0x7d00: an axe and a shield) move to the free
+  (672, 928), only their texture rectangles change. The page is replaced in physical memory, the store cards marked;
+  the renderer checks a tiled texture by its ends and eight 64-byte probes, so the replacement must land before its
+  first upload (done when the bar is built; to check that nothing draws In-game_01 earlier).
+- **The prototype** (`app/src/ds2_tabs.cpp`, PC only, `ds2_tabs_page_dir`): the new page comes from a file made by an
+  investigation script; the shipped version builds it at start from the player's own page, as the button icons do.
+
 ## 4. Later
 
 - **Scholar of the First Sin (Xbox 360):** another executable (regenerate the code, census its Direct3D again, find
