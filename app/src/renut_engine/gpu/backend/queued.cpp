@@ -194,6 +194,8 @@ struct DeferredDraw {
   DrawCapture *capture = nullptr;  // owned (g_capture_pool)
   const u8 *scratch = nullptr;
   u32 bytes = 0;
+  const u8 *index_scratch = nullptr;  // ds2-nx (2026-10-24): BeginIndexedVertices
+  u32 index_bytes = 0;
 };
 std::mutex g_deferred_mutex;
 std::unordered_map<u32, DeferredDraw> g_deferred;
@@ -611,7 +613,8 @@ void QueueDraw(u32 device_va, const DrawCall &call, u32 up_vertex_bytes, u32 up_
   QueueCapture(capture);
 }
 
-void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u32 bytes) {
+void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u32 bytes,
+                       const u8 *index_scratch, u32 index_bytes) {
   FlushDeferredVertices(device_va);
   RunReadyCallbacks();
   // sa2-nx (2026-10-20, ds2_renut_deferred_chain, from futari-nx via peggle2-nx): a Begin*Vertices draw of the chain
@@ -636,7 +639,7 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
     if (!delta)
       return;
     std::lock_guard lock(g_deferred_mutex);
-    g_deferred[device_va] = {delta, scratch, bytes};
+    g_deferred[device_va] = {delta, scratch, bytes, index_scratch, index_bytes};
     g_deferred_count.store(g_deferred.size(), std::memory_order_release);
     return;
   }
@@ -660,7 +663,7 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
   std::lock_guard lock(g_deferred_mutex);
   DeferredDraw &slot = g_deferred[device_va];
   g_capture_pool.Give(slot.capture);  // one not flushed (the original replaced it the same way)
-  slot = {capture, scratch, bytes};
+  slot = {capture, scratch, bytes, index_scratch, index_bytes};
   g_deferred_count.store(g_deferred.size(), std::memory_order_release);
 }
 
@@ -684,6 +687,8 @@ void FlushDeferredVertices(u32 device_va) {
     g_deferred_count.store(g_deferred.size(), std::memory_order_release);
   }
   deferred.capture->vertices.assign(deferred.scratch, deferred.scratch + deferred.bytes);
+  if (deferred.index_scratch)
+    deferred.capture->indices.assign(deferred.index_scratch, deferred.index_scratch + deferred.index_bytes);
   QueueCapture(deferred.capture);
 }
 

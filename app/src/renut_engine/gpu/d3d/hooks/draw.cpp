@@ -24,6 +24,7 @@
 #include <rex/hook.h>
 
 #include "renut_engine/gpu/banjo_renut_select.h"
+#include "renut_engine/gpu/banjo_renut_tuning.h"
 #include <rex/types.h>
 
 #include "renut_engine/gpu/guest/command_buffers.h"
@@ -184,6 +185,7 @@ void D3DDevice_DrawIndexedVerticesUP_hook(u32 device, u32 primitive, u32 min_ver
                                           u32 index_format, u32 vertex_data, u32 stride) {
   if (!Active() || !index_data || !vertex_data)
     return;
+  banjo::renut_gpu::CountIndexedImmediate(0);
   DrawCall call;
   call.primitive = primitive;
   call.indexed = true;
@@ -232,6 +234,63 @@ u32 D3DDevice_BeginVertices_hook(u32 device, u32 primitive, u32 vertex_count, u3
   else
     FlushDeferredVertices(device);
   return scratch;
+}
+
+// ds2-nx (2026-10-24): BeginIndexedVertices' indices, like the vertices: one block per device.
+constexpr u32 kIndicesScratchSize = 1u << 20;
+std::unordered_map<u32, u32> g_indices_scratch;  // under g_vertices_scratch_mutex
+
+u32 IndicesScratch(u32 device) {
+  std::lock_guard lock(g_vertices_scratch_mutex);
+  u32 &scratch = g_indices_scratch[device];
+  if (!scratch)
+    scratch = records::AllocPhysicalBlock(kIndicesScratchSize);
+  return scratch;
+}
+
+// HRESULT D3DDevice_BeginIndexedVertices(D3DDevice*, D3DPRIMITIVETYPE, INT BaseVertexIndex,
+//     UINT NumVertices, UINT IndexCount, D3DFORMAT IndexDataFormat, UINT VertexStreamZeroStride,
+//     void **ppIndexData, void **ppVertexData) [DS2 0x829C2848; SA2's linker dropped it]
+// ds2-nx (2026-10-24): Dark Souls II's effects (the bonfire flames, fog walls, item glows, splashes) draw through it,
+// most of them by DrawIndexedVerticesUP (0x829C2D88, which calls it and copies the data in). Unhooked, the original
+// wrote their packets into the ring nobody reads: every effect of the game was missing. As BeginVertices: the inline
+// end restores m_pRing from the device, the draw's state is captured now and its data copied at the device's next hook.
+// An index i fetches vertex i + BaseVertexIndex of the vertices written (call.base_vertex).
+u32 D3DDevice_BeginIndexedVertices_hook(u32 device, u32 primitive, u32 base_vertex, u32 num_vertices,
+                                        u32 index_count, u32 index_format, u32 stride, u32 pp_index,
+                                        u32 pp_vertex) {
+  banjo::renut_gpu::CountIndexedImmediate(1);
+  const bool is32 = (index_format & 4) != 0;  // D3DFMT_INDEX32
+  const u64 bytes = u64(num_vertices) * stride;
+  const u64 index_bytes = (u64(index_count) * (is32 ? 4 : 2) + 3) & ~u64(3);
+  if (!bytes || !index_count || bytes > kVerticesScratchSize || index_bytes > kIndicesScratchSize)
+    return kE_OUTOFMEMORY;
+  StoreU32(device + d3d::kDeviceOffsetVerticesRingEnd,
+           LoadU32(device + u32(offsetof(d3d::Device, m_pRing))));
+
+  const u32 scratch = VerticesScratch(device);
+  const u32 index_scratch = IndicesScratch(device);
+  if (!scratch || !index_scratch)
+    return kE_OUTOFMEMORY;
+  DrawCall call;
+  call.primitive = primitive;
+  call.indexed = true;
+  call.base_vertex = i32(base_vertex);
+  call.count = index_count;
+  call.up_indices = GuestPtr<const u8>(index_scratch);
+  call.up_indices_32 = is32;
+  call.up_vertices = GuestPtr<const u8>(scratch);
+  call.up_stride = stride;
+  call.up_vertex_count = num_vertices;
+  if (IsRecordingCommandBuffer(device))
+    RecordDeferredDraw(device, call, call.up_vertices, u32(bytes), call.up_indices, u32(index_bytes));
+  else if (Active())
+    QueueDeferredDraw(device, call, call.up_vertices, u32(bytes), call.up_indices, u32(index_bytes));
+  else
+    FlushDeferredVertices(device);
+  StoreU32(pp_index, index_scratch);
+  StoreU32(pp_vertex, scratch);
+  return 0;
 }
 
 // A clear: the renderer's, recorded or queued, then N&B's device work.
@@ -603,6 +662,10 @@ BANJO_RENUT_HOOK_SHARED(sub_829C2E28, D3DDevice_DrawVertices_hook);  // D3DDevic
 BANJO_RENUT_HOOK_SHARED(sub_829C3240, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices [0x826567C8]
 BANJO_RENUT_HOOK_SHARED(sub_829C2800, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP [0x8222E520]
 BANJO_RENUT_HOOK_SHARED(sub_829C2340, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices [0x8222CC50]
+// ds2-nx (2026-10-24): Dark Souls II's two indexed immediate draws (no native hook at either). Its
+// DrawIndexedVerticesUP takes the 9th argument (the stride) from the stack, as N&B's [0x82656728].
+BANJO_RENUT_HOOK(sub_829C2D88, D3DDevice_DrawIndexedVerticesUP_hook);  // D3DDevice_DrawIndexedVerticesUP
+BANJO_RENUT_HOOK(sub_829C2848, D3DDevice_BeginIndexedVertices_hook);  // D3DDevice_BeginIndexedVertices
 
 // void D3DDevice_ClearF(D3DDevice*, DWORD Flags, const D3DRECT *pRect, const D3DVECTOR4 *pColor, float Z,
 //     DWORD Stencil) [sub_829CCC28; N&B 0x822811A0]: Z in f1 (r7's slot), Stencil in r8.

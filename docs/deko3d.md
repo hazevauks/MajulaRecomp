@@ -129,3 +129,16 @@ the declaration hook too, or those declarations never reach Renut.
      away.
    Drawn right on the PC: the warning, the logos, the title screen, the main menu, the save list, the prologue video,
    the loading screen.
+
+## Status (2026-10-24)
+
+3. The console (twenty-sixth build on): the game draws completely at 720p, GPU-bound (38-59 ms a frame at 460 MHz
+   handheld; the render thread 10-18 ms). Fixed on the way: strip restart markers (the black 3D), the HDR chain's 7e3
+   view and exp_adjust (the grey 3D), the 7e3 flag out of deko3d's 20-bit texture handle (the dark console picture).
+4. The effects (bonfire flames, mist, item glows, splashes, fog walls): every particle effect goes through
+   `BeginIndexedVertices` `829C2848` / `DrawIndexedVerticesUP` `829C2D88`, which SA2's Renut had no hooks for. Both
+   hooked (d3d/hooks/draw.cpp); after adding them, `tools/direct_calls.py --redo` must run so that the callers call
+   `sub_X` (the hook) and not `__imp__sub_X`. The 10 s log counts both, the draws by primitive type and the dropped
+   draws by reason.
+5. Still open: the save portraits (the game reads its 128x76 resolve with the CPU; Renut writes no resolve back to
+   guest memory, as SA2's photo capture had to work around).

@@ -19,6 +19,21 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Twenty-eighth build (2026-10-24): the effects' draw calls
+
+Copy over: `ds2-dk.nro`. Back to the normal `ds2.toml` (the A/B files are no longer needed).
+
+What the twenty-seventh build's test showed: none of the three configurations brought the bonfire flame back, and
+the renderer dropped no draw. Also missing: the mist around the bonfire when sitting down and the water splashes.
+Every one of them is a particle effect, so the cause was common to all: Dark Souls II draws its effects through two
+Direct3D functions Sonic Adventure 2 never had (`BeginIndexedVertices` and `DrawIndexedVerticesUP`), and the new
+renderer did not take them over. Their draws went into the Xbox 360's command ring, which nothing reads any more:
+lost without a trace. Both are now the renderer's (the PC had the same gap).
+
+**Test:** load the bonfire save: is the flame there, and the mist when sitting? Then anywhere with effects (item
+glows, the fog wall, water splashes, the waterfall at the start). A photo of anything still missing or drawn wrong.
+Then the `logs/` folder (into `switch-logs`).
+
 ## Twenty-seventh build (2026-10-24): finding the missing effects
 
 Copy over: `ds2-dk.nro` and the `configs/` folder (two new files in it).
