@@ -19,6 +19,22 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Thirtieth build (2026-10-24): the deko3d build optimised (LTO + PGO)
+
+Copy over: `ds2-dk-opt.nro` (new, next to `ds2-dk.nro`, which stays as it was). Keep `configs/ds2_profile.toml` as
+`ds2.toml`. The shaders are the same as the twenty-ninth build's: no new compiling stutters.
+
+What the twenty-ninth build showed: the GPU 10 ms faster at the forest bonfire (53.6 -> 43.4 ms) and at the start
+(23 fps, was ~19.5), but where the GPU now has room the frame stays at 41-53 ms: the game's own CPU work is the limit
+there (40 ms from the controller read to the frame's end at the forest bonfire). The deko3d NRO was built without
+link-time optimisation and without the PGO profile that the Vulkan builds had (+4 to +20 % on the CPU side then).
+`ds2-dk-opt.nro` is that same program with LTO and the PGO profile of 17 October (the game functions unchanged since
+keep their profile; the rest is compiled as without one).
+
+**Test:** with `ds2-dk-opt.nro`, the four measuring points, ~30 s each, noting the frame rate at each. Then the
+`logs/` folder (into `switch-logs`) and the normal `ds2.toml` back in place. If it crashes or draws wrong where
+`ds2-dk.nro` did not, say so: that one stays as the fallback.
+
 ## Twenty-ninth build (2026-10-24): the scene's pixel shaders three times smaller
 
 Copy over: `ds2-dk.nro`. Keep `configs/ds2_profile.toml` as `ds2.toml` for this test (the GPU profile again). Expect
