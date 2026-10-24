@@ -100,6 +100,45 @@ the 360), and how "Default" (the key guide's reset) treats our rows.
   item ids and the original pickup's lot, the function that gives an item to the player, how to read the inventory
   and McDuff's state.
 
+### What the game data says (static reading, 2026-10-24)
+
+The global parameters are in `regulation.bnd.dcx` (a loose file of the game root, not in `GameData`): a BND4 of 252
+files, the item lots among them. A `.param` here is big-endian: row count (u16) at 0x0A, the type name at 0x0C,
+the data's start at 0x30, the row table at 0x40 (id, data offset, name offset; 12 bytes a row).
+
+- **Items** (`ItemName.fmg`): Dull Ember 50990000, Titanite Slab 60990000, Soul of the Last Giant 64010000, Soldier
+  Key 50600000.
+- **Item lots** (`ItemLotParam2_*`, 124 bytes a row): 4 bytes of header, then for ten slots the amount (u8 x10),
+  reinforcement (x10), infusion (x10), a per-slot byte (x10, 1 on the slots in use), the item ids (s32 x10, at 44,
+  unused slots hold 10) and the chances (f32 x10, at 84).
+  - **The Last Giant's reward**: `ItemLotParam2_Other` row **309600**: Soul of the Last Giant and the Soldier Key,
+    both at 1.0. `BossBattleParam` row 1010010 ties the boss (309600) to that lot, with the flags 110000081 and
+    100971 and the boss index 31 (which flag says "defeated" is for the PC test).
+  - **The Dull Ember's pickup**: `ItemLotParam2_Other` row **10196160**, map m10_19, the **Iron Keep**: the Dull
+    Ember alone at 1.0.
+- **Where the game keeps them:** `823A4860` loads the item params by name from the regulation (`82472150`) into a
+  manager: +4 ItemParam, +12 ItemTypeParam, +20 ItemUsageParam, +28 ItemLotParam2_Chr, **+36 ItemLotParam2_Other**,
+  +44 ItemLotParam2_SvrEvent, then the Estus flask, menu icon and shop params.
+
+**Plan from this:** the two rows are changed in memory while the setting is on, and put back when it is turned off:
+row 309600 gets the Dull Ember in its third slot (amount 1, chance 1.0, slot byte 1), row 10196160 gets the Titanite
+Slab instead of the Dull Ember. A lot is read when it is awarded, so both follow the setting live, the Iron Keep
+pickup included (to confirm: that the map does not copy its item at load). For the gift to saves past the giant,
+the simplest award is the game's own: the original row 10196160 (the Dull Ember alone) given through the game's
+lot-award function, found on the PC by tracing an item pickup.
+
+### Fog walls (static reading)
+
+- A fog wall is a "white door": `MapObjectWhiteDoorParam` (117 rows of 32 bytes): flags, a crossing distance (1.5),
+  an action pair (280 to 289; 280, 281, 285 and 286 are most of them), two message ids (400 / 410 and per-map ones)
+  and an event flag (for example 102000160 in Things Betwixt).
+- The crossing itself is an animation of the player (`timeact\chr\c000100_pl.tae`, TAE version 0x1000C,
+  big-endian, 1097 animations). The action ids do not name the animation directly.
+- Two ways to make the crossing invulnerable: a code hook (while the player is in the crossing, the character's
+  invulnerability flag stays set) or a data patch (an invulnerability event added in memory to the crossing's
+  animations, as a roll has). Both need, from the PC: the crossing's animation id and the player's state while it
+  plays (a crossing done with the live input file, logging the player's animation and flags each frame).
+
 ## 3. Trophies as a sixth tab
 
 The game's menu is a bar of five tabs (L1 / R1: equipment, items, status, the fourth, the system gear). The trophy
