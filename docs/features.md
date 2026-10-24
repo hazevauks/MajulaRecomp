@@ -14,19 +14,30 @@ on the player's own files: nothing of the game is shipped modified.
 
 ## 1. The options rows (system tab)
 
-The options page is a list of rows whose value changes with left / right. Two rows at its end, after the game's own:
+**Done (2026-10-24, `app/src/ds2_features.cpp`, tried on the PC):** the two options are rows of **Game Options**, in
+the places of "Voice chat" and "Cross-region play" (rows 11 and 12 of 15), which only served Xbox Live. Neither page
+had room for more rows (below), so the user chose this over a page of our own.
 
 | Row | Key in `ds2.toml` | Default |
 |---|---|---|
 | Early Dull Ember | `ds2_early_dull_ember` | off |
 | Better fog walls | `ds2_fog_wall_iframes` | off |
 
-- The values are kept in `ds2.toml` (the menu writes it), not in the game's own option data: a change to the save or
-  profile format could damage it.
-- To investigate: where the page's row list is built and how a row's value is drawn and changed; the message lookup
-  (the row names are not in the game's `.fmg` files: new message ids answered by a hook); how the page is drawn (the
-  renderer's draw log, `banjo_renut_diag_draw_log_s`, and a trace of the menu's functions).
-- Both settings take effect live (below), so the rows need no restart.
+- Our names and help lines answer the two rows' message ids (2601202, 2601210, 2609102, 2609110) in the message
+  lookup (`8264CF08`); the values are the game's "On" / "Off". Left or right flips a row (with the menu's sound),
+  sets the cvar and rewrites that key's line in `ds2.toml` (the rest of the file is kept).
+- Hooks: the page's value function `822A25F8` (page, row, step) for our two rows (the game's voice and region
+  settings are not touched), the value text `822A2460` (page, row) -> message id (the page refreshes all fifteen
+  values with it, `822A28B0`), and the voice check `8265DB68` answers "available", or "Voice chat" is drawn greyed.
+- On the PC: the rows read "Early Dull Ember" / "Better fog walls", Off, with their help lines; turning Early Dull
+  Ember on logged the two item lots changed and wrote `ds2_early_dull_ember = true`.
+- The live result for the rest of the game: Early Dull Ember applies at once (below). Better fog walls is only the row
+  until the crossing's invulnerability exists.
+
+**What the PC showed against the static reading:** Screen Options is not one of the In-Game layout's 15-row lists: it
+has its four rows and, below them, the brightness picture, and the slots 2010246 / 2010245 do not exist under its
+parent (the layout lookup returns nothing). Game Options' 15 rows fill its panel to the bottom. The selected tab of
+the bar is drawn with the orange version of its icon (the orange icons of `In-game_01.tpf`).
 
 ### What the menu code does (static reading, 2026-10-24)
 
@@ -58,8 +69,8 @@ whose widgets sit at `+22576` and after.
   string). A hook on `8264CF08` answers our new ids (row names, help lines) with strings of our own in guest
   memory; the values reuse the game's "On" / "Off" (2603020 / 2603030).
 
-**Plan from this:** the two rows go at the end of **Screen Options** (after Adjust Brightness, in the layout's slots
-5 and 6). At the end of Game Options they would need new layout slots (the `.flo` changed in memory), which is much
+**Plan from this (superseded on the PC, see above):** the two rows were to go at the end of **Screen Options**
+(after Adjust Brightness, in the layout's slots 5 and 6). At the end of Game Options they would need new layout slots (the `.flo` changed in memory), which is much
 more work for the same result. The hooks:
 
 1. Build (`822A34A8`): run the game's, then add rows 5 and 6 as items 79 and 80 the same way it adds its own
