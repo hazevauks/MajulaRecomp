@@ -41,3 +41,11 @@ switch_profile_report = true
 # The full log to a file during the tests.
 log_level = "info"
 log_to_file = true
+
+# The port's gameplay options (docs/features.md): also rows at the end of Screen Options (gear tab), which rewrite
+# these two lines. Early Dull Ember: the Last Giant drops the Dull Ember and its Iron Keep pickup gives a Titanite
+# Slab (live). Better fog walls: no damage while crossing a fog wall (the row only, for now).
+ds2_early_dull_ember = false
+ds2_fog_wall_iframes = false
+# While the fog wall's crossing is investigated: the item lots the game reads and the fog wall's functions in the log.
+ds2_diag_features = true

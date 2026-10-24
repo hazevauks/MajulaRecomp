@@ -23,6 +23,7 @@
 #include "cpu/ds2_enhancements.h"
 #include "ds2_button_icons.h"
 #include "ds2_capture.h"
+#include "ds2_features.h"
 #include "ds2_input_script.h"
 #include "ds2_pgo.h"
 #include "ds2_trophies.h"
@@ -73,6 +74,7 @@ class Ds2App : public rex::ReXApp {
   // sdmc:/switch/ds2-nx/game_root), and on a PC build tree the repository's assets/game_root.
   // An explicit path always wins.
   void OnConfigurePaths(rex::PathConfig& paths) override {
+    ds2::features::SetConfigPath(paths.config_path);
     if (!paths.game_data_root.empty()) {
       return;
     }
