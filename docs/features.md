@@ -143,8 +143,11 @@ in the game's style, with a texture from the game's menu pages; the game's layou
 y 770 to 842): five octagonal stone medallions on a thorned chain, 54 pixels apart (the layout's units are the
 page's pixels), the gear's centre at (257, 811). The sixth is made at run time from the player's own page: the
 chain and the gear's medallion copied one step to the right, the gear replaced by stone, and a trophy in relief drawn
-on it: a chalice with two handles (bowl, knotted stem, foot), lit like the game's reliefs (from the top left, a dark
-rim), its grain the high frequencies of the head medallion's stone so the material matches. A sphere wrapped in
+on it: a chalice with two handles (bowl, knotted stem, foot), lit like the game's reliefs (from the top left), its
+grain the high frequencies of the head medallion's stone so the material matches. The inside of the medallion is
+the sword medallion's own stone with the sword painted out (the guard's rows blended from above and below, then the
+blade's columns from left and right), and the chalice takes the sword's tones (about 130 facing, 210 on the lit
+edges, 80 in shade) and its shadow, cast 1.6 pixels down and to the right. A sphere wrapped in
 flames (the PlayStation trophy's silhouette) was tried first and read worse at the icon's size (about 40 pixels).
 The draft generator is a script of the investigation (pure Python), to become C++ next to `ds2_button_icons.cpp`,
 which already decodes and re-encodes the game's DXT5 pages.
