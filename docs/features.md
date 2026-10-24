@@ -143,10 +143,11 @@ in the game's style, with a texture from the game's menu pages; the game's layou
 y 770 to 842): five octagonal stone medallions on a thorned chain, 54 pixels apart (the layout's units are the
 page's pixels), the gear's centre at (257, 811). The sixth is made at run time from the player's own page: the
 chain and the gear's medallion copied one step to the right, the gear replaced by stone, and a trophy in relief drawn
-on it (a sphere held by flame-like blades on a stem and base, after the PlayStation trophy's silhouette, without
-its symbols), lit like the game's reliefs (from the top left, light grey stone with grain and a dark rim). The
-draft generator is a script of the investigation (pure Python), to become C++ next to `ds2_button_icons.cpp`, which
-already decodes and re-encodes the game's DXT5 pages.
+on it: a chalice with two handles (bowl, knotted stem, foot), lit like the game's reliefs (from the top left, a dark
+rim), its grain the high frequencies of the head medallion's stone so the material matches. A sphere wrapped in
+flames (the PlayStation trophy's silhouette) was tried first and read worse at the icon's size (about 40 pixels).
+The draft generator is a script of the investigation (pure Python), to become C++ next to `ds2_button_icons.cpp`,
+which already decodes and re-encodes the game's DXT5 pages.
 
 1. Cursor on the gear with its dropdown closed, right pressed: the trophy tab becomes active (our state). From then
    on the menu's input bits are cleared after `82312C38` (the game's pages see nothing), the gear's highlight is
