@@ -399,6 +399,10 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
   // banjo-nx (2026-10-20, diagnostic): the fur family without its pixel work (constant 912, pass nullps).
   if (key.pixel_shader && banjo::renut_gpu::NullPsOn())
     spec[spec_count++] = plume::RenderSpecConstant(912, 1);
+  // ds2-nx (2026-10-24): no texture word of the key's draws has renutFetchAdjust's fields (reserved bit 2 clear): the
+  // shaders' constant 913 is 0 and the adjustments' code folds away (shader_common.h).
+  if (!(key.reserved & 4u))
+    spec[spec_count++] = plume::RenderSpecConstant(913, 0);
   desc.specConstants = spec_count ? spec : nullptr;
   desc.specConstantsCount = spec_count;
   if (REXCVAR_GET(banjo_deko3d_variant_log)) {
@@ -588,7 +592,7 @@ bool DecodeRecord(const char *data, size_t size, Job &job) {
     std::memset(job.key.bool_mask, 0, sizeof(job.key.bool_mask));
     std::memset(job.key.bool_values, 0, sizeof(job.key.bool_values));
   }
-  job.key.reserved = 0;
+  job.key.reserved &= 4u;  // ds2-nx (2026-10-24): bit 2, the fetch adjustments (constant 913), is the draws'
   job.hash = HashKey(job.key);
   for (u32 s = 0; s < kMaxVertexStreams; ++s) {
     u8 used;

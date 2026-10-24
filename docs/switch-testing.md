@@ -19,12 +19,19 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
-## Next test (2026-10-24): where the GPU time goes
+## Twenty-ninth build (2026-10-24): the scene's pixel shaders three times smaller
 
-No new NRO (the twenty-eighth build's `ds2-dk.nro`). Delete the leftovers listed under "What goes on the SD card",
-copy `configs/ds2_profile.toml` over `ds2.toml` (keep a copy of the normal one), and do the four measuring points,
-~30 s each, noting the frame rate at each. Then the `logs/` folder (into `switch-logs`) and the normal `ds2.toml`
-back in place.
+Copy over: `ds2-dk.nro`. Keep `configs/ds2_profile.toml` as `ds2.toml` for this test (the GPU profile again). Expect
+shader compiling stutters at first, more than usual: nearly every pipeline of the scene is new (once, then kept).
+
+What the GPU profile of the twenty-eighth build showed (four points, 720p handheld): the GPU at 37-75 ms a frame, the
+two costliest pixel shaders of the scene 12 ms together, the resolves 4 ms and the depth resolves 3 ms. The texture
+fetch adjustments added for Dark Souls II's HDR copy (the 7e3 codes and the exponent adjust, twenty-sixth build) sat
+in every texture fetch of every pixel shader, and made the scene's shaders 2.3-3.2 times larger on the console's
+compiler, while only the few draws of the HDR chain need them. Now only the pipelines of those draws keep that code.
+
+**Test:** the four measuring points, ~30 s each, noting the frame rate at each (after the first stutters settle).
+Then the `logs/` folder (into `switch-logs`) and the normal `ds2.toml` back in place.
 
 ## Twenty-eighth build (2026-10-24): the effects' draw calls
 

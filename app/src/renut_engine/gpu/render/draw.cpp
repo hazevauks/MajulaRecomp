@@ -4640,6 +4640,18 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   };
   static KeyReuse reuse;
   static const bool reuse_on = REXCVAR_GET(ds2_renut_chain_reuse);
+  // ds2-nx (2026-10-24): whether a texture word of the draw has renutFetchAdjust's fields (the 7e3 code view of a word
+  // that is not stacked, or an exp_adjust): the key's reserved bit 2, and specialization constant 913 is 0 for the
+  // pipelines without it (render/pipeline.cpp), so their shaders lose the adjustments' code.
+  u32 adjust_bits = 0;
+  for (u32 d = 0; d < 3; ++d) {
+    for (u32 r = 0; r < 32; ++r) {
+      const u32 w = sc.texture_indices[d][r];
+      adjust_bits |= (w & (0x3Fu << kTextureExpAdjustShift)) |
+                     ((w & (kStackedTextureBit | kTexture7e3CodeBit)) == kTexture7e3CodeBit ? 1u : 0u);
+    }
+  }
+  const u32 fetch_adjust = adjust_bits ? 4u : 0u;
   static const bool reuse_verify = reuse_on && REXCVAR_GET(ds2_renut_chain_reuse_verify);
   const ChainHint &hint = chain;
   const ShaderCacheEntry *const ps_entry = ps ? ps->entry : nullptr;
@@ -4650,15 +4662,17 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
                 reuse.layout_hash == declaration->layout_hash && reuse.primitive == call.primitive &&
                 reuse.per_instance == geometry.per_instance && reuse.alpha_test_func == sc.alpha_test_func &&
                 reuse.color_count == targets.color_count && reuse.depth == targets.depth &&
-                reuse.surface_epoch == surface_epoch && reuse.ab_off == ab_off;
+                reuse.surface_epoch == surface_epoch && reuse.ab_off == ab_off &&
+                (reuse.key.reserved & 4u) == fetch_adjust;
   for (u32 i = 0; reused && i < targets.color_count; ++i)
     reused = reuse.colors[i] == targets.colors[i];
   PipelineKey key;
   if (reused) {
     key = reuse.key;
     if (reuse_verify) {
-      const PipelineKey made = MakeKey(device, vs, ps, declaration, targets, call.primitive, geometry.per_instance,
-                                       sc.booleans, sc.alpha_test_func);
+      PipelineKey made = MakeKey(device, vs, ps, declaration, targets, call.primitive, geometry.per_instance,
+                                 sc.booleans, sc.alpha_test_func);
+      made.reserved |= fetch_adjust;
       if (std::memcmp(&made, &key, sizeof(key)) != 0) {
         static uint32_t logged = 0;
         if (logged++ < 8)
@@ -4670,6 +4684,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   } else {
     key = MakeKey(device, vs, ps, declaration, targets, call.primitive, geometry.per_instance, sc.booleans,
                   sc.alpha_test_func);
+    key.reserved |= fetch_adjust;
   }
   if (reuse_on) {
     reuse.seq = hint.seq;

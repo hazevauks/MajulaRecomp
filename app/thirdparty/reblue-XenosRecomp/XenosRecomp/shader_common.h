@@ -287,8 +287,19 @@ float renut7e3Code(float value)
     return float(((biased + 0x7FFFu + ((biased >> 16u) & 1u)) >> 16u) & 0x3FFu) / 1023.0;
 }
 
+// ds2-nx (2026-10-24): specialization constant 913, 0 for a pipeline whose draws bind no texture word with either
+// field (the pipeline key's reserved bit 2, render/draw.cpp): nearly every draw. The adjustments made the scene's pixel
+// shaders 2.3-3.2 times larger under uam (both paths of each fetch's branches stay in the code) for the few draws of
+// the HDR chain that need them; the console's GPU-bound 720p frame paid for it in every pixel.
+#ifdef __spirv__
+[[vk::constant_id(913)]] const uint g_renutFetchAdjust = 1;
+#endif
 float4 renutFetchAdjust(float4 value, uint resourceDescriptorIndex)
 {
+#ifdef __spirv__
+    if (g_renutFetchAdjust == 0u)
+        return value;
+#endif
     if ((resourceDescriptorIndex & 0xA0000000u) == RENUT_TEXTURE_7E3_CODE)  // bit 29 and not stacked
         value = float4(renut7e3Code(value.x), renut7e3Code(value.y), renut7e3Code(value.z),
                        round(saturate(value.w) * 3.0) / 3.0);
