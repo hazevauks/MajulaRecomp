@@ -14,30 +14,11 @@ on the player's own files: nothing of the game is shipped modified.
 
 ## 1. The options rows (system tab)
 
-**Done (2026-10-24, `app/src/ds2_features.cpp`, tried on the PC):** the two options are rows of **Game Options**, in
-the places of "Voice chat" and "Cross-region play" (rows 11 and 12 of 15), which only served Xbox Live. Neither page
-had room for more rows (below), so the user chose this over a page of our own.
-
-| Row | Key in `ds2.toml` | Default |
-|---|---|---|
-| Early Dull Ember | `ds2_early_dull_ember` | off |
-| Better fog walls | `ds2_fog_wall_iframes` | off |
-
-- Our names and help lines answer the two rows' message ids (2601202, 2601210, 2609102, 2609110) in the message
-  lookup (`8264CF08`); the values are the game's "On" / "Off". Left or right flips a row (with the menu's sound),
-  sets the cvar and rewrites that key's line in `ds2.toml` (the rest of the file is kept).
-- Hooks: the page's value function `822A25F8` (page, row, step) for our two rows (the game's voice and region
-  settings are not touched), the value text `822A2460` (page, row) -> message id (the page refreshes all fifteen
-  values with it, `822A28B0`), and the voice check `8265DB68` answers "available", or "Voice chat" is drawn greyed.
-- On the PC: the rows read "Early Dull Ember" / "Better fog walls", Off, with their help lines; turning Early Dull
-  Ember on logged the two item lots changed and wrote `ds2_early_dull_ember = true`.
-- The live result for the rest of the game: Early Dull Ember applies at once (below). Better fog walls is only the row
-  until the crossing's invulnerability exists.
-
-**What the PC showed against the static reading:** Screen Options is not one of the In-Game layout's 15-row lists: it
-has its four rows and, below them, the brightness picture, and the slots 2010246 / 2010245 do not exist under its
-parent (the layout lookup returns nothing). Game Options' 15 rows fill its panel to the bottom. The selected tab of
-the bar is drawn with the orange version of its icon (the orange icons of `In-game_01.tpf`).
+**Decided (2026-10-24): no menu rows.** The two gameplay changes are on by default and kept only in `ds2.toml`
+(`ds2_early_dull_ember`, `ds2_fog_wall_iframes`; false gives the original game). Game Options is the game's again
+(Voice chat and Cross-region play). The port's own things get a tab of their own (section 3). Before that, the rows
+were built and tried on the PC in Game Options, in the places of the two online rows (commit 0d26b63): the notes
+below keep what that taught about the menus.
 
 ### What the menu code does (static reading, 2026-10-24)
 
@@ -95,6 +76,12 @@ the 360), and how "Default" (the key guide's reset) treats our rows.
   the animation (or a fixed time measured on the crossing).
 
 ### Early Dull Ember
+
+**Decided (2026-10-24):** the Dull Ember goes in the iron chest by The Tower Apart bonfire in the Lost Bastille (lot
+10165140, with its Antiquated Key and Covetous Silver Serpent Ring), near Scholar of the First Sin's place; the Iron
+Keep's pickup gives a Titanite Slab. The Last Giant's lot stays as it is. Done in `app/src/ds2_features.cpp`.
+
+The first plan, kept for its notes:
 
 - What: the Last Giant (the first boss) drops the Dull Ember with its soul. The Dull Ember's original place gives a
   **Titanite Slab** instead (the user's choice: a valuable item, so the trip there is still worth it).
@@ -275,6 +262,11 @@ sixth node in the layout (the `.flo` rewritten in memory when the game reads it)
 container would need its child list and offsets rebuilt.
 
 ### A tab of the port's own (investigation, 2026-10-24)
+
+**Decided:** two new tabs, Trophies (the chalice) and Port (a bonfire's coiled sword), left of the gear: the bar
+reads Equipment, Inventory, Status, Message, Trophies, Port, System. The gear's medallion, its dropdown and the RB
+label move two steps right (108 units); our two medallions are drawn in the gap with the chain's pieces of their
+slices, so the bar stays one chain.
 
 The user's idea: the two options leave Game Options for a tab of things exclusive to the port. The hybrid tab above
 can carry it: the sixth medallion opens a dropdown of our own, drawn like the game's (Status, Message and System
