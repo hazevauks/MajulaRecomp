@@ -19,6 +19,13 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Next test (2026-10-24): where the GPU time goes
+
+No new NRO (the twenty-eighth build's `ds2-dk.nro`). Delete the leftovers listed under "What goes on the SD card",
+copy `configs/ds2_profile.toml` over `ds2.toml` (keep a copy of the normal one), and do the four measuring points,
+~30 s each, noting the frame rate at each. Then the `logs/` folder (into `switch-logs`) and the normal `ds2.toml`
+back in place.
+
 ## Twenty-eighth build (2026-10-24): the effects' draw calls
 
 Copy over: `ds2-dk.nro`. Back to the normal `ds2.toml` (the A/B files are no longer needed).
@@ -601,12 +608,16 @@ Only `ds2.nro` and the `configs/` folder changed: copy those two over (`game_roo
 Copy the whole `ds2-nx` folder to `sdmc:/switch/` (it becomes `sdmc:/switch/ds2-nx/`):
 
 ```
-switch/ds2-nx/ds2.nro                  the game
+switch/ds2-nx/ds2-dk.nro               the game (the deko3d renderer; the only NRO since 2026-10-24)
 switch/ds2-nx/ds2.toml                 the configuration (logging on in these tests)
-switch/ds2-nx/ds2_shaders.mesp         the native renderer's shader library
-switch/ds2-nx/ds2_shaders.mesp.idx
 switch/ds2-nx/game_root/               the game's files, loose (121 files, ≈ 5.8 GB)
 switch/ds2-nx/configs/                 alternative configurations (see below)
+```
+
+The game writes next to them: `deko3d_shaders.bin` and `pipeline_list.bin` (the shaders it compiled, kept between
+sessions), `cache/`, `logs/`, `deko3d.log`. Left over from earlier builds and no longer read: `ds2.nro`,
+`ds2-pgo.nro`, `ds2-opt.nro`, `ds2_shaders.mesp` + `.idx` (the Vulkan renderer's), `deko3d_shaders_f<number>.bin`
+(made by the A/B configurations): they can be deleted.
 ```
 
 The card is **FAT32**, which does not take files of 4 GB or more: that is why the game goes as the `game_root/` folder
@@ -641,17 +652,10 @@ error, the file `logs/rex/rex_crash.log` says where. If it makes an Atmosphère 
 In the `configs/` folder; to use one, copy it over `ds2.toml`:
 
 - `ds2_default.toml`: the normal configuration (the same as the `ds2.toml` shipped).
-- `ds2_test_720p.toml`: handheld mode at 1280x720, the game's own resolution (L3 + R3 held for a second also
-  switches live).
-- `ds2_enhancements_off.toml`: turns off all the CPU and GPU shortcuts inherited from the other ports. If the game
-  freezes or the picture comes out wrong with the normal one, try this one and tell me whether it changed.
-- `ds2_emulated_gpu.toml`: uses the emulated GPU instead of the native renderer. It is extremely slow on the console;
-  it is only for comparing the picture on a still screen.
-- `ds2_profile.toml`: samples the CPU stacks (`logs/rex/rex_profile_stacks.log` since the twenty-fourth build); a little slower.
-- `ds2_test_720p.toml`: handheld mode at 1280x720 (the other A/B tests of earlier builds were decided and removed on
-  2026-10-22).
-- `ds2_ab_shaders_off.toml`, `ds2_ab_memory_off.toml` (twenty-seventh build): each half of the deko3d renderer's
-  shortcuts off, to find where the missing effects come from.
+- `ds2_profile.toml` (2026-10-24): measures the GPU's time per pass and per pixel shader every 10 s, and samples the
+  CPU stacks (`logs/rex/rex_profile_stacks.log`); a little slower. For finding where the time goes.
+
+The other configurations of earlier builds (the native renderer's and the A/B tests) were removed on 2026-10-24.
 
 Up to the twenty-second build these files had Portuguese names (`ds2_padrao`, `ds2_melhorias_desligadas`,
 `ds2_gpu_emulada`, `ds2_perfil`, `ds2_teste_*`), which the older sections below still use.
