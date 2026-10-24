@@ -152,6 +152,33 @@ flames (the PlayStation trophy's silhouette) was tried first and read worse at t
 The draft generator is a script of the investigation (pure Python), to become C++ next to `ds2_button_icons.cpp`,
 which already decodes and re-encodes the game's DXT5 pages.
 
+**The content (a mock-up made only of the game's pieces, on the player's files):**
+
+| Piece | Where |
+|---|---|
+| The window: leather panel, border, blue title bar | `In-game_01.tpf` (40.febnd), x 15..895, y 6..549 |
+| A row: leather strip (three-slice, the ends kept) | `ItemSellect_02.tpf` (99.febnd), x 8..500, y 392..440 |
+| The selected row: orange glow bar | `waku_02.tpf` (99.febnd), x 4..784, y 448..512 |
+| Progress: blue track, orange fill | `waku_03.tpf` (99.febnd), x 10..220 / 231..427, y 212..246 |
+| Divider with its ornament | `waku_03.tpf`, x 0..462, y 8..28 |
+| Icon slot | `In-game_01.tpf`, x 469..517, y 643..691 |
+| The trophies' icons, names, descriptions, gamerscore | the executable's XDBF (38 achievements, 64x64 PNG icons) |
+| The text | the game's FeFont (below) |
+
+- **FeFont** (`font\<language>\FeFont_Small.fontbnd.dcx`, loose files): a BND4 with `FeFont_Small.ccm` and its pages
+  (`_0000_x360.tpf`, the 512x512 DXT5 of the button pictures; `_0001` to `_0007`, 256x256 DXT3 with the letters).
+  The `.ccm` (big-endian): version 0x20000, file size, height (28) at 0x08, page width and height at 0x0A / 0x0C,
+  region count at 0x0E, glyph count (u32) at 0x10, the regions' offset at 0x14 (x1, y1, x2, y2 as s16) and the
+  glyphs' at 0x18, 24 bytes each: code (u32), region offset (u32), page (u16), space before, width and advance
+  (s16). English has 768 glyphs.
+- **How it is drawn:** through the overlay the SDK's ImGui already uses (`renut_engine/gpu/overlay`): it takes
+  RGBA textures (the pages decoded once at start) and draws them on the presenting thread over the game's frame, so
+  the renderer needs nothing new. The FeFont becomes an ImGui font (each glyph a custom rect of the atlas, its
+  advance and offset from the `.ccm`), so the text is the game's.
+- **To check on the console:** that an ImGui window alive while the menu is open costs no frames with Renut's
+  overlay (the old presenter painted from the UI thread then, the slow path of `docs/trophies.md`), and where the
+  panel sits against the game's own screens (the layout's units to the screen's pixels).
+
 1. Cursor on the gear with its dropdown closed, right pressed: the trophy tab becomes active (our state). From then
    on the menu's input bits are cleared after `82312C38` (the game's pages see nothing), the gear's highlight is
    replaced by ours, and the game's dropdown stays closed.
