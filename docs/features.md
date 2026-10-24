@@ -161,7 +161,8 @@ which already decodes and re-encodes the game's DXT5 pages.
 | The selected row: orange glow bar | `waku_02.tpf` (99.febnd), x 4..784, y 448..512 |
 | Progress: blue track, orange fill | `waku_03.tpf` (99.febnd), x 10..220 / 231..427, y 212..246 |
 | Divider with its ornament | `waku_03.tpf`, x 0..462, y 8..28 |
-| Icon slot | `In-game_01.tpf`, x 469..517, y 643..691 |
+| Icon tile: grey, orange on the selected row (the item screens' tiles) | `IconBase.tpf` (99.febnd), x 4..70 / 108..175, y 10..85 |
+| Key guide (D-pad: select, B: back) | the port's FeFont, its button pictures already in the Nintendo style |
 | The trophies' icons, names, descriptions, gamerscore | the executable's XDBF (38 achievements, 64x64 PNG icons) |
 | The text | the game's FeFont (below) |
 
