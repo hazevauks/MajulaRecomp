@@ -114,6 +114,43 @@ screen (`docs/trophies.md`, today an ImGui window on L + Minus) becomes a sixth 
 - To investigate: where the five tabs are listed and switched, the tab icons' texture page, how a tab's content is
   drawn and given the input.
 
+### What the menu code does (static reading, 2026-10-24)
+
+- **The bar** is one page of the menu framework, built by `822B0B98` (slot 8 of the vtable at `82003D50`) on the
+  In-Game layout (`l02_01_In-Game.flo`, root node 2010025). Its items:
+
+  | Item | Tab | Icon node | x in the bar | Dropdown |
+  |---|---|---|---|---|
+  | 1 | Equipment | 2010018 | -4.6 | none, opens its screen |
+  | 2 | Inventory | 2010019 | 49.4 | none, opens its screen |
+  | 3 | Status | 2010020 | 103.4 | node 2010007, items 4-5 (Player Status, Player Info) |
+  | 12 | Message | 2010022 | 157.4 | node 2010008, items 13 onwards |
+  | 6 | System (gear) | 2010021 | 211.6 | node 2010319, items 7-11 (Game Options, Screen Options, Mouse, Keyboard, Quit) |
+
+  The icons are 54 units apart, the gear is the rightmost, and **the layout has exactly five icon nodes** (no sixth
+  to fill, unlike the options rows). The tab labels (2101000 to 2101006, the L / R glyphs at 2101005 / 2101006) are
+  set by `822B1A68`.
+- **Screens:** the menu manager holds 27 screen objects (pointers at `+22328` to `+22436`); each is a page class
+  like Game Options. `822B36A8` updates them, `822B2578` closes the whole menu.
+- **Input:** `82312C38` turns the pad into the menu's bits (pressed / repeat / held at `+12` / `+16` / `+20` of the
+  input block), from the table at `82008318`: 0x1 up, 0x2 down, 0x4 left, 0x8 right; the face and shoulder buttons
+  follow. The pages move their cursor through their registered items, so a new item needs a node in the layout.
+
+**Plan from this (hybrid):** the sixth icon is drawn by us at the next step of the bar (x 265.6, right of the gear),
+in the game's style, with a texture from the game's menu pages; the game's layout is not changed.
+
+1. Cursor on the gear with its dropdown closed, right pressed: the trophy tab becomes active (our state). From then
+   on the menu's input bits are cleared after `82312C38` (the game's pages see nothing), the gear's highlight is
+   replaced by ours, and the game's dropdown stays closed.
+2. Our panel is drawn in the content area with the game's panel and frame textures and its font (FeFont), the list
+   as the ImGui window shows it today (name, description, unlocked or not, progress).
+3. Left or B gives the input back with the cursor on the gear; Start closes the menu as usual (`822B2578`).
+
+To check on the PC: the bar's current item (to know the gear is selected and its dropdown closed), where the bar is
+on screen (the layout's units to pixels), and which texture page has the tab icons' frame and highlight. A real
+sixth node in the layout (the `.flo` rewritten in memory when the game reads it) stays the "full" option: the bar's
+container would need its child list and offsets rebuilt.
+
 ## 4. Later
 
 - **Scholar of the First Sin (Xbox 360):** another executable (regenerate the code, census its Direct3D again, find
