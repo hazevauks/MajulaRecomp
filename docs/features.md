@@ -139,6 +139,15 @@ screen (`docs/trophies.md`, today an ImGui window on L + Minus) becomes a sixth 
 **Plan from this (hybrid):** the sixth icon is drawn by us at the next step of the bar (x 265.6, right of the gear),
 in the game's style, with a texture from the game's menu pages; the game's layout is not changed.
 
+**The icon:** the bar is one picture on `menu\40.febnd.dcx` → `In-game_01.tpf` (1024x1024 DXT5, x 8 to 290,
+y 770 to 842): five octagonal stone medallions on a thorned chain, 54 pixels apart (the layout's units are the
+page's pixels), the gear's centre at (257, 811). The sixth is made at run time from the player's own page: the
+chain and the gear's medallion copied one step to the right, the gear replaced by stone, and a trophy in relief drawn
+on it (a sphere held by flame-like blades on a stem and base, after the PlayStation trophy's silhouette, without
+its symbols), lit like the game's reliefs (from the top left, light grey stone with grain and a dark rim). The
+draft generator is a script of the investigation (pure Python), to become C++ next to `ds2_button_icons.cpp`, which
+already decodes and re-encodes the game's DXT5 pages.
+
 1. Cursor on the gear with its dropdown closed, right pressed: the trophy tab becomes active (our state). From then
    on the menu's input bits are cleared after `82312C38` (the game's pages see nothing), the gear's highlight is
    replaced by ours, and the game's dropdown stays closed.
