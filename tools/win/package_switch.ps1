@@ -64,6 +64,24 @@ $profileText = Set-Key (Set-Key (Set-Key $base 'ds2_gpu_marks_categories' 'true'
 [IO.File]::WriteAllText((Join-Path $configs 'ds2_test_720p.toml'), (
     ($base -replace 'ds2_render_height_handheld = 540', 'ds2_render_height_handheld = 720') +
     "`n# A/B test: handheld mode at the game's own resolution (1280x720), as in the earlier builds.`n"), $noBom)
+# 2026-10-24: the effects missing on deko3d (bonfire flames, fog walls, item glows, waterfalls) but drawn on the PC:
+# each half of the deko3d renderer's default-on shortcuts turned off, to find the half they come from.
+$shaderKeys = 'banjo_deko3d_vs_outputs', 'banjo_deko3d_early_z', 'banjo_deko3d_early_hoist', 'banjo_deko3d_txq_constants',
+    'banjo_deko3d_uam_gvn', 'banjo_deko3d_uam_prmt', 'banjo_deko3d_uam_uniform_branches', 'banjo_deko3d_uam_wide_rows',
+    'banjo_deko3d_tess_spec', 'banjo_gpu_output_trim', 'banjo_gpu_depth_only', 'banjo_gpu_bool_spec', 'banjo_renut_linked_stages'
+$memoryKeys = 'banjo_deko3d_depth24', 'banjo_deko3d_depth_compression', 'banjo_deko3d_depth_handover',
+    'banjo_deko3d_draw_resolves', 'banjo_deko3d_push_constants', 'banjo_deko3d_zcull', 'banjo_deko3d_barrier_lean',
+    'banjo_deko3d_barrier_merge', 'banjo_deko3d_eager_kicks', 'banjo_deko3d_kick_submit', 'banjo_deko3d_ring_cleaner',
+    'banjo_gpu_depth_words_view', 'banjo_renut_depth_words_lazy', 'banjo_renut_resolve_skip', 'banjo_renut_upload_cached',
+    'banjo_renut_store_cards', 'banjo_renut_exact_streams', 'banjo_renut_cpu_memos', 'banjo_renut_shared_dedupe',
+    'banjo_renut_device_swizzle', 'banjo_renut_push_point_only'
+foreach ($ab in @(@('ds2_ab_shaders_off.toml', $shaderKeys, 'the shader specializations'),
+                  @('ds2_ab_memory_off.toml', $memoryKeys, 'the depth, resolve, upload and stream cache shortcuts'))) {
+    $text = $base
+    foreach ($k in $ab[1]) { $text = Set-Key $text $k 'false' }
+    [IO.File]::WriteAllText((Join-Path $configs $ab[0]), ($text +
+        "`n# A/B test for the missing effects: $($ab[2]) of the deko3d renderer off.`n"), $noBom)
+}
 # Every configuration must parse (a key twice makes the game ignore the whole file).
 & python -c "import sys, tomllib, pathlib; [tomllib.loads(p.read_text('utf-8')) for p in [pathlib.Path(sys.argv[1]), *pathlib.Path(sys.argv[2]).glob('*.toml')]]; print('configs: all parse')" (Join-Path $dest 'ds2.toml') $configs
 if ($LASTEXITCODE -ne 0) { throw 'a configuration does not parse as TOML' }

@@ -500,6 +500,8 @@ std::atomic<uint64_t> g_exact_memo{0}, g_exact_memo_bytes{0};
 std::atomic<uint64_t> g_cards_clean{0}, g_cards_clean_bytes{0}, g_cards_dirty{0}, g_cards_missed{0};
 std::atomic<uint64_t> g_tex_cards[4], g_tex_cards_bytes{0};  // proven, hashed, re-uploads saved, changed (verify)
 std::atomic<uint64_t> g_kind_depth_only{0}, g_kind_depth_plain{0}, g_kind_nothing{0}, g_kind_partial{0};
+std::atomic<uint64_t> g_draw_prims[19];  // ds2-nx (2026-10-24): CountDrawPrimitive
+std::atomic<uint64_t> g_draw_drops[11];  // ds2-nx (2026-10-24): CountDrawDrop
 std::atomic<uint64_t> g_depth_only_draws{0};  // banjo_gpu_depth_only (package 28)
 std::atomic<uint64_t> g_resolves_drawn{0};  // banjo_deko3d_draw_resolves (2026-10-18)
 std::atomic<uint64_t> g_resolves_skipped[2];  // banjo_renut_resolve_skip (2026-10-19): colour, depth
@@ -749,6 +751,19 @@ void StatsGameFrame() {
               g_kind_depth_plain.exchange(0, std::memory_order_relaxed),
               g_depth_only_draws.exchange(0, std::memory_order_relaxed),
               g_kind_nothing.exchange(0, std::memory_order_relaxed), g_kind_partial.exchange(0, std::memory_order_relaxed));
+  {
+    // ds2-nx (2026-10-24): the draws by primitive type and the dropped ones by reason (render/draw.cpp).
+    uint64_t p[19], d[11];
+    for (int i = 0; i < 19; ++i) p[i] = g_draw_prims[i].exchange(0, std::memory_order_relaxed);
+    for (int i = 0; i < 11; ++i) d[i] = g_draw_drops[i].exchange(0, std::memory_order_relaxed);
+    REXLOG_INFO("[renut] draws by primitive: points {}, lines {}, line strips {}, triangles {}, fans {}, strips {}, "
+                "rectangles {}, line loops {}, quads {}, patches {}, other {}; dropped: no device {}, unknown "
+                "declaration or shader {}, no command list {}, shader not in the cache {}, targets {}, geometry {}, "
+                "exported streams {}, allocations {}, pipeline or targets bind {}, streams bind {}",
+                p[1], p[2], p[3], p[4], p[5], p[6], p[8], p[12], p[13], p[17] + p[18],
+                p[0] + p[7] + p[9] + p[10] + p[11] + p[14] + p[15] + p[16], d[1], d[2], d[3], d[4], d[5], d[6], d[7],
+                d[8], d[9], d[10]);
+  }
   REXLOG_INFO("[renut] depth resolve words: {} binds through the resolve's own texture (banjo_gpu_depth_words_view), "
               "{} with the copy (made only when resolved since); {} binds of a depth resolve's float target; {} colour "
               "resolves drawn (banjo_deko3d_draw_resolves); resolves of an unchanged source not done again "
@@ -1062,6 +1077,9 @@ void CountExactMemoHit(uint64_t bytes) {
   Bump(g_exact_memo, 1);
   Bump(g_exact_memo_bytes, bytes);
 }
+
+void CountDrawPrimitive(uint32_t primitive) { Bump(g_draw_prims[primitive < 19 ? primitive : 0], 1); }
+void CountDrawDrop(uint32_t reason) { Bump(g_draw_drops[reason < 11 ? reason : 0], 1); }
 
 void CountDrawKind(bool depth_only, bool depth_only_plain, bool writes_nothing, bool partial_mask) {
   if (depth_only)

@@ -4092,8 +4092,14 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   ++g_trace_draws;
   auto &s = State();
   const GuestDevice device(device_state);
-  if (!device.valid())
+  banjo::renut_gpu::CountDrawPrimitive(call.primitive);
+  // ds2-nx (2026-10-24): each way out without the draw, counted by reason (the 10 s "draws by primitive" line).
+  const auto drop = [](u32 reason) {
+    banjo::renut_gpu::CountDrawDrop(reason);
     return false;
+  };
+  if (!device.valid())
+    return drop(1);
 
   const u32 vs_va = device.U32(d3d::kDeviceOffsetVertexShader);
   auto *vs = FindShaderLocked(vs_va, RecordKind::VertexShader);
@@ -4143,7 +4149,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
                 vs ? "vertex declaration" : "vertex shader", va, words ? u32(words[0]) : 0,
                 words ? u32(words[1]) : 0);
     }
-    return false;
+    return drop(2);
   }
   // Earlier memexport results reach guest memory before this draw reads them
   // (WaitForExportsLocked may submit the list: before anything is recorded).
@@ -4175,13 +4181,13 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     WaitForExportsLocked(slots);
   }
   if (!Video::EnsureCommandListLocked())
-    return false;
+    return drop(3);
   SyncBound(s);
 
   plume::RenderShader *host_vs = GetHostShader(vs);
   plume::RenderShader *host_ps = ps ? GetHostShader(ps) : nullptr;
   if (!host_vs || (ps && !host_ps))
-    return false;  // missing from the shader cache (captured for the next build)
+    return drop(4);  // missing from the shader cache (captured for the next build)
 
   // sa2-nx (2026-10-20, ds2_renut_chain_reuse): the previous chain draw's targets when the device's target words (bytes
   // 12816-12835) did not change, no target was built, retired or rebound since (the surface epoch), and the targets'
@@ -4214,7 +4220,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   } else {
     if (!GatherTargets(device, targets)) {
       g_targets_reuse.seq = 0;
-      return false;
+      return drop(5);
     }
   }
   if (targets_reuse_on) {
@@ -4477,7 +4483,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   Geometry geometry;
   if (call.tessellation ? !PrepareTessellation(device, call, geometry, sc.tessellation)
                         : !PrepareGeometry(device, call, geometry)) {
-    return false;
+    return drop(6);
   }
   // The host draws the vertex range in use from vertex 0 (indices rebased to
   // it in PrepareGeometry); the guest's r0.x is the vertex index itself.
@@ -4486,7 +4492,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   GpuStreams gpu_streams;
   if (!ConvertExportedStreamsLocked(s, device, call, *vs, shader_strides, *declaration, geometry,
                                     gpu_streams)) {
-    return false;
+    return drop(7);
   }
 
   const u32 fetch_mask = (vs->entry ? vs->entry->vertexFetchMemoryMask : 0) |
@@ -4614,7 +4620,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     banjo::renut_gpu::CountSharedConstants(false);
   }
   if (!fetch_alloc || (!pushed && (!vs_alloc || !ps_alloc || !sc_alloc)) || !memexport)
-    return false;
+    return drop(8);
 
   // sa2-nx (2026-10-20, ds2_renut_chain_reuse): a chain draw takes the previous draw's key when nothing MakeKey reads
   // changed: the device's bool constants and render state packets (bytes 10112-10599: VertexShaderB / PixelShaderB,
@@ -4732,7 +4738,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   if (reuse_on)
     preuse = {hint.seq, PipelineLookupsLocked(), prebuild_epoch, pipeline};
   if (!pipeline || !BindTargets(targets))
-    return false;
+    return drop(9);
   plume::RenderCommandList *cmd = s.command_list;
   SetViewport(cmd, viewport.viewport, viewport.scissor, targets.color_count);
 
@@ -4815,7 +4821,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
 
   if (!BindStreams(device, call, *vs, shader_strides, declaration->layout,
                    declaration->layout_hash, geometry, gpu_streams)) {
-    return false;
+    return drop(10);
   }
   if (gpu_profile::Timed()) {
     // banjo-nx (package 28b): the GPU profile's draws a frame, and with banjo_renut_diag_gpu_shaders its label.

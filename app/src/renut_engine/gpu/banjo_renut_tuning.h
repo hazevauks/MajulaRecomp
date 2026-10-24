@@ -146,6 +146,10 @@ inline bool ExactStreamsOn() { return Latch().exact_streams && g_ab_off.load(std
 void CountExactCheck(uint64_t bytes, bool stale, bool repeat_in_frame);
 void CountKick();        // a KickOff reached the render thread (FlushVertexFillsLocked)
 void CountDrawKind(bool depth_only, bool depth_only_plain, bool writes_nothing, bool partial_mask);  // package 28
+// ds2-nx (2026-10-24): every draw DrawStateLocked takes, by Xenos primitive type (0-18), and the ones it drops, by the
+// point it gives up at (1-10, render/draw.cpp): the effects missing on the console (bonfire flames, fog walls).
+void CountDrawPrimitive(uint32_t primitive);
+void CountDrawDrop(uint32_t reason);
 void CountExactMemoHit(uint64_t bytes);  // a check answered by the interval memo (no bytes read)
 void CountFenceQuery();  // the game asked whether a fence is done (BlockOnFence / IsFencePending)
 void CountLateStale(uint64_t copies);

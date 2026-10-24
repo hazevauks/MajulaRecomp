@@ -17,6 +17,10 @@ struct Vertex
     float4 normal[3] : NORMAL0;
     float4 tangent : TANGENT0;
     float4 binormal : BINORMAL0;
+    // ds2-nx (2026-10-24): COLOR2, the interpolator XenosRecomp's INTERPOLATORS gained last for Dark Souls II's
+    // shaders. Without it this struct put the point coordinate where the pixel shader reads COLOR2 (one location
+    // early), and the pixel shader's point coordinate was never written: the particles' sprites sampled nothing.
+    float4 color2 : COLOR2;
     float2 pointCoord : POINTCOORD;
     float pointSize : POINTSIZE;
 };

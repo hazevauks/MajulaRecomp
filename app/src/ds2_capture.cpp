@@ -150,8 +150,8 @@ void Record(std::function<bool(rex::ui::RawImage&)> grab, int start_s, int frame
 
 std::thread g_snap_thread;
 
-// ds2_snap_live: polls for captures/snap_request four times a second.
-void Snap(std::function<rex::ui::Presenter*()> get_presenter) {
+// ds2_snap_live: polls for captures/snap_request four times a second. grab as in Record (2026-10-24: Renut's too).
+void Snap(std::function<bool(rex::ui::RawImage&)> grab) {
   const uint32_t step = REXCVAR_GET(ds2_video_half) ? 2 : 1;
   const auto folder = rex::filesystem::GetExecutableFolder() / "captures";
   std::error_code ec;
@@ -162,9 +162,8 @@ void Snap(std::function<rex::ui::Presenter*()> get_presenter) {
     if (!std::filesystem::exists(folder / "snap_request", ec)) {
       continue;
     }
-    rex::ui::Presenter* presenter = get_presenter ? get_presenter() : nullptr;
     rex::ui::RawImage image;
-    if (!presenter || !presenter->CaptureGuestOutput(image) || !image.width || !image.height) {
+    if (!grab(image) || !image.width || !image.height) {
       continue;  // tried again at the next poll
     }
     const uint32_t w = image.width / step, h = image.height / step;
@@ -185,14 +184,23 @@ void Snap(std::function<rex::ui::Presenter*()> get_presenter) {
 
 }  // namespace
 
-void Start(std::function<rex::ui::Presenter*()> get_presenter) {
-  if (REXCVAR_GET(ds2_snap_live) && !g_snap_thread.joinable()) {
-    {
-      std::lock_guard lock(g_mutex);
-      g_stop = false;
-    }
-    g_snap_thread = std::thread(Snap, get_presenter);
+void StartSnap(std::function<bool(rex::ui::RawImage&)> grab) {
+  if (!REXCVAR_GET(ds2_snap_live) || g_snap_thread.joinable()) {
+    return;
   }
+  {
+    std::lock_guard lock(g_mutex);
+    g_stop = false;
+  }
+  g_snap_thread = std::thread(Snap, std::move(grab));
+}
+
+void Start(std::function<rex::ui::Presenter*()> get_presenter) {
+  auto grab = [get_presenter = std::move(get_presenter)](rex::ui::RawImage& image) {
+    rex::ui::Presenter* presenter = get_presenter ? get_presenter() : nullptr;
+    return presenter && presenter->CaptureGuestOutput(image);
+  };
+  StartSnap(grab);
   if (REXCVAR_GET(ds2_video_s) <= 0 || g_thread.joinable()) {
     return;
   }
@@ -200,15 +208,12 @@ void Start(std::function<rex::ui::Presenter*()> get_presenter) {
     std::lock_guard lock(g_mutex);
     g_stop = false;
   }
-  auto grab = [get_presenter = std::move(get_presenter)](rex::ui::RawImage& image) {
-    rex::ui::Presenter* presenter = get_presenter ? get_presenter() : nullptr;
-    return presenter && presenter->CaptureGuestOutput(image);
-  };
   g_thread = std::thread(Record, std::move(grab), int(REXCVAR_GET(ds2_video_s)), int(REXCVAR_GET(ds2_video_frames)),
                          true, false);
 }
 
 void StartWithSource(std::function<bool(rex::ui::RawImage&)> grab) {
+  StartSnap(grab);
   if (REXCVAR_GET(ds2_video_s) <= 0 || g_thread.joinable()) {
     return;
   }

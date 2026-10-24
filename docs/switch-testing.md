@@ -19,6 +19,30 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Twenty-seventh build (2026-10-24): finding the missing effects
+
+Copy over: `ds2-dk.nro` and the `configs/` folder (two new files in it).
+
+What the twenty-sixth build's test showed: the game draws completely, and the four measuring points ran at about
+19.5 / 16.9 / 24.7 / 18.5 fps at 720p handheld (the Vulkan build at 540p: 19.6 / 16.4 / 24.3 / 18.5), with the GPU at
+99 % (38-59 ms a frame) and the render thread at 10-18 ms (the old renderer's was about 50 ms). Missing: the bonfire
+flames (their light on the ground is there), the fog walls' movement (a still cloud texture), the items' glows on the
+ground and the waterfall at the start. On the PC the same renderer draws the waterfall, and it drops no draw there.
+
+What changed:
+
+- The log counts every draw by primitive type and every draw the renderer gives up on, by reason.
+- A fix for point-sprite and rectangle draws (the sprite coordinate reached the pixel shader in the wrong slot since
+  the Dark Souls II interpolator was added); the scene at the start draws none, so it may not be what is missing.
+- Two A/B configurations: `ds2_ab_shaders_off.toml` (the deko3d renderer's shader specializations off) and
+  `ds2_ab_memory_off.toml` (its depth, resolve, upload and stream cache shortcuts off).
+
+**Test:** three short sessions at the same bonfire (the Forest of Fallen Giants' first one is fine): with the normal
+`ds2.toml`, then with each A/B file copied over it (keep a copy of the normal one). In each: load, look at the bonfire
+for ~20 s, a photo of the flame, quit through HOME. If an item glow or a fog wall is near, a look at it too. Say which
+configuration (if any) brought the flame back. Then the `logs/` folder (into `switch-logs`) and the normal `ds2.toml`
+back in place.
+
 ## Twenty-sixth build (2026-10-23): deko3d, the 3D fixed
 
 Copy over: `ds2-dk.nro` (the only file that changed). You can delete `deko3d_shaders.bin` and `pipeline_list.bin`
@@ -611,6 +635,8 @@ In the `configs/` folder; to use one, copy it over `ds2.toml`:
 - `ds2_profile.toml`: samples the CPU stacks (`logs/rex/rex_profile_stacks.log` since the twenty-fourth build); a little slower.
 - `ds2_test_720p.toml`: handheld mode at 1280x720 (the other A/B tests of earlier builds were decided and removed on
   2026-10-22).
+- `ds2_ab_shaders_off.toml`, `ds2_ab_memory_off.toml` (twenty-seventh build): each half of the deko3d renderer's
+  shortcuts off, to find where the missing effects come from.
 
 Up to the twenty-second build these files had Portuguese names (`ds2_padrao`, `ds2_melhorias_desligadas`,
 `ds2_gpu_emulada`, `ds2_perfil`, `ds2_teste_*`), which the older sections below still use.
