@@ -18,10 +18,12 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 $nro = Join-Path $root 'out\nx_dk\ds2.nro'
 if (-not (Test-Path $nro)) { throw "no NRO at ${nro}: build out\nx_dk first (docs/deko3d.md)" }
 Copy-Item -Force $nro (Join-Path $dest 'ds2-dk.nro')
-# 2026-10-24: the optimised deko3d build when there is one (out/nx_dk_rel: LTO and PGO "use", tools/win/build_switch.ps1
-# -NoNvk -Lto -Pgo use -BuildDir out/nx_dk_rel), as ds2-dk-opt.nro next to the everyday one.
+# 2026-10-25: the optimised deko3d build (out/nx_dk_rel: LTO and PGO "use", tools/win/build_switch.ps1 -NoNvk -Lto
+# -Pgo use -BuildDir out/nx_dk_rel) is the one shipped as ds2-dk.nro when it exists (+11-12 % where the CPU limits,
+# thirtieth build); the separate ds2-dk-opt.nro of that test is removed.
 $opt = Join-Path $root 'out/nx_dk_rel/ds2.nro'
-if (Test-Path $opt) { Copy-Item -Force $opt (Join-Path $dest 'ds2-dk-opt.nro') }
+if (Test-Path $opt) { Copy-Item -Force $opt (Join-Path $dest 'ds2-dk.nro') }
+Remove-Item -Force (Join-Path $dest 'ds2-dk-opt.nro') -ErrorAction SilentlyContinue
 foreach ($f in 'ds2.nro', 'ds2-pgo.nro', 'ds2-opt.nro', 'ds2_shaders.mesp', 'ds2_shaders.mesp.idx', 'LEIA-ME.md') {
     Remove-Item -Force (Join-Path $dest $f) -ErrorAction SilentlyContinue
 }

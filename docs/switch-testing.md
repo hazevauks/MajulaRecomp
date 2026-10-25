@@ -19,6 +19,23 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Thirty-first build (2026-10-25): optimised by default, with the features session's work
+
+Copy over: `ds2-dk.nro` and `ds2.toml` (new keys). Delete `ds2-dk-opt.nro`: `ds2-dk.nro` is now the LTO + PGO build.
+
+The thirtieth build's test: LTO + PGO gave +11 % at the Fire Keepers' house (24.4 -> 27.1 fps) and +12 % at the forest
+bonfire (18.8 -> 21.0); the start stays at 23 fps, held by the GPU (43 ms a frame there).
+
+New from the features session (docs/features.md): the trophy screen and its notice drawn with the game's own art (not
+yet seen on the console: `ds2_trophy_test_at = 600` in `ds2.toml` shows the notices and opens the screen by itself
+after 600 frames), the early Dull Ember (an iron chest in the Bastille, a Titanite Slab in the Iron Keep) and the better
+fog walls, both on by default in `ds2.toml` (`ds2_early_dull_ember`, `ds2_fog_wall_iframes`).
+
+Still open: the GPU's resolves (~7 ms a frame), the save portraits, the shadow glitch near fires.
+
+**Test:** play normally; check the trophy screen and notice, and the four measuring points if there is time. Then
+the `logs/` folder (into `switch-logs`).
+
 ## Thirtieth build (2026-10-24): the deko3d build optimised (LTO + PGO)
 
 Copy over: `ds2-dk-opt.nro` (new, next to `ds2-dk.nro`, which stays as it was). Keep `configs/ds2_profile.toml` as
