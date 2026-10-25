@@ -79,6 +79,8 @@ set(DS2_SOURCES
     src/ds2_trophies.cpp
     # The port's gameplay changes, on by default in ds2.toml: Early Dull Ember, Better fog walls (docs/features.md).
     src/ds2_features.cpp
+    # The menu bar's new tabs, Trophies and Port, left of the gear (docs/features.md, section 3).
+    src/ds2_tabs.cpp
     # Render resolution per console mode (docked / handheld, live) and MSAA: ds2_render_height_*, ds2_msaa.
     src/me/ds2_render_mode.cpp
     # Switchable enhancements: masters ds2_cpu_enhancements / ds2_noncpu_enhancements, one key each, a startup line

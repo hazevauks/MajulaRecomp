@@ -300,7 +300,20 @@ dropdown's position and spacing (from the layout, or measured on the PC).
   the renderer checks a tiled texture by its ends and eight 64-byte probes, so the replacement must land before its
   first upload (done when the bar is built; to check that nothing draws In-game_01 earlier).
 - **The prototype** (`app/src/ds2_tabs.cpp`, PC only, `ds2_tabs_page_dir`): the new page comes from a file made by an
-  investigation script; the shipped version builds it at start from the player's own page, as the button icons do.
+  investigation script (`tools/features/`); the shipped version builds it at start from the player's own page, as
+  the button icons do.
+
+**Seen on the PC (prototype, 2026-10-24):** the game draws the bar of seven medallions itself, at every opening of
+the menu (the layout is read again each time and patched through `[layout+0x14]`, the page replaced once), with LB,
+the arrows and RB in place. Found on the way:
+- LB / RB go through the five tabs by their order (Equipment ... System, then back), not by position: the gear's
+  tab node moved 108 units is still reached. But it must move after the build (moved before, RB never reaches it:
+  the build reads the positions).
+- The gear's dropdown moved 108 units clips its texts ("Game Opt.", "Screen Op"): a clip box placed elsewhere.
+- The bar page's first 0x400 bytes do not change with RB: the cursor is kept elsewhere (the menu manager).
+- Still to do: the cursor stopping on the two new medallions (LB / RB in the game's order, and the highlight: the
+  selected tab's orange medallion and name are its node's sprites, so ours are drawn by us), the dropdown's clip,
+  and the two pages.
 
 ## 4. Later
 
