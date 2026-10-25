@@ -38,3 +38,14 @@ description, icon and gamerscore, read from the executable's XDBF) and the unloc
   checked on the console.
 - First console test: the screen opened with L + Minus but L + Minus did not close it. The screen's own Minus check
   closed it and the shortcut opened it again in the same instant; Minus now closes it only without L.
+
+## The game's look (2026-10-25)
+
+The screen and the notice are drawn with the game's own art, read from the player's files at start
+(`app/src/ds2_trophy_art.cpp`): the menu window, strips, row bands, the orange selection glow, item tiles and the dialog
+frame from `menu\40.febnd.dcx` / `menu\99.febnd.dcx`, the game's font (FeFont, the port's copy with the Nintendo button
+pictures) and the key guide texts of `common.fmg` (10000, 10002) in the game's language. The screen sits where the
+game's menu windows sit (Player Status, Inventory) and follows their layout: title on the blue strip, a summary row,
+the list, a description box, the help line and key guide under the window. The notice is the game's dialog strip in
+the lower right corner. Missing pieces draw as plain shapes. The PC cannot show it (the software driver shows no
+window); `ds2_trophy_dump` writes what the dialogs draw for `tools/features/raster_dump.py`, when they draw.
