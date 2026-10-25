@@ -28,6 +28,19 @@ foreach ($f in 'ds2.nro', 'ds2-pgo.nro', 'ds2-opt.nro', 'ds2_shaders.mesp', 'ds2
     Remove-Item -Force (Join-Path $dest $f) -ErrorAction SilentlyContinue
 }
 Copy-Item -Force (Join-Path $root 'app\ds2_switch.toml') (Join-Path $dest 'ds2.toml')
+# 2026-10-25: the shader variants compiled on the PC (tools/deko3d_variant_cache.py), so the console does not compile
+# them during play after a build with new shaders. From the console's own list of pipelines, copied with the logs into
+# switch-logs (pipeline_list.bin, and deko3d_shaders.bin to keep what the console compiled itself).
+$list = Join-Path $root 'switch-logs/pipeline_list.bin'
+if (Test-Path $list) {
+    $vargs = @((Join-Path $root 'tools/deko3d_variant_cache.py'), '--list', $list, '--glsl',
+               (Join-Path $root 'out/deko3d_shaders/glsl_opt'), '--out', (Join-Path $dest 'deko3d_shaders.bin'), '--jobs', '4')
+    $old = Join-Path $root 'switch-logs/deko3d_shaders.bin'
+    if (Test-Path $old) { $vargs += @('--merge', $old) }
+    & python @vargs
+    if ($LASTEXITCODE) { throw 'deko3d_variant_cache.py failed' }
+    Copy-Item -Force $list (Join-Path $dest 'pipeline_list.bin')
+}
 Copy-Item -Force (Join-Path $root 'docs\switch-testing.md') (Join-Path $dest 'README.md')
 # Alternative configurations: copy one over ds2.toml to use it.
 $configs = Join-Path $dest 'configs'

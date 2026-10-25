@@ -681,6 +681,13 @@ start.
 
 A photo or a short video of the screen helps a lot, especially if the picture comes out wrong.
 
+## Shaders compiled on the PC (2026-10-25)
+
+With the logs, also copy `pipeline_list.bin` and `deko3d_shaders.bin` (next to the NRO) into `switch-logs`. The
+packaging (tools/win/package_switch.ps1) then compiles on the PC every shader variant the console has needed
+(tools/deko3d_variant_cache.py), keeps what the console compiled itself, and ships both files with the next build:
+after a build with new shaders, no warm-up sessions to compile them during play.
+
 ## What to send back
 
 The whole `sdmc:/switch/ds2-nx/logs/` folder (or just `logs/rex/`), after each try. If the game closes with an

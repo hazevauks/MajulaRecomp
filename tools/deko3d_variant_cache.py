@@ -116,6 +116,7 @@ OFF_BOOL_MASK, OFF_BOOL_VALUES, OFF_BLEND_SKIP, OFF_OUTPUT_TRIM, OFF_ALPHA_FUNC 
 OFF_PER_INSTANCE, OFF_RECT_LIST, OFF_POINT_SPRITE = 96, 100, 104
 OFF_DEPTH_CONTROL = 76  # banjo-nx (2026-10-19): RB_DEPTHCONTROL (constant 909, banjo_deko3d_early_z)
 OFF_STENCIL_REF_MASK = 80  # 2026-10-20: ref, read mask, write mask (bits 16-23)
+OFF_RESERVED = 188  # ds2-nx (2026-10-25): bit 2, the draws' texture words need renutFetchAdjust (constant 913)
 # Pseudo constants in a pipeline's spec (never a shader's id): a tessellated draw's, one with a geometry shader, and
 # (2026-10-19) whether the draw writes depth or stencil (depth_writes below).
 FLAG_TESS, FLAG_GS, FLAG_DEPTH_WRITES = -1, -2, -3
@@ -226,6 +227,7 @@ def read_list(path, blend_skip_on, alpha_guess=ALPHA_GUESS):
         alpha_func = struct.unpack_from('<I', data, at + OFF_ALPHA_FUNC)[0] if version >= 4 else 0
         per_instance, rect_list, point_sprite = struct.unpack_from('<III', data, at + OFF_PER_INSTANCE)
         depth_control, stencil_ref_mask = struct.unpack_from('<II', data, at + OFF_DEPTH_CONTROL)
+        reserved = struct.unpack_from('<I', data, at + OFF_RESERVED)[0] if version >= 4 else 0
         at += size
         tail = {FLAG_TESS: per_instance, FLAG_GS: rect_list | point_sprite,
                 FLAG_DEPTH_WRITES: depth_writes(depth_control, stencil_ref_mask)}
@@ -233,6 +235,8 @@ def read_list(path, blend_skip_on, alpha_guess=ALPHA_GUESS):
             tail[900] = blend_skip
         if output_trim:
             tail[901] = output_trim
+        if not reserved & 4:
+            tail[913] = 0  # ds2-nx: no fetch adjustments (render/pipeline.cpp)
         spec = dict(tail)
         if alpha_func:
             spec[903] = alpha_func
