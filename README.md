@@ -31,21 +31,6 @@ This way the future optimisations of those repositories can be brought in with a
 Souls II lives in `app/` and `docs/`. In `tools/`, `shaders/` and the renderer (`app/src/me`, copied from sa2-nx) the
 names `sa2` became `ds2`; the tools that depend on the game's addresses need DS2's own data.
 
-## Status
-
-| Step (sa2-nx's guide) | Status |
-|---|---|
-| 2. Game files extracted and inspected | **done** (see [docs/ds2-notes.md](docs/ds2-notes.md)) |
-| 3. Code translation (`rexglue codegen`) | **done**: 83,143 functions, 0 validation errors; pointer and jump-table scans clean. The delivered code is the "optimised" flavour (registers as C++ locals, direct calls between functions) |
-| 4. First PC boot with the emulated GPU | **done**: menus, save creation, the opening movie and the first map loading, with no crash in the game's code |
-| 5–6. Native Vulkan renderer and shader library | **done for the areas played so far**: sa2-nx's core ported, a library with the disc's 1,409 shaders; developed on software Vulkan (lavapipe) on the PC, then checked on the console |
-| 7. Switch build (devkitA64 + NVK) | **runs on the console**, with nfsmw-nx's NVK driver built here; LTO + PGO builds; played from the start past the Last Giant in long sessions ([docs/switch-testing.md](docs/switch-testing.md)) |
-| 8–11. Console measurements and CPU/GPU optimisations | **in progress**: handheld at 540p, stock clocks, 20–22 frames a second at the measuring points of the first areas (from 7.3 at 720p in the first build); 720p selectable live (L3 + R3). Sound, long sessions and area-transition hitches are being worked on; docked mode still to do |
-
-Feature branches: `trofeus` (a trophy screen on the console, unlock notices and our own platinum trophy;
-described in `docs/trophies.md` on that branch), and `button-icons`, built on it (the prompts' button pictures
-redrawn in the Nintendo style from the game's own font page; `docs/button-icons.md` on that branch).
-
 ## Layout
 
 ```text
