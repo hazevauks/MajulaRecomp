@@ -47,7 +47,10 @@ stops at 50 unresolved calls, the same kind of discovery gaps `app/overrides.tom
 - Global data addresses (the Direct3D device's `0x8343B708`, the `VdGlobalDevice` import slot) are not covered by
   the map; they are found again from the functions that use them.
 
-## The plan (the user's decision: when, and whether the 2014 executable stays as a second build)
+## The plan
+
+**Decided (the user, 2026-10-29):** after the optimisation rounds, the whole project moves to Scholar of the First
+Sin's executable and data (no second build for the 2014 one).
 
 1. `game_root` from Scholar's disc 1; the codegen on its `Default.xex` with overrides made for it (the gap tools,
    then the console's runtime gaps).
