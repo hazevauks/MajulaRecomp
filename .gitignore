@@ -3,6 +3,9 @@
 
 # --- Game files and what is made from them -------------------------------------
 /Dark Souls II*/
+# The disc images and their archives (2026-10-29: the original and Scholar of the First Sin's two discs).
+/game isos/
+*.7z
 /assets/
 /app/generated/
 # The PGO profile: execution counts of the code generated from the game (tools/win/pgo_merge.ps1 makes it from the
