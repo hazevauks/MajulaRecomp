@@ -146,6 +146,8 @@ namespace plume {
             return DXGI_FORMAT_R32G8X24_TYPELESS;
         case RenderFormat::D24_UNORM_S8_UINT:  // banjo-nx (2026-10-19): typeless, as above
             return DXGI_FORMAT_R24G8_TYPELESS;
+        case RenderFormat::R10G10B10A2_UNORM:  // ds2-nx (2026-10-29)
+            return DXGI_FORMAT_R10G10B10A2_UNORM;
         case RenderFormat::R32_FLOAT:
             return DXGI_FORMAT_R32_FLOAT;
         case RenderFormat::R32_UINT:

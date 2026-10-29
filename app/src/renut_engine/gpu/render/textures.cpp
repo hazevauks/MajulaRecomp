@@ -28,6 +28,12 @@
 
 REXCVAR_DECLARE(bool, ds2_renut_direct_resolve_mips);  // sa2-nx (2026-10-28): render/draw.cpp
 
+// ds2-nx (2026-10-29): the 7e3 code view (Code7e3SlotLocked).
+REXCVAR_DEFINE_BOOL(ds2_renut_7e3_code_view, true, "DS2/Renderer",
+                    "Renut: a float resolve destination (a 7e3 target's copy) read through a 2_10_10_10 fetch is "
+                    "encoded into its 7e3 codes once per resolve (code7e3_ps, an RGB10A2 texture), and the fetch binds "
+                    "that, instead of the pixel shader encoding at every fetch (Dark Souls II's post-process passes). "
+                    "Off: the shaders encode (shader_common.h, renutFetchAdjust)");
 // ds2-nx (2026-10-29, from usf4-nx 0.8.0): its render thread hashed 19 MB of linear textures a frame (6.4 -> 2.8 ms).
 REXCVAR_DEFINE_BOOL(ds2_renut_static_linear_textures, true, "DS2/Renderer",
                     "Renut: a linear texture whose content has not changed at 60 full checks in a row is checked with "
@@ -1766,6 +1772,173 @@ void UpdateResolveMipsLocked(HostTexture *texture, const plume::RenderRect &rect
         uint32_t(l.region.left), uint32_t(l.region.top), 0, &box);
   }
   TransitionTextureLocked(&t, plume::RenderTextureLayout::SHADER_READ);
+}
+
+
+// ---------------------------------------------------------------------------
+// ds2-nx (2026-10-29, ds2_renut_7e3_code_view): the 7e3 code view of a float resolve destination
+// ---------------------------------------------------------------------------
+// Dark Souls II reads the copy of its 7e3 scene through 2_10_10_10 fetches: the Xbox 360 gave each channel's 10-bit
+// 7e3 code (and the alpha's 2 bits), which the game's post-process shaders decode. The host keeps the values (RGBA16F),
+// and until now renutFetchAdjust (shader_common.h) encoded them back at every fetch of every pixel: in the console's
+// GPU profile those passes (one or two full-screen draws each) cost 1.5-3.9 ms, and the encoding was half of their
+// code. Here code7e3_ps encodes the destination once per resolve into an RGB10A2 texture of its size (the unorm read
+// of which is the code over 1023, as on the console; filtering then works on the codes, as the console's), and the
+// fetch binds that texture instead. Kept per destination, up to date for its last resolve (write_seq).
+namespace {
+
+struct Code7e3View {
+  HostTexture target;  // RGB10A2, the source's allocated size
+  std::unique_ptr<plume::RenderFramebuffer> framebuffer;
+  std::unique_ptr<plume::RenderTextureView> view;
+  uint32_t slot = UINT32_MAX;
+  uint64_t seq = UINT64_MAX;            // the source's write_seq it holds
+  uint32_t source_slot = UINT32_MAX;    // the view it was read through
+};
+// By the destination. A destination retired and another made at its address has another write_seq (every resolve
+// takes a new one), so an entry never answers for a texture it was not made from; entries of retired destinations
+// stay until the map is cleared at kMaxCode7e3Views (Dark Souls II has a handful).
+std::unordered_map<const HostTexture *, std::unique_ptr<Code7e3View>> g_code7e3;
+constexpr size_t kMaxCode7e3Views = 12;
+std::unique_ptr<plume::RenderPipeline> g_code7e3_pipeline;
+bool g_code7e3_pipeline_failed = false;
+uint64_t g_resolve_write_seq = 0;
+
+void ReleaseCode7e3(Code7e3View &v) {
+  if (v.slot != UINT32_MAX)
+    Video::FreeTextureSlotLocked(v.slot);
+  if (v.view)
+    Video::RetireLocked(std::move(v.view));
+  if (v.framebuffer)
+    Video::RetireLocked(std::move(v.framebuffer));
+  if (v.target.texture)
+    Video::RetireLocked(std::move(v.target.texture));
+  v.slot = UINT32_MAX;
+}
+
+plume::RenderPipeline *Code7e3Pipeline() {
+  if (g_code7e3_pipeline || g_code7e3_pipeline_failed)
+    return g_code7e3_pipeline.get();
+  auto &s = State();
+  if (!s.code7e3_ps) {
+    g_code7e3_pipeline_failed = true;
+    return nullptr;
+  }
+  plume::RenderGraphicsPipelineDesc desc;
+  desc.pipelineLayout = s.utility_layout.get();
+  desc.vertexShader = s.present_vs.get();
+  desc.pixelShader = s.code7e3_ps.get();
+  desc.primitiveTopology = plume::RenderPrimitiveTopology::TRIANGLE_LIST;
+  desc.cullMode = plume::RenderCullMode::NONE;
+  desc.renderTargetCount = 1;
+  desc.renderTargetFormat[0] = plume::RenderFormat::R10G10B10A2_UNORM;
+  desc.renderTargetBlend[0] = plume::RenderBlendDesc::Copy();
+  desc.depthTargetFormat = plume::RenderFormat::UNKNOWN;
+  g_code7e3_pipeline = s.device->createGraphicsPipeline(desc);
+  if (!g_code7e3_pipeline) {
+    g_code7e3_pipeline_failed = true;
+    RGPU_ERROR("ds2_renut_7e3_code_view: the pipeline could not be made; the shaders encode at every fetch");
+    return nullptr;
+  }
+  g_code7e3_pipeline->setName("renut 7e3 code view");
+  return g_code7e3_pipeline.get();
+}
+
+bool MakeCode7e3Target(Code7e3View &v, uint32_t width, uint32_t height) {
+  HostTexture &t = v.target;
+  plume::RenderTextureDesc desc =
+      plume::RenderTextureDesc::Texture2D(width, height, 1, plume::RenderFormat::R10G10B10A2_UNORM);
+  desc.flags |= plume::RenderTextureFlag::RENDER_TARGET;
+  plume::RenderDevice *device = Video::Device();
+  t.texture = device->createTexture(desc);
+  if (!TextureCreated(t.texture.get())) {
+    t.texture.reset();
+    return false;
+  }
+  t.texture->setName("renut 7e3 code view");
+  t.host_format = plume::RenderFormat::R10G10B10A2_UNORM;
+  t.width = t.alloc_width = width;
+  t.height = t.alloc_height = height;
+  const plume::RenderTexture *targets[] = {t.texture.get()};
+  v.framebuffer = device->createFramebuffer(plume::RenderFramebufferDesc(targets, 1));
+  v.view = t.texture->createTextureView(plume::RenderTextureViewDesc::Texture2D(t.host_format));
+  if (!v.framebuffer || !v.view)
+    return false;
+  v.slot = Video::AllocateTextureSlotLocked();
+  if (v.slot == kInvalidDescriptor) {
+    v.slot = UINT32_MAX;
+    return false;
+  }
+  Video::SetTextureSlotLocked(v.slot, t.texture.get(), v.view.get());
+  return true;
+}
+
+} // namespace
+
+void NoteResolveWriteLocked(HostTexture &dest) {
+  dest.write_seq = ++g_resolve_write_seq;
+  // A draw's texture words are memoised while g_texture_epoch holds (the bind memos, the chain's reused words): one
+  // that names this destination's code view must bind again, to bring it up to date.
+  if (g_code7e3.count(&dest))
+    ++g_texture_epoch;
+}
+
+uint32_t Code7e3SlotLocked(const HostTexture &source, uint32_t source_slot, bool &drew) {
+  static const bool on = REXCVAR_GET(ds2_renut_7e3_code_view);
+  if (!on || source_slot == UINT32_MAX || !source.alloc_width || !source.alloc_height)
+    return UINT32_MAX;
+  plume::RenderCommandList *cmd = Video::CommandListLocked();
+  plume::RenderPipeline *pipeline = Code7e3Pipeline();
+  if (!cmd || !pipeline)
+    return UINT32_MAX;
+  auto &entry = g_code7e3[&source];
+  if (entry && entry->seq == source.write_seq && entry->source_slot == source_slot &&
+      entry->target.alloc_width == source.alloc_width && entry->target.alloc_height == source.alloc_height)
+    return entry->slot;  // up to date
+  if (entry && (entry->target.alloc_width != source.alloc_width ||
+                entry->target.alloc_height != source.alloc_height)) {
+    ReleaseCode7e3(*entry);
+    entry.reset();
+  }
+  if (!entry) {
+    if (g_code7e3.size() > kMaxCode7e3Views) {
+      for (auto &[key, v] : g_code7e3)
+        if (v)
+          ReleaseCode7e3(*v);
+      g_code7e3.clear();
+    }
+    auto made = std::make_unique<Code7e3View>();
+    if (!MakeCode7e3Target(*made, source.alloc_width, source.alloc_height)) {
+      ReleaseCode7e3(*made);
+      g_code7e3.erase(&source);
+      return UINT32_MAX;
+    }
+    g_code7e3[&source] = std::move(made);
+  }
+  Code7e3View &v = *g_code7e3[&source];
+  auto &s = State();
+  static const uint32_t kProfileLabel = gpu_profile::Label("7e3 code views");
+  gpu_profile::Mark(s, kProfileLabel);
+  TransitionTextureLocked(&v.target, plume::RenderTextureLayout::COLOR_WRITE);
+  cmd->setFramebuffer(v.framebuffer.get());
+  cmd->setGraphicsPipelineLayout(s.utility_layout.get());
+  cmd->setPipeline(pipeline);
+  cmd->setGraphicsDescriptorSet(s.texture_set.get(), 0);
+  cmd->setGraphicsDescriptorSet(s.sampler_set.get(), 1);
+  cmd->setViewports(plume::RenderViewport(0.0f, 0.0f, float(source.alloc_width), float(source.alloc_height)));
+  cmd->setScissors(plume::RenderRect(0, 0, int32_t(source.alloc_width), int32_t(source.alloc_height)));
+  UtilityPush push{};
+  push.scale[0] = push.scale[1] = 1.0f;
+  push.texture_index = source_slot;
+  push.sampler_index = kPointClampSamplerSlot;
+  cmd->setGraphicsPushConstants(0, &push, 0, sizeof(push));
+  cmd->drawInstanced(3, 1, 0, 0);
+  TransitionTextureLocked(&v.target, plume::RenderTextureLayout::SHADER_READ);
+  v.seq = source.write_seq;
+  v.source_slot = source_slot;
+  drew = true;
+  banjo::renut_gpu::Count7e3CodeView();
+  return v.slot;
 }
 
 namespace {

@@ -83,7 +83,8 @@ struct PipelineKey {
   // pass alpha); 0 = read at run time. Like the bools: a key with it not built yet draws with the generic one (0).
   uint32_t alpha_func;
   // 0 (the key is compared and hashed as bytes) but for: bits 0-1 the in-run A/B halves (MakeKey); ds2-nx
-  // (2026-10-24) bit 2, a texture word with renutFetchAdjust's fields (DrawStateLocked; constant 913).
+  // (2026-10-24) bit 2, a texture word with renutFetchAdjust's fields (DrawStateLocked; constant 913); (2026-10-29)
+  // bit 3, a word with the 7e3 code flag (constant 914).
   uint32_t reserved;
 };
 

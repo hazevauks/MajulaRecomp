@@ -2087,16 +2087,38 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
     // Stacked textures go through the 3D fetches, flagged (tfetchStacked in
     // shader_common.h), with the fetch constant's filter between layers and
     // its Z address mode.
-    u32 index = binding.slot | binding.scale.code << kResolutionScaleShift;
     // ds2-nx (2026-10-23): renutFetchAdjust's fields (shader_common.h). The fetch constant's exp_adjust, and the 7e3
     // code view for a float image (a resolve of a 7e3 target, RGBA16F on the host) read through a fixed-point
     // 2_10_10_10 fetch: Dark Souls II copies its 7e3 scene that way and decodes the codes itself; the host image
-    // holds the values, so the shader encodes them back.
-    index |= fetch.ExpAdjustBits() << kTextureExpAdjustShift;
+    // holds the values. 2026-10-29 (ds2_renut_7e3_code_view): the fetch binds the image's codes, encoded once per
+    // resolve (Code7e3SlotLocked); the shader encodes at the fetch (kTexture7e3CodeBit) only when that cannot be made.
+    u32 slot = binding.slot;
+    bool code_bit = false;
     if (const HostTexture *source = fx.transition[0];
         !binding.stacked && source && source->host_format == plume::RenderFormat::R16G16B16A16_FLOAT &&
         (fetch.Format() == GpuTextureFormat::Fmt2_10_10_10 ||
-         fetch.Format() == GpuTextureFormat::Fmt2_10_10_10_As16_16_16_16))
+         fetch.Format() == GpuTextureFormat::Fmt2_10_10_10_As16_16_16_16)) {
+      for (HostTexture *tex : fx.transition)  // read by the encoding draw first
+        if (tex)
+          TransitionTextureLocked(tex, plume::RenderTextureLayout::SHADER_READ);
+      if (fx.handover_surface)
+        TransitionSurfaceLocked(fx.handover_surface, plume::RenderTextureLayout::SHADER_READ);
+      bool drew = false;
+      const uint32_t code = Code7e3SlotLocked(*source, binding.slot, drew);
+      if (drew) {  // the draw path binds its own targets, layout, pipeline and viewport again
+        g_bound.framebuffer = nullptr;
+        g_bound.pipeline = nullptr;
+        g_bound.layout = false;
+        g_bound.viewport_set = false;
+      }
+      if (code != UINT32_MAX)
+        slot = code;
+      else
+        code_bit = true;
+    }
+    u32 index = slot | binding.scale.code << kResolutionScaleShift;
+    index |= fetch.ExpAdjustBits() << kTextureExpAdjustShift;
+    if (code_bit)
       index |= kTexture7e3CodeBit;
     if (binding.stacked) {
       index |= kStackedTextureBit;
@@ -4698,15 +4720,16 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   // ds2-nx (2026-10-24): whether a texture word of the draw has renutFetchAdjust's fields (the 7e3 code view of a word
   // that is not stacked, or an exp_adjust): the key's reserved bit 2, and specialization constant 913 is 0 for the
   // pipelines without it (render/pipeline.cpp), so their shaders lose the adjustments' code.
-  u32 adjust_bits = 0;
+  // 2026-10-29: and bit 3, a word with the 7e3 code flag (the fallback of the 7e3 code views): constant 914.
+  u32 adjust_bits = 0, code_bits = 0;
   for (u32 d = 0; d < 3; ++d) {
     for (u32 r = 0; r < 32; ++r) {
       const u32 w = sc.texture_indices[d][r];
-      adjust_bits |= (w & (0x3Fu << kTextureExpAdjustShift)) |
-                     ((w & (kStackedTextureBit | kTexture7e3CodeBit)) == kTexture7e3CodeBit ? 1u : 0u);
+      adjust_bits |= w & (0x3Fu << kTextureExpAdjustShift);
+      code_bits |= (w & (kStackedTextureBit | kTexture7e3CodeBit)) == kTexture7e3CodeBit ? 1u : 0u;
     }
   }
-  const u32 fetch_adjust = adjust_bits ? 4u : 0u;
+  const u32 fetch_adjust = (adjust_bits | code_bits ? 4u : 0u) | (code_bits ? 8u : 0u);
   static const bool reuse_verify = reuse_on && REXCVAR_GET(ds2_renut_chain_reuse_verify);
   const ChainHint &hint = chain;
   const ShaderCacheEntry *const ps_entry = ps ? ps->entry : nullptr;
@@ -4718,7 +4741,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
                 reuse.per_instance == geometry.per_instance && reuse.alpha_test_func == sc.alpha_test_func &&
                 reuse.color_count == targets.color_count && reuse.depth == targets.depth &&
                 reuse.surface_epoch == surface_epoch && reuse.ab_off == ab_off &&
-                (reuse.key.reserved & 4u) == fetch_adjust;
+                (reuse.key.reserved & 12u) == fetch_adjust;
   for (u32 i = 0; reused && i < targets.color_count; ++i)
     reused = reuse.colors[i] == targets.colors[i];
   PipelineKey key;
@@ -6064,6 +6087,7 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
         banjo::renut_gpu::CountSkippedResolve(false);
       } else if (fits) {
         dest->resolve_signature = sig;
+        NoteResolveWriteLocked(*dest);  // ds2-nx (2026-10-29): its 7e3 code view is out of date
         g_bound.framebuffer = nullptr;
         // The destination is of the surface's scale.
         plume::RenderRect rect =

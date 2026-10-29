@@ -443,6 +443,8 @@ namespace plume {
             return VK_FORMAT_D32_SFLOAT_S8_UINT;
         case RenderFormat::D24_UNORM_S8_UINT:  // banjo-nx (2026-10-19)
             return VK_FORMAT_D24_UNORM_S8_UINT;
+        case RenderFormat::R10G10B10A2_UNORM:  // ds2-nx (2026-10-29)
+            return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
         case RenderFormat::S8_UINT:
             return VK_FORMAT_S8_UINT;
         case RenderFormat::R32_FLOAT:

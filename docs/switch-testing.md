@@ -19,6 +19,28 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Thirty-third build (2026-10-29): the HDR copy decoded once per frame, not at every pixel's every read
+
+Copy over: `ds2-dk.nro`, `deko3d_shaders.bin` and `pipeline_list.bin` (the shaders changed: these are compiled on the
+PC from your pipeline list; areas you have not visited may still compile once).
+
+What the thirty-second build's test showed: the colour resolves as image swaps saved 1-2 ms of GPU (resolves 3.5 ->
+1.5 ms at the start), not more; the GPU still at ~42 ms at the start and the forest bonfire, where the game thread
+(~47 ms) now limits too. A resolve trace of a forest frame: the shadow cascades (four 800x800 copied into a 1600x1600
+atlas) and three copies of the scene's depth, which can only be saved by drawing them in place (later). And the
+post-process passes (1.5-3.9 ms each, one or two full-screen draws): they read the copy of the HDR scene, whose 7e3
+colours the Xbox 360 hands over as codes that the game's shaders decode; the renderer encoded them back at every read
+of every pixel, half of those shaders' code.
+
+What changed: the copy is encoded once per resolve into a texture of codes (as the console's memory holds them), and
+the post-process shaders read that, without the encoding. Not checked on the PC (too slow to reach the 3D): the console
+session is the check.
+
+**Test:** with `configs/ds2_profile.toml` as `ds2.toml`, the four measuring points with the profiler window (R + Minus),
+a photo at each; and look for wrong colours or brightness (the sky, light sources, the bloom around fires), which
+would come from this change. Then the `logs/` folder, `pipeline_list.bin` and `deko3d_shaders.bin` (into
+`switch-logs`), and the normal `ds2.toml` back.
+
 ## Thirty-second build (2026-10-29): the resolves as image swaps (sa2-nx 1.0.4, usf4-nx)
 
 Copy over: `ds2-dk.nro`, `deko3d_shaders.bin` and `pipeline_list.bin` (the shaders compiled on the PC from your

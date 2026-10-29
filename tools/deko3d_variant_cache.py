@@ -237,6 +237,8 @@ def read_list(path, blend_skip_on, alpha_guess=ALPHA_GUESS):
             tail[901] = output_trim
         if not reserved & 4:
             tail[913] = 0  # ds2-nx: no fetch adjustments (render/pipeline.cpp)
+        if not reserved & 8:
+            tail[914] = 0  # ds2-nx (2026-10-29): no 7e3 code flag
         spec = dict(tail)
         if alpha_func:
             spec[903] = alpha_func

@@ -153,6 +153,8 @@ void CountDrawDrop(uint32_t reason);
 // ds2-nx (2026-10-24): Dark Souls II's indexed immediate draws (d3d/hooks/draw.cpp): 0 DrawIndexedVerticesUP, 1
 // BeginIndexedVertices (each UP draw calls Begin too in the original, not in the hook).
 void CountIndexedImmediate(uint32_t which);
+// ds2-nx (2026-10-29): a 7e3 code view encoded (render/textures.cpp, ds2_renut_7e3_code_view).
+void Count7e3CodeView();
 void CountExactMemoHit(uint64_t bytes);  // a check answered by the interval memo (no bytes read)
 void CountFenceQuery();  // the game asked whether a fence is done (BlockOnFence / IsFencePending)
 void CountLateStale(uint64_t copies);

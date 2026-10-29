@@ -346,7 +346,7 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
 
   // banjo-nx (banjo_gpu_bool_spec): the key's bools as the shaders' specialization constants (banjo_bool_spec.h). One
   // list for every stage: a stage takes the ids it declares (vertex and pixel shader bools have distinct ones).
-  plume::RenderSpecConstant spec[272];  // 256 bools and 900-908
+  plume::RenderSpecConstant spec[280];  // 256 bools and 900-914
   uint32_t spec_count = 0;
   for (uint32_t w = 0; w < 8; ++w) {
     for (uint32_t m = key.bool_mask[w]; m; m &= m - 1) {
@@ -403,6 +403,9 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
   // shaders' constant 913 is 0 and the adjustments' code folds away (shader_common.h).
   if (!(key.reserved & 4u))
     spec[spec_count++] = plume::RenderSpecConstant(913, 0);
+  // ds2-nx (2026-10-29): no word with the 7e3 code flag (bit 3 clear): constant 914 is 0, the encoding's code goes.
+  if (!(key.reserved & 8u))
+    spec[spec_count++] = plume::RenderSpecConstant(914, 0);
   desc.specConstants = spec_count ? spec : nullptr;
   desc.specConstantsCount = spec_count;
   if (REXCVAR_GET(banjo_deko3d_variant_log)) {
@@ -592,7 +595,7 @@ bool DecodeRecord(const char *data, size_t size, Job &job) {
     std::memset(job.key.bool_mask, 0, sizeof(job.key.bool_mask));
     std::memset(job.key.bool_values, 0, sizeof(job.key.bool_values));
   }
-  job.key.reserved &= 4u;  // ds2-nx (2026-10-24): bit 2, the fetch adjustments (constant 913), is the draws'
+  job.key.reserved &= 12u;  // ds2-nx (2026-10-24): bit 2, the fetch adjustments (constant 913), is the draws'
   job.hash = HashKey(job.key);
   for (u32 s = 0; s < kMaxVertexStreams; ++s) {
     u8 used;

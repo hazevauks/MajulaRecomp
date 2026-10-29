@@ -100,6 +100,9 @@ struct HostTexture {
   bool dynamic = false;        // changes all the time (movie frames)
   uint32_t changes = 0;        // checks in a row that saw the content change
   uint32_t stable_checks = 0;  // ds2-nx (usf4-nx): full checks in a row that saw no change
+  // ds2-nx (2026-10-29): a number of its own taken at every resolve into it (NoteResolveWriteLocked), unique
+  // across textures: what the 7e3 code view was made from (Code7e3SlotLocked).
+  uint64_t write_seq = 0;
   uint64_t static_sample = 0;  // ds2-nx (usf4-nx): SampleHash when it became stable
   uint64_t verified_frame = 0; // last periodic full check
   // What SampleHash / ContentHash read: the base level's and the mip chain's
@@ -306,6 +309,14 @@ void UpdateResolveMipsLocked(HostTexture *texture, const plume::RenderRect &rect
 // (plume's Vulkan resolve writes every level of its destination, from levels
 // the source does not have). Its texture and layout only; kept for reuse.
 HostTexture *ResolveStagingLocked(const HostTexture *dest);
+
+// ds2-nx (2026-10-29, ds2_renut_7e3_code_view): every resolve into a destination takes a new write_seq (and, where
+// it has a 7e3 code view, bumps g_texture_epoch so the memoised texture words bind again).
+void NoteResolveWriteLocked(HostTexture &dest);
+// The bindless slot of the 7e3 code view of a float resolve destination read through source_slot (the view the draw
+// would bind, its swizzle applied): made, or encoded again after a resolve, by a draw (drew: the caller's bound
+// framebuffer, pipeline and viewport are lost). UINT32_MAX when it cannot be (the shader then encodes per fetch).
+uint32_t Code7e3SlotLocked(const HostTexture &source, uint32_t source_slot, bool &drew);
 
 // Bindless sampler slot matching the device fetch constant's sampler state.
 // 'lod_scale' (TextureBinding::lod_scale): a texture with host levels, which

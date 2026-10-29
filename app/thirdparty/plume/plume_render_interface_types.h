@@ -169,6 +169,9 @@ namespace plume {
         S8_UINT,
         // banjo-nx (2026-10-19): 24-bit unorm depth with 8-bit stencil, 4 bytes a pixel (deko3d Z24S8; the Xenos D24S8).
         D24_UNORM_S8_UINT,
+        // ds2-nx (2026-10-29): 10-bit unorm colour with a 2-bit alpha, 4 bytes a pixel (the Xenos 2_10_10_10 read
+        // as it is; Dark Souls II's 7e3 codes, render/textures.cpp). Last, so the earlier values stay as they were.
+        R10G10B10A2_UNORM,
         MAX
     };
 
@@ -571,6 +574,7 @@ namespace plume {
         case RenderFormat::R32_UINT:
         case RenderFormat::R32_SINT:
         case RenderFormat::D24_UNORM_S8_UINT:
+        case RenderFormat::R10G10B10A2_UNORM:
             return 4;
         case RenderFormat::R8G8_TYPELESS:
         case RenderFormat::R8G8_UNORM:
@@ -653,6 +657,7 @@ namespace plume {
         case RenderFormat::R32_TYPELESS:
         case RenderFormat::D32_FLOAT:
         case RenderFormat::D32_FLOAT_S8_UINT:
+        case RenderFormat::R10G10B10A2_UNORM:  // ds2-nx (2026-10-29)
         case RenderFormat::D24_UNORM_S8_UINT:
         case RenderFormat::R32_FLOAT:
         case RenderFormat::R32_UINT:

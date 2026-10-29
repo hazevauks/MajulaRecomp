@@ -182,6 +182,9 @@ struct VideoState {
   // Host mip levels of scaled resolve destinations (textures.cpp); null when
   // it failed to build, which leaves them single-level.
   std::unique_ptr<plume::RenderShader> texture_mip_ps;
+  // ds2-nx (2026-10-29): the 7e3 code view of float resolve destinations (textures.cpp, Code7e3SlotLocked); null
+  // when it failed to build, which leaves the shaders to encode at every fetch.
+  std::unique_ptr<plume::RenderShader> code7e3_ps;
   // Expands rectangle-list draws (pipeline.cpp); null without geometry shader
   // support, which leaves them drawn as triangle lists.
   std::unique_ptr<plume::RenderShader> rectangle_list_gs;

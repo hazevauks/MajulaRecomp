@@ -293,6 +293,10 @@ float renut7e3Code(float value)
 // the HDR chain that need them; the console's GPU-bound 720p frame paid for it in every pixel.
 #ifdef __spirv__
 [[vk::constant_id(913)]] const uint g_renutFetchAdjust = 1;
+// ds2-nx (2026-10-29): specialization constant 914, 0 for a pipeline whose draws bind no word with the 7e3 code flag
+// (the key's reserved bit 3): since the 7e3 code views (render/textures.cpp) the flag is only the fallback, and the
+// post-process shaders that read the HDR copy keep only the exponent adjust.
+[[vk::constant_id(914)]] const uint g_renutFetch7e3 = 1;
 #endif
 float4 renutFetchAdjust(float4 value, uint resourceDescriptorIndex)
 {
@@ -300,7 +304,11 @@ float4 renutFetchAdjust(float4 value, uint resourceDescriptorIndex)
     if (g_renutFetchAdjust == 0u)
         return value;
 #endif
+#ifdef __spirv__
+    if (g_renutFetch7e3 != 0u && (resourceDescriptorIndex & 0xA0000000u) == RENUT_TEXTURE_7E3_CODE)
+#else
     if ((resourceDescriptorIndex & 0xA0000000u) == RENUT_TEXTURE_7E3_CODE)  // bit 29 and not stacked
+#endif
         value = float4(renut7e3Code(value.x), renut7e3Code(value.y), renut7e3Code(value.z),
                        round(saturate(value.w) * 3.0) / 3.0);
     const int expAdjust = int(resourceDescriptorIndex << 6u) >> 26;

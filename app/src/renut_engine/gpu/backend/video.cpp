@@ -51,6 +51,7 @@
 #include "host_shaders/stream_convert_cs.spirv.h"
 #include "host_shaders/target_readback_cs.spirv.h"
 #include "host_shaders/texture_mip_ps.spirv.h"
+#include "host_shaders/code7e3_ps.spirv.h"
 #include "host_shaders/resolve_copy_ps.spirv.h"
 #if defined(PLUME_DEKO3D)  // banjo-nx (2026-10-17): the deko3d back end's (tools/deko3d_host_shader.py)
 #include "host_shaders/depth_resolve_ms_ps.deko3d.h"
@@ -62,6 +63,7 @@
 #include "host_shaders/stream_convert_cs.deko3d.h"
 #include "host_shaders/target_readback_cs.deko3d.h"
 #include "host_shaders/texture_mip_ps.deko3d.h"
+#include "host_shaders/code7e3_ps.deko3d.h"
 #include "host_shaders/resolve_copy_ps.deko3d.h"
 #endif
 #if defined(_WIN32)
@@ -74,6 +76,7 @@
 #include "host_shaders/stream_convert_cs.dxil.h"
 #include "host_shaders/target_readback_cs.dxil.h"
 #include "host_shaders/texture_mip_ps.dxil.h"
+#include "host_shaders/code7e3_ps.dxil.h"
 #include "host_shaders/resolve_copy_ps.dxil.h"
 #endif
 
@@ -967,6 +970,8 @@ bool Video::CreateHostDevice() {
   // Optional: without it, scaled resolve destinations keep one level.
   s.texture_mip_ps =
       CreateHostShader(s.device.get(), RENUT_HOST_SHADER(texture_mip_ps), "texture_mip_ps");
+  // ds2-nx (2026-10-29): optional too: without it the shaders encode the 7e3 codes at every fetch (textures.cpp).
+  s.code7e3_ps = CreateHostShader(s.device.get(), RENUT_HOST_SHADER(code7e3_ps), "code7e3_ps");
   StartPipelinePrebuild();
 
   s.host_ready = true;
