@@ -78,6 +78,7 @@ set(DS2_SOURCES
     # Trophies: the screen (L + Minus), the notices and our platinum (ds2_trophies.h).
     src/ds2_trophies.cpp
     src/ds2_trophy_art.cpp
+    src/ds2_profiler.cpp
     # The port's gameplay changes, on by default in ds2.toml: Early Dull Ember, Better fog walls (docs/features.md).
     src/ds2_features.cpp
     # Render resolution per console mode (docked / handheld, live) and MSAA: ds2_render_height_*, ds2_msaa.

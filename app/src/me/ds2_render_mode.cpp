@@ -15,6 +15,7 @@
 #include <rex/ui/switch_saltynx.h>
 
 #include "cpu/ds2_enhancements.h"
+#include "ds2_profiler.h"
 #include "ds2_trophies.h"
 
 #if REX_PLATFORM_SWITCH
@@ -204,6 +205,15 @@ void OnPresented(uint64_t presented) {
       ds2::trophies::RequestToggle();
     }
     was_down = down;
+    // ds2-nx (2026-10-29): R + Minus, the profiler window (ds2_profiler.cpp), once per press.
+    static bool profiler_was_down = false;
+    const u64 profiler_combo = HidNpadButton_R | HidNpadButton_Minus;
+    const bool profiler_down = (padGetButtons(&pad) & profiler_combo) == profiler_combo;
+    if (profiler_down && !profiler_was_down) {
+      REXLOG_INFO("[profiler] R + Minus");
+      ds2::profiler::RequestToggle();
+    }
+    profiler_was_down = profiler_down;
   }
   // ds2_render_height_combo: both sticks held for a second. The pad is read here, on its own PadState (HID's shared
   // memory; the game's input driver is not involved), once per presented frame.

@@ -28,6 +28,10 @@
 #include <vector>
 
 namespace plume {
+    // ds2-nx (2026-10-29, from usf4-nx): the calling thread's shader compiles are background work (pipeline
+    // prebuild): a compile some other thread waits for is queued ahead of every background one.
+    void Deko3DMarkBackgroundCompileThread();
+
     // RenderShaderFormat::DEKO3D's container.
     struct Deko3DShaderBlob {
         static constexpr uint32_t Magic = 0x334B4442; // "BDK3"
@@ -512,6 +516,7 @@ namespace plume {
             std::string *log;
             bool done = false;
             bool ok = false;
+            bool background = false;  // ds2-nx (usf4-nx): from a Deko3DMarkBackgroundCompileThread thread
         };
         std::vector<CompileJob *> compileQueue;
         // banjo-nx (2026-10-18): the uam thread's handle, the priorities of the threads waiting for a compile, and the

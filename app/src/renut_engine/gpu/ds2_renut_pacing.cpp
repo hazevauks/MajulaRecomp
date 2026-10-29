@@ -30,6 +30,7 @@
 #endif
 #endif
 
+#include <fmt/format.h>
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
@@ -42,6 +43,13 @@ REXCVAR_DEFINE_BOOL(ds2_renut_vblank_pacing, true, "DS2",
                     "Renut's renderer (ds2_renderer = renut): each Swap is released at the game's presentation interval "
                     "(60 Hz refreshes), as the console's vertical blank paces the game; SA2's game speed follows its "
                     "frame rate. Off: the game runs as fast as the host renders (tests only)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// sa2-nx (2026-10-28, ds2_renut_queue_drain's test where there is no display: the PC): a release a refresh later every
+// this many seconds, as a queue drain does.
+REXCVAR_DEFINE_INT32(ds2_diag_swap_hold_every_s, 0, "SA2/Diagnostics",
+                     "Tests (ds2_renut_queue_drain): release the game's next frame one refresh later every this many "
+                     "seconds, as a queue drain does; 0 = off")
+    .range(0, 3600)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 // The native renderer's relaxed vsync key (src/me/me_native_system.cpp), the player's setting.
@@ -81,6 +89,7 @@ struct Stats {
   Clock::time_point since{};
   Clock::time_point released{};  // the last Swap's release
   uint64_t frames = 0, late = 0;
+  uint64_t held = 0;  // sa2-nx (2026-10-28, ds2_renut_queue_drain): releases a refresh later
   double work_ms = 0.0, work_max_ms = 0.0, sleep_ms = 0.0;
 };
 Stats g_stats;
@@ -103,9 +112,10 @@ void NoteRelease(Clock::time_point arrived, Clock::time_point released, bool lat
   if (released - s.since < std::chrono::seconds(10)) return;
   if (s.frames)
     REXLOG_INFO("[renut] game thread, {:.1f} s: {} frames, {:.2f} ms a frame from Swap to Swap (most {:.2f} ms), "
-                "{:.2f} ms a frame paced; {} frames late (ds2_renut_vblank_pacing)",
+                "{:.2f} ms a frame paced; {} frames late (ds2_renut_vblank_pacing){}",
                 Ms(released - s.since) / 1000.0, s.frames, s.work_ms / double(s.frames), s.work_max_ms,
-                s.sleep_ms / double(s.frames), s.late);
+                s.sleep_ms / double(s.frames), s.late,
+                s.held ? fmt::format("; {} released a refresh later (ds2_renut_queue_drain)", s.held) : std::string());
   // The game thread's other measure: what its draws keep of the device (backend/queued.cpp).
   if (const std::string deltas = ::renut::gpu::SnapshotDeltaReport(); !deltas.empty())
     REXLOG_INFO("[renut] {}", deltas);
@@ -153,6 +163,19 @@ void PaceSwap(uint32_t device_va) {
   const auto *interval_word = ::renut::gpu::GuestPtr<const be_u32>(device_va + kDeviceOffsetPresentationInterval);
   const uint32_t refreshes = RefreshesPerFrame(interval_word ? uint32_t(*interval_word) : 1);
   const auto now = Clock::now();
+  // sa2-nx (2026-10-28, ds2_renut_queue_drain): this release a refresh later, once, when the display thread asks
+  // (double buffering's queue stuck one image deep: display_sync.h), or the test's timer does. The game's frame starts a
+  // refresh later; its speed follows its frames, so it loses that one refresh, as at one slow frame.
+  bool hold = ::banjo::display_sync::TakeHold();
+  if (static const int32_t every_s = REXCVAR_GET(ds2_diag_swap_hold_every_s); every_s > 0) [[unlikely]] {
+    static Clock::time_point next = now + std::chrono::seconds(every_s);
+    if (now >= next) {
+      hold = true;
+      next = now + std::chrono::seconds(every_s);
+    }
+  }
+  if (hold) [[unlikely]]
+    ++g_stats.held;
   // sa2-nx (2026-10-20, banjo_display_sync, Banjo's latency set): on the Switch the release follows the display's own
   // refresh (its vsync event) plus a measured phase, as late as the frame's image still makes the refresh, instead of
   // this clock's 60 Hz grid, which drifts against the display's. A late frame goes at once (as relaxed vsync); fixed
@@ -163,7 +186,12 @@ void PaceSwap(uint32_t device_va) {
     const uint64_t now_ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count());
     const uint64_t period_ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(period).count());
     bool anchored = false;
-    const uint64_t release = ::banjo::display_sync::NextRelease(now_ns, g_display_previous_ns, period_ns, &anchored);
+    uint64_t release = ::banjo::display_sync::NextRelease(now_ns, g_display_previous_ns, period_ns, &anchored);
+    if (release && hold) {
+      // One refresh later: on the display's grid when the release was anchored to it, after 'now' when it was a late
+      // frame's (at once).
+      release += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(kRefresh).count());
+    }
     if (release) {
       const auto at = Clock::time_point(std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(release)));
       if (release > now_ns) SleepUntil(at);
@@ -182,6 +210,8 @@ void PaceSwap(uint32_t device_va) {
     return;
   }
   const auto period = kRefresh * refreshes;
+  if (hold)
+    g_due = std::max(g_due, now) + kRefresh;  // sa2-nx (ds2_renut_queue_drain): this release a refresh later
   if (now <= g_due) {
     // On time: released at the due refresh; the next is due a period after it (a fixed grid, so the sleep's own
     // lateness does not add up).

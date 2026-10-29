@@ -25,6 +25,7 @@
 #include "ds2_capture.h"
 #include "ds2_input_script.h"
 #include "ds2_pgo.h"
+#include "ds2_profiler.h"
 #include "ds2_trophies.h"
 #include "me/ds2_render_mode.h"
 #include "me/me_native_system.h"
@@ -179,6 +180,9 @@ class Ds2App : public rex::ReXApp {
       rex::ui::ProcessKeyEvent(keystroke);
     };
     ds2::trophies::Install(std::move(hooks));
+    // The profiler window (ds2_profiler.h, docs/profiler-overlay.md): R + Minus, or ds2_profiler = true.
+    ds2::profiler::Install(imgui_drawer(),
+                           [this](std::function<void()> f) { app_context().CallInUIThreadDeferred(std::move(f)); });
   }
 
   // The trophy screen (ds2_trophies.cpp) in place of the SDK's achievements list: L + Minus or L + R + Left on the

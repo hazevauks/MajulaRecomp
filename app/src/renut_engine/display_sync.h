@@ -32,4 +32,17 @@ void NotePresented(uint64_t swap);
 // One line for the 10 s report; empty when the thread does not run.
 std::string Report();
 
+// sa2-nx (2026-10-28, ds2_renut_queue_drain; ketsui-nx's ketsui_renut_queue_drain, passed on by futari-nx): with two
+// swapchain images (ds2_renut_double_buffer) a frame's present waits for the image the display still shows, which it
+// gives back only at the refresh the frame was meant for: one late image (a load, a slow frame) and every image after it
+// is shown a refresh late (about 17 ms more input lag, still 60 fps), for as long as the game keeps up. The display
+// thread counts the new images not finished at their refresh; after a second of them it asks for the game's next frame
+// to be released one refresh later, once: the image before it makes its refresh, the queue empties. TakeHold: the
+// frame pacing (gpu/ds2_renut_pacing.cpp) takes that request at a Swap's release.
+bool TakeHold();
+// The late input's extra margin (render_thread.cpp LateInputDelay), in microseconds: 1 ms more at each image late at its
+// refresh, 0.25 ms less after 180 in time (with ds2_renut_queue_drain), so late input cannot push the frames back into
+// the late queue.
+uint32_t LateInputGuardUs();
+
 }  // namespace banjo::display_sync

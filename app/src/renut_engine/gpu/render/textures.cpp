@@ -24,6 +24,17 @@
 #include "renut_engine/gpu/render/graphics_options.h"
 #include "renut_engine/gpu/backend/video.h"
 
+#include <rex/cvar.h>
+
+REXCVAR_DECLARE(bool, ds2_renut_direct_resolve_mips);  // sa2-nx (2026-10-28): render/draw.cpp
+
+// ds2-nx (2026-10-29, from usf4-nx 0.8.0): its render thread hashed 19 MB of linear textures a frame (6.4 -> 2.8 ms).
+REXCVAR_DEFINE_BOOL(ds2_renut_static_linear_textures, true, "DS2/Renderer",
+                    "Renut: a linear texture whose content has not changed at 60 full checks in a row is checked with "
+                    "the tiled textures' sampled hash each frame and hashed whole every 16 frames (staggered); a change "
+                    "either finds sends it back to whole hashes every frame. A CPU write the samples miss shows up to "
+                    "16 frames late instead of the next frame (usf4-nx)");
+
 namespace renut::gpu {
 
 namespace {
@@ -104,6 +115,10 @@ constexpr double kEvictMemoryShare = 0.85;
 constexpr uint64_t kLinearVerifyFrames = 30;
 constexpr uint64_t kUnlockWatchFrames = 8;
 constexpr uint32_t kDynamicChanges = 2;
+// ds2-nx (2026-10-29, from usf4-nx: ds2_renut_static_linear_textures): a linear texture unchanged at kStableChecks
+// full checks in a row gets SampleHash at each check and its full hash every kStaticVerifyFrames frames.
+constexpr uint32_t kStableChecks = 60;
+constexpr uint64_t kStaticVerifyFrames = 16;
 
 uint32_t NullSlot(TextureDimension dimension) {
   switch (dimension) {
@@ -404,6 +419,8 @@ std::vector<PendingFill> g_pending_fills;
 // Records the copies of every level into 't'. The guest data is read now, or
 // when the command list is submitted if 'defer_read'.
 bool Upload(HostTexture &t, const TextureFetch &fetch, bool defer_read) {
+  FlushResolveMipsLocked(t);  // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips): from the level 0 the resolves left
+  ColourHandOverForgetLocked(t);  // sa2-nx (2026-10-28, ds2_renut_colour_handover): its content is the upload's now
   // banjo-nx (2026-10-19, render-thread proposal 1): the interval the guest bytes are read in: now, or at the next
   // kick's flush (FlushTextureFillsLocked, right after FlushVertexFillsLocked starts a new interval; a later one is
   // only more cautious).
@@ -617,6 +634,8 @@ void MaskedDesc(const TextureFetch &fetch, u32 out[6]) {
 void Retire(HostTexture &t) {
   ++g_texture_epoch;  // banjo-nx (CPU proposal 2)
   DepthHandOverForgetLocked(t);  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
+  ColourHandOverForgetLocked(t);  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
+  t.mips_pending = false;  // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips): nothing reads them now
   if (t.slot != UINT32_MAX && t.slot != kInvalidDescriptor)
     Video::FreeTextureSlotLocked(t.slot);
   t.slot = UINT32_MAX;
@@ -629,6 +648,20 @@ void Retire(HostTexture &t) {
     Video::FreeTextureSlotLocked(t.level0_slot);
   t.level0_slot = UINT32_MAX;
   Video::RetireLocked(std::move(t.level0_view));
+  // sa2-nx (2026-10-28, ds2_renut_direct_resolve_mips): the levels' own views and framebuffers.
+  for (uint32_t slot : t.level_sample_slots)
+    if (slot != UINT32_MAX && slot != kInvalidDescriptor)
+      Video::FreeTextureSlotLocked(slot);
+  t.level_sample_slots.clear();
+  for (auto &v : t.level_sample_views)
+    Video::RetireLocked(std::move(v));
+  t.level_sample_views.clear();
+  for (auto &f : t.level_framebuffers)
+    Video::RetireLocked(std::move(f));
+  t.level_framebuffers.clear();
+  for (auto &v : t.level_target_views)
+    Video::RetireLocked(std::move(v));
+  t.level_target_views.clear();
   Video::RetireLocked(std::move(t.copy_framebuffer));  // banjo-nx (2026-10-18)
   Video::RetireLocked(std::move(t.view));
   Video::RetireLocked(std::move(t.texture));
@@ -730,6 +763,7 @@ uint32_t WordsViewSlot(HostTexture &t, HostTexture &source, u32 swizzle) {
 void CopyDepthWords(HostTexture &t, HostTexture &source) {
   if (t.copied_resolve == source.resolves)
     return;
+  FlushResolveMipsLocked(t);  // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips)
   ++g_texture_epoch;  // banjo-nx (CPU proposal 2)
   plume::RenderCommandList *cmd = State().command_list;
   TransitionTextureLocked(source.words.get(), plume::RenderTextureLayout::COPY_SOURCE);
@@ -881,13 +915,23 @@ void RefreshLinearLocked(HostTexture &t, const TextureFetch &fetch) {
       t.uploaded = Upload(t, fetch, true);
     }
   } else {
+    // ds2-nx (2026-10-29, usf4-nx's usf4_renut_static_linear_textures): static mode between its staggered full checks.
+    static const bool static_on = REXCVAR_GET(ds2_renut_static_linear_textures);
+    const bool stable = static_on && t.stable_checks >= kStableChecks;
+    if (stable && (g_frame + (t.guest_va >> 12)) % kStaticVerifyFrames != 0 && SampleHash(fetch, t) == t.static_sample) {
+      t.unlocked = false;
+      return;
+    }
     const uint64_t hash = CheckedHash(fetch, t, false);
     if (hash != t.content_hash) {
       upload(hash);
       t.dynamic = ++t.changes >= kDynamicChanges;
       t.verified_frame = g_frame;
+      t.stable_checks = 0;
     } else {
       t.changes = 0;
+      if (static_on && ++t.stable_checks >= kStableChecks)
+        t.static_sample = SampleHash(fetch, t);
     }
   }
   t.unlocked = false;
@@ -1144,6 +1188,8 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
     resolved->used_frame = g_frame;
     if (resolved->words)
       banjo::renut_gpu::CountDepthFloatSampled();  // banjo-nx (2026-10-18): a depth resolve's float target sampled
+    ColourHandOverBeforeReadLocked(*resolved);  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
+    FlushResolveMipsLocked(*resolved);  // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips)
     TransitionTextureLocked(resolved, plume::RenderTextureLayout::SHADER_READ);
     if (fx) {
       fx->transition[0] = resolved;
@@ -1154,6 +1200,12 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
     // banjo-nx (2026-10-19, banjo_deko3d_depth_handover): its content where it is.
     if (resolved->handed_from || resolved->held_current) {
       const uint32_t handed = DepthHandOverSlotLocked(
+          *resolved, SwizzleMapping(swizzle, resolved->view_swap_red_blue, resolved->host_format), fx);
+      if (handed != UINT32_MAX)
+        binding.slot = handed;
+    }
+    if (resolved->colour_from || resolved->colour_current) {  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
+      const uint32_t handed = ColourHandOverSlotLocked(
           *resolved, SwizzleMapping(swizzle, resolved->view_swap_red_blue, resolved->host_format), fx);
       if (handed != UINT32_MAX)
         binding.slot = handed;
@@ -1288,6 +1340,8 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
                   g_frame, texture_va, t.width, t.height, u32(fetch.Format()), fetch.Tiled() ? ", tiled" : "");
     }
   }
+  ColourHandOverBeforeReadLocked(t);  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
+  FlushResolveMipsLocked(t);  // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips)
   TransitionTextureLocked(&t, plume::RenderTextureLayout::SHADER_READ);
   if (t.words)
     banjo::renut_gpu::CountDepthFloatSampled();  // banjo-nx (2026-10-18): a depth resolve's float target sampled
@@ -1300,6 +1354,12 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
   // banjo-nx (2026-10-19, banjo_deko3d_depth_handover): its content where it is.
   if (t.handed_from || t.held_current) {
     const uint32_t handed = DepthHandOverSlotLocked(
+        t, SwizzleMapping(swizzle, t.view_swap_red_blue, t.host_format), fx);
+    if (handed != UINT32_MAX)
+      binding.slot = handed;
+  }
+  if (t.colour_from || t.colour_current) {  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
+    const uint32_t handed = ColourHandOverSlotLocked(
         t, SwizzleMapping(swizzle, t.view_swap_red_blue, t.host_format), fx);
     if (handed != UINT32_MAX)
       binding.slot = handed;
@@ -1509,6 +1569,111 @@ uint32_t Level0Slot(HostTexture &t) {
   return t.level0_slot;
 }
 
+// sa2-nx (2026-10-28): ds2_renut_direct_resolve_mips, once.
+bool DirectResolveMipsOn() {
+  static const bool on = REXCVAR_GET(ds2_renut_direct_resolve_mips);
+  return on;
+}
+
+// sa2-nx (2026-10-28, ds2_renut_direct_resolve_mips): UpdateResolveMipsLocked on deko3d with each level drawn into
+// the texture's own level (a view of it as the target) from the level above (Level0Slot, or a view of that level),
+// instead of into a scratch target copied into the level after on the copy engine, which plume_deko3d fences with a
+// full barrier on each side (the 3D engine idle for the copy). The same shader, push constants, viewport and region as
+// the scratch path: each level's region gets the same texels; nothing outside it is written. A fragment barrier
+// (the texture's transition into the read layout) before each level reads the one drawn just before it. False (the
+// scratch path runs) when a view or framebuffer cannot be made; nothing has been drawn then.
+bool UpdateResolveMipsDirectLocked(HostTexture &t, const plume::RenderRect &rect, plume::RenderPipeline *pipeline,
+                                   uint32_t source_slot) {
+  auto &s = State();
+  plume::RenderCommandList *cmd = Video::CommandListLocked();
+  const uint32_t count = std::min(t.extra_levels, kMaxExtraLevels);
+  if (t.level_target_views.size() < count) {
+    t.level_target_views.resize(count);
+    t.level_framebuffers.resize(count);
+    t.level_sample_views.resize(count);
+    t.level_sample_slots.resize(count, UINT32_MAX);
+  }
+  // The views, framebuffers and sample slots first: nothing is drawn unless all of them are there.
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t level = i + 1;
+    if (!t.level_framebuffers[i]) {
+      plume::RenderTextureViewDesc desc = t.view_desc;
+      desc.mipSlice = level;
+      desc.mipLevels = 1;
+      desc.componentMapping = plume::RenderComponentMapping();
+      t.level_target_views[i] = t.texture->createTextureView(desc);
+      if (!t.level_target_views[i])
+        return false;
+      const plume::RenderTexture *targets[] = {t.texture.get()};
+      const plume::RenderTextureView *views[] = {t.level_target_views[i].get()};
+      plume::RenderFramebufferDesc fb(targets, 1);
+      fb.colorAttachmentViews = views;
+      t.level_framebuffers[i] = s.device->createFramebuffer(fb);
+      if (!t.level_framebuffers[i])
+        return false;
+    }
+    if (level < count && t.level_sample_slots[i] == UINT32_MAX) {  // a deeper level is made from this one
+      plume::RenderTextureViewDesc desc = t.view_desc;
+      desc.mipSlice = level;
+      desc.mipLevels = 1;
+      desc.componentMapping = plume::RenderComponentMapping();
+      t.level_sample_views[i] = t.texture->createTextureView(desc);
+      if (!t.level_sample_views[i])
+        return false;
+      const uint32_t slot = Video::AllocateTextureSlotLocked();
+      if (slot == kInvalidDescriptor)
+        return false;
+      Video::SetTextureSlotLocked(slot, t.texture.get(), t.level_sample_views[i].get());
+      t.level_sample_slots[i] = slot;
+    }
+  }
+  // As the scratch path: the rect widened to whole texels of the smallest level.
+  const int32_t align = 1 << count;
+  const plume::RenderRect aligned(rect.left & ~(align - 1), rect.top & ~(align - 1),
+                                  (rect.right + align - 1) & ~(align - 1),
+                                  (rect.bottom + align - 1) & ~(align - 1));
+  TransitionTextureLocked(&t, plume::RenderTextureLayout::SHADER_READ);  // level 0 as written: read
+  uint32_t source = source_slot;
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t level = i + 1;
+    const int32_t span = 1 << level;
+    const uint32_t width = std::max(1u, t.alloc_width >> level);
+    const uint32_t height = std::max(1u, t.alloc_height >> level);
+    const plume::RenderRect region(std::min(aligned.left >> level, int32_t(width)),
+                                   std::min(aligned.top >> level, int32_t(height)),
+                                   std::min((aligned.right + span - 1) >> level, int32_t(width)),
+                                   std::min((aligned.bottom + span - 1) >> level, int32_t(height)));
+    if (region.right <= region.left || region.bottom <= region.top)
+      break;
+    if (i > 0) {
+      // The level drawn just before is read: written, then into the read layout (the barrier).
+      t.layout = plume::RenderTextureLayout::COLOR_WRITE;
+      TransitionTextureLocked(&t, plume::RenderTextureLayout::SHADER_READ);
+    }
+    cmd->setFramebuffer(t.level_framebuffers[i].get());
+    cmd->setGraphicsPipelineLayout(s.utility_layout.get());
+    cmd->setPipeline(pipeline);
+    cmd->setGraphicsDescriptorSet(s.texture_set.get(), 0);
+    cmd->setGraphicsDescriptorSet(s.sampler_set.get(), 1);
+    // Pixel coordinates are texels of the level.
+    cmd->setViewports(plume::RenderViewport(0.0f, 0.0f, float(width), float(height)));
+    cmd->setScissors(region);
+    UtilityPush push{};
+    push.scale[0] = push.scale[1] = 1.0f;
+    push.texture_index = source;
+    push.sampler_index = kPointClampSamplerSlot;
+    push.param0 = 2.0f;
+    cmd->setGraphicsPushConstants(0, &push, 0, sizeof(push));
+    cmd->drawInstanced(3, 1, 0, 0);
+    if (level < count)
+      source = t.level_sample_slots[i];
+  }
+  // The last level drawn: into the read layout for the draws that sample the texture.
+  t.layout = plume::RenderTextureLayout::COLOR_WRITE;
+  TransitionTextureLocked(&t, plume::RenderTextureLayout::SHADER_READ);
+  return true;
+}
+
 } // namespace
 
 HostTexture *ResolveStagingLocked(const HostTexture *dest) {
@@ -1528,6 +1693,8 @@ void UpdateResolveMipsLocked(HostTexture *texture, const plume::RenderRect &rect
     return;
   static const uint32_t kProfileLabel = gpu_profile::Label("resolve host mip levels");
   gpu_profile::Mark(s, kProfileLabel);
+  if (IsDeko3D() && t.render_target && DirectResolveMipsOn() && UpdateResolveMipsDirectLocked(t, rect, pipeline, source_slot))
+    return;
 
   // Each level is the 2x2 box of the one above: level 1 of level 0, the rest
   // of the previous level's scratch target. The rect is first widened to

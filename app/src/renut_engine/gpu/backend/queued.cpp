@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -27,6 +28,10 @@
 #include "renut_engine/gpu/backend/render_thread.h"
 #include "renut_engine/gpu/banjo_renut_tuning.h"
 #include "renut_engine/gpu/ds2_line_compare.h"
+#include "renut_engine/gpu/ds2_setter_marks.h"
+#if defined(SA2_D3D_CENSUS_BUILD)
+#include "me/sa2_d3d_api.h"  // sa2-nx (2026-10-28): the setter census (census builds only)
+#endif
 
 // sa2-nx (2026-10-20): see SnapshotKind below.
 REXCVAR_DEFINE_BOOL(ds2_renut_snapshot_deltas, true, "DS2/Renderer",
@@ -68,10 +73,79 @@ REXCVAR_DEFINE_BOOL(ds2_renut_snapshot_deltas_verify, false, "DS2/Renderer",
                     "counts the draws whose rebuilt device differs from it in any byte (the 10 s \"[renut] device "
                     "snapshots\" line)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// ds2-nx (2026-10-29): off. The marks come from SA2's Direct3D setter hooks (sa2-nx's me/sa2_setter_marks.h), which
+// this port does not have: nothing would mark the setters that store without a dirty tag.
+REXCVAR_DEFINE_BOOL(ds2_renut_setter_marks, false, "DS2/Renderer",
+                    "Renut's renderer (ds2_renut_snapshot_deltas): a draw of the chain compares only the device chunks "
+                    "marked since the previous one (gpu/ds2_setter_marks.h: by the Direct3D setters that store without "
+                    "a dirty tag, by the dirty tags pending, and the vertex declaration's) instead of all 40. Off: all")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_setter_marks_check, true, "DS2/Renderer",
+                    "Renut's renderer (ds2_renut_setter_marks): every 32nd draw of the chain (every draw with "
+                    "ds2_renut_snapshot_deltas_verify) compares all 40 chunks, and a changed chunk no mark named turns "
+                    "the marks off for the session (logged). Off: no check")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_marks_copy, false, "DS2/Renderer",  // ds2-nx: off with the marks
+                    "Renut's renderer (ds2_renut_setter_marks): a draw of the chain copies its marked chunks as they "
+                    "are, without comparing them with the chain's shadow first (the compare's loads were most of "
+                    "CaptureDelta on the console); the render thread, whose copy of the device is in its cache, finds "
+                    "which of them changed as it applies them. The every-32nd-draw check still compares all 40. Off: "
+                    "the marked chunks compared on the game thread")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_setters_precise, false, "DS2/Renderer",
+                    "Renut's renderer (ds2_renut_setter_marks; banjo-nx's setter rewrite): SetTexture, SetStreamSource, "
+                    "the fetch word setters and the float constant uploads mark only the chunks whose bytes they "
+                    "changed, and the dirty bits they add go apart from the device until a function that reads them "
+                    "runs (me/ds2_setter_marks.h), so a draw takes only what changed. The every-32nd-draw check also "
+                    "compares the float constants with the render thread's. Off by default (the user's call, "
+                    "2026-10-28): on the console the setters' own work cost about 2 ms a frame more than the draws "
+                    "saved (SA2's setters were native already). Off: their marks and dirty bits as before")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DECLARE(bool, ds2_renut_lockfree_queue);  // backend/render_thread.cpp
 
 namespace renut::gpu {
 
 namespace {
+
+// sa2-nx (2026-10-28, the ARM audit after the console's second run): the keys every draw reads (a dozen: the chain's,
+// the pool's, the lock's), latched once into plain bools. Each had been a function-local static, whose guard is an
+// ldar and a branch on AArch64 at every call (the ldar can wait for the stores before it). The latch is made on the
+// thread of the first capture, before the render thread exists (its creation orders the latch before it), with the
+// fields stored before 'ready'; the keys are init-only.
+struct QueuedKeys {
+  bool ready = false;
+  bool deltas = false, constants = false, batches = false, neon = false, deferred = false, narrow = false;
+  bool verify = false, marks = false, check = false, copy = false, precise = false, spin = false;
+};
+QueuedKeys g_keys;
+[[gnu::noinline]] void LatchKeys() {
+  QueuedKeys k;
+  k.deltas = REXCVAR_GET(ds2_renut_snapshot_deltas);
+  k.constants = k.deltas && REXCVAR_GET(ds2_renut_snapshot_deltas_constants);
+  k.batches = REXCVAR_GET(ds2_renut_capture_batches);
+  k.neon = REXCVAR_GET(ds2_renut_neon_compare);
+  k.deferred = REXCVAR_GET(ds2_renut_deferred_chain);
+  k.narrow = REXCVAR_GET(ds2_renut_snapshot_deltas_narrow);
+  k.verify = k.deltas && REXCVAR_GET(ds2_renut_snapshot_deltas_verify);
+#if defined(SA2_D3D_CENSUS_BUILD)
+  k.marks = false;  // the census compares every chunk
+#else
+  k.marks = k.deltas && REXCVAR_GET(ds2_renut_setter_marks);
+#endif
+  k.check = REXCVAR_GET(ds2_renut_setter_marks_check);
+  k.copy = k.marks && REXCVAR_GET(ds2_renut_marks_copy);
+  k.precise = k.marks && REXCVAR_GET(ds2_renut_setters_precise);
+  k.spin = REXCVAR_GET(ds2_renut_lockfree_queue);
+  k.ready = false;
+  g_keys = k;
+  std::atomic_thread_fence(std::memory_order_release);
+  g_keys.ready = true;
+}
+[[gnu::always_inline]] inline const QueuedKeys &Keys() {
+  if (!g_keys.ready) [[unlikely]]
+    LatchKeys();
+  return g_keys;
+}
 
 // sa2-nx (2026-10-20, ds2_renut_snapshot_deltas): how a queued draw holds its device.
 //   Whole:  DrawCapture::state is the device's first kDeviceSnapshotSize bytes (every draw before; the Begin*Vertices
@@ -146,6 +220,25 @@ public:
       }
     }
     return new DrawCapture();
+  }
+  // sa2-nx (2026-10-28, the ARM audit of the console's second profile): the chain's next captures, whose lines the
+  // render thread had last (it drew them and gave them back): the one after next's own lines, and the next one's delta
+  // buffer (its first lines: the header and a few chunks), into the game thread's cache for writing while this draw is
+  // made. CaptureDelta's samples were spread over its first stores into a capture (its call, its header, the pooled
+  // vector's lines). Under g_delta.mutex, as Take(true).
+  void PrefetchChainNext() const {
+    const size_t n = chain_taken_.size();
+    if (n >= 1) {
+      if (const u8 *s = chain_taken_[n - 1]->state.data()) {
+        for (u32 k = 0; k < 8; ++k)
+          __builtin_prefetch(s + 64 * k, 1);
+      }
+    }
+    if (n >= 2) {
+      const char *c = reinterpret_cast<const char *>(chain_taken_[n - 2]);
+      for (size_t k = 0; k < sizeof(DrawCapture); k += 64)
+        __builtin_prefetch(c + k, 1);
+    }
   }
   // sa2-nx (2026-10-20): 'render_thread' from the render thread's items (only that thread then touches its batch; a
   // queue run inline at shutdown has the render thread gone).
@@ -260,6 +353,20 @@ constexpr DeltaChunkList MakeDeltaChunkList(bool narrow) {
 constexpr DeltaChunkList kDeltaAllChunks = MakeDeltaChunkList(false);
 constexpr DeltaChunkList kDeltaReadChunks = MakeDeltaChunkList(true);
 static_assert(kDeltaReadChunks.count == 40);
+// sa2-nx (2026-10-28, ds2_renut_setter_marks): the same lists as chunk masks (bit i % 64 of word i / 64), and the
+// chunks every draw compares whatever the marks say: the vertex declaration's (0x2FC0, set inline without a tag).
+constexpr ds2::renut::ChunkBits MakeDeltaChunkMask(const DeltaChunkList &l) {
+  ds2::renut::ChunkBits b{};
+  for (u32 k = 0; k < l.count; ++k)
+    b.w[l.index[k] / 64] |= uint64_t(1) << (l.index[k] % 64);
+  return b;
+}
+constexpr ds2::renut::ChunkBits kDeltaAllMask = MakeDeltaChunkMask(kDeltaAllChunks);
+constexpr ds2::renut::ChunkBits kDeltaReadMask = MakeDeltaChunkMask(kDeltaReadChunks);
+constexpr ds2::renut::ChunkBits kMarksAlways = ds2::renut::MarkBits(d3d::kDeviceOffsetVertexDeclaration, 4);
+static_assert(ds2::renut::kMarkHeadChunks == kDeltaHeadChunks && ds2::renut::kMarkTailBegin == kDeltaTailBegin &&
+              ds2::renut::kMarkSnapshotEnd == d3d::kDeviceSnapshotSize);
+static_assert(kMarksAlways.w[0] == uint64_t(1) << 63 && kMarksAlways.w[1] == 0);  // chunk 63: 0x2FC0
 // Whether device byte 'at' is one the render thread reads (the verify mode compares those).
 constexpr bool DeltaByteRead(u32 at) {
   return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at < kDeltaPrivateUnreadEnd));
@@ -295,14 +402,64 @@ bool DeltaChunkDiffers(const u8 *a, const u8 *b) {
   return diff != 0;
 }
 
+// sa2-nx (2026-10-28, ds2_renut_lockfree_queue): the chain's lock. The game thread takes it for every draw (making and
+// queueing its delta), and nothing else but the frame's start and the 10 s report: an uncontended std::mutex there was
+// a call into newlib and libnx each way (mutexLock / mutexUnlock / pthread_mutex_lock: 2 % of the game thread in the 2P
+// console profile, with the queue's). With the key on, an exclusive load/store pair takes it and a release store gives
+// it back; a thread that finds it held yields until it is free (the holders keep it for a few hundred instructions).
+// Off: the std::mutex.
+bool ChainSpinOn() {
+  return Keys().spin;
+}
+class ChainLock {
+public:
+  void lock() {
+    if (!ChainSpinOn()) {
+      mutex_.lock();
+      return;
+    }
+    while (held_.exchange(true, std::memory_order_acquire)) {
+      while (held_.load(std::memory_order_relaxed))
+        std::this_thread::yield();
+    }
+  }
+  bool try_lock() {
+    if (!ChainSpinOn())
+      return mutex_.try_lock();
+    return !held_.exchange(true, std::memory_order_acquire);
+  }
+  void unlock() {
+    if (!ChainSpinOn()) {
+      mutex_.unlock();
+      return;
+    }
+    held_.store(false, std::memory_order_release);
+  }
+
+private:
+  std::atomic<bool> held_{false};
+  std::mutex mutex_;
+};
+using ChainGuard = std::unique_lock<ChainLock>;
+
 // The game threads' side of the chain.
 struct DeltaChain {
-  std::mutex mutex;                     // the chain's draws are made and queued in one order
+  ChainLock mutex;                      // the chain's draws are made and queued in one order
   const d3d::Device *device = nullptr;  // the device it follows; none: the next draw rebases
   uint64_t vs = 0, ps = 0;              // groups whole captures consumed since its last draw: they follow
   uint64_t deltas = 0, rebases = 0, bytes = 0, chunks = 0, groups = 0;  // the 10 s report's
   uint64_t whole = 0;  // sa2-nx: whole captures outside the chain (Begin*Vertices draws), under the lock too
+  // sa2-nx (2026-10-28, ds2_renut_setter_marks): chunks compared (the report's), the chain's draws (every 32nd
+  // checks), checks and misses (a changed chunk no mark named).
+  uint64_t compared = 0, mark_draws = 0, checks = 0, misses = 0;
+  bool marks_off = false;  // the first miss turns the marks off for the session
+  // sa2-nx (2026-10-28, ds2_renut_setters_precise): the checks' float constant misses (a group that differs from the
+  // render thread's with no dirty bit: the precise setters go off for the session), and the chunks a delta copied as
+  // marked (ds2_renut_marks_copy, the report's).
+  uint64_t const_misses = 0, copied = 0;
+  u32 const_check_next = 0;  // the first of the 16 groups the next check compares
   alignas(64) u8 shadow[d3d::kDeviceSnapshotSize];  // the device at its last draw (the chunks)
+  alignas(64) u8 const_shadow[512 * 16];  // sa2-nx: the float constants the render thread's device has (precise)
 };
 DeltaChain g_delta;
 
@@ -317,35 +474,21 @@ uint64_t g_chain_vs_dirty = ~uint64_t(0), g_chain_ps_dirty = ~uint64_t(0);
 // ds2_renut_chain_reuse: the number of the chain's last draw (draw.h ChainHint::seq; from 2).
 uint64_t g_chain_seq = 1;
 
-bool DeltasOn() {
-  static const bool on = REXCVAR_GET(ds2_renut_snapshot_deltas);
-  return on;
-}
-bool ChainConstantsOn() {
-  static const bool on = DeltasOn() && REXCVAR_GET(ds2_renut_snapshot_deltas_constants);
-  return on;
-}
-bool CaptureBatchesOn() {
-  static const bool on = REXCVAR_GET(ds2_renut_capture_batches);
-  return on;
-}
-bool NeonCompareOn() {
-  static const bool on = REXCVAR_GET(ds2_renut_neon_compare);
-  return on;
-}
+// sa2-nx (2026-10-28): the keys, latched (QueuedKeys above).
+bool DeltasOn() { return Keys().deltas; }
+bool ChainConstantsOn() { return Keys().constants; }
+bool CaptureBatchesOn() { return Keys().batches; }
+bool NeonCompareOn() { return Keys().neon; }
 // sa2-nx (2026-10-20, from futari-nx via peggle2-nx): ds2_renut_deferred_chain (QueueDeferredDraw).
-bool DeferredChainOn() {
-  static const bool on = REXCVAR_GET(ds2_renut_deferred_chain);
-  return on;
-}
-bool DeltasNarrowOn() {
-  static const bool on = REXCVAR_GET(ds2_renut_snapshot_deltas_narrow);
-  return on;
-}
-bool DeltasVerifyOn() {
-  static const bool on = DeltasOn() && REXCVAR_GET(ds2_renut_snapshot_deltas_verify);
-  return on;
-}
+bool DeferredChainOn() { return Keys().deferred; }
+bool DeltasNarrowOn() { return Keys().narrow; }
+bool DeltasVerifyOn() { return Keys().verify; }
+// sa2-nx (2026-10-28): ds2_renut_setter_marks (not in census builds, whose census compares every chunk).
+bool SetterMarksOn() { return Keys().marks; }
+bool SetterMarksCheckOn() { return Keys().check; }
+// sa2-nx (2026-10-28): ds2_renut_marks_copy and ds2_renut_setters_precise (both with the marks only).
+bool MarksCopyOn() { return Keys().copy; }
+bool SettersPreciseOn() { return Keys().precise; }
 
 // The original draw calls consume the device's dirty masks as they write
 // their packets; a snapshot taken after this has them clear, as the command
@@ -356,7 +499,16 @@ void ClearPending(d3d::Device *device) {
   if (device == g_delta.device) {
     g_delta.vs |= uint64_t(device->m_Pending[0]);
     g_delta.ps |= uint64_t(device->m_Pending[1]);
+    // sa2-nx (2026-10-28, ds2_renut_setter_marks): and the chunks of the dirty tags it consumes.
+    if (SetterMarksOn())
+      ds2::renut::Mark(ds2::renut::MarkedDevice(),
+                       ds2::renut::TagChunks(uint64_t(device->m_Pending[2]), uint64_t(device->m_Pending[3]),
+                                             uint64_t(device->m_Pending[4])));
   }
+  // sa2-nx (ds2_renut_setters_precise): the bits held apart for this device are consumed with its own (their state is
+  // the render thread's already: nothing to carry).
+  if (const u32 marked = ds2::renut::MarkedDevice(); marked && GuestPtr<d3d::Device>(marked) == device)
+    ds2::renut::DropApart();
   for (auto &mask : device->m_Pending)
     mask = 0;
 }
@@ -383,16 +535,37 @@ const u8 *DeviceForDraw(const DrawCapture &capture) {
     g_chain_hint.changed[1] = h.chunks[1];
     g_chain_vs_dirty |= h.vs;
     g_chain_ps_dirty |= h.ps;
-    for (u32 word = 0; word < 2; ++word) {
-      for (uint64_t bits = h.chunks[word]; bits; bits &= bits - 1) {
-        const u32 i = word * 64 + u32(std::countr_zero(bits));
-        const u32 size = DeltaChunkSize(i);
-        // Whole chunks as a fixed-size copy, which stays inline.
-        if (size == kDeltaUnitBytes)
-          std::memcpy(g_delta_device + DeltaChunkOffset(i), from, kDeltaUnitBytes);
-        else
-          std::memcpy(g_delta_device + DeltaChunkOffset(i), from, size);
-        from += size;
+    if (MarksCopyOn()) {
+      // sa2-nx (2026-10-28, ds2_renut_marks_copy): the game thread copied its marked chunks without comparing them:
+      // a chunk is applied, and named changed for the reuse of derived state (ds2_renut_chain_reuse), only when it
+      // differs from this device's (in this thread's cache).
+      uint64_t changed[2] = {0, 0};
+      for (u32 word = 0; word < 2; ++word) {
+        for (uint64_t bits = h.chunks[word]; bits; bits &= bits - 1) {
+          const u32 i = word * 64 + u32(std::countr_zero(bits));
+          const u32 size = DeltaChunkSize(i);
+          u8 *const to = g_delta_device + DeltaChunkOffset(i);
+          if (size == kDeltaUnitBytes ? DeltaChunkDiffers(to, from) : std::memcmp(to, from, size) != 0) {
+            std::memcpy(to, from, size);
+            changed[word] |= uint64_t(1) << (i % 64);
+          }
+          from += size;
+        }
+      }
+      g_chain_hint.changed[0] = changed[0];
+      g_chain_hint.changed[1] = changed[1];
+    } else {
+      for (u32 word = 0; word < 2; ++word) {
+        for (uint64_t bits = h.chunks[word]; bits; bits &= bits - 1) {
+          const u32 i = word * 64 + u32(std::countr_zero(bits));
+          const u32 size = DeltaChunkSize(i);
+          // Whole chunks as a fixed-size copy, which stays inline.
+          if (size == kDeltaUnitBytes)
+            std::memcpy(g_delta_device + DeltaChunkOffset(i), from, kDeltaUnitBytes);
+          else
+            std::memcpy(g_delta_device + DeltaChunkOffset(i), from, size);
+          from += size;
+        }
       }
     }
     for (const auto [dirty, base] : {std::pair{h.vs, kDeltaVertexF}, std::pair{h.ps, kDeltaPixelF}}) {
@@ -482,6 +655,8 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     return nullptr;
   DeltaChain &c = g_delta;
   DrawCapture *capture = g_capture_pool.Take(true);
+  if (MarksCopyOn())
+    g_capture_pool.PrefetchChainNext();  // sa2-nx (2026-10-28): the next draws' captures, for writing
   capture->call = call;
   capture->call.up_vertices = nullptr;
   capture->call.up_indices = nullptr;
@@ -494,12 +669,43 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     std::memcpy(c.shadow, bytes, d3d::kDeviceSnapshotSize);
     c.device = device;
     c.vs = c.ps = 0;
+    if (SetterMarksOn()) {  // sa2-nx (ds2_renut_setter_marks): marks from here on, for this device
+      ds2::renut::g_setter_marks.device = device_va;
+      ds2::renut::TakeMarks();
+      // sa2-nx (2026-10-28, ds2_renut_setters_precise): the bits held apart go with the device's, and the precise
+      // setters run from here on while no check has found a miss; the render thread's float constants are these.
+      ds2::renut::DropApart();
+      ds2::renut::g_setters_precise =
+          SettersPreciseOn() && !c.marks_off && (c.const_misses == 0 || DeltasVerifyOn());
+      if (ds2::renut::g_setters_precise) {
+        std::memcpy(c.const_shadow, bytes + kDeltaVertexF, sizeof(c.const_shadow));
+        ds2::renut::g_const_shadow = c.const_shadow;
+      }
+    }
     capture->snapshot = SnapshotKind::Rebase;
     ++c.rebases;
     c.bytes += d3d::kDeviceSnapshotSize;
   } else {
-    const uint64_t vs = c.vs | uint64_t(device->m_Pending[0]);
-    const uint64_t ps = c.ps | uint64_t(device->m_Pending[1]);
+    uint64_t vs = c.vs | uint64_t(device->m_Pending[0]);
+    uint64_t ps = c.ps | uint64_t(device->m_Pending[1]);
+#if defined(SA2_D3D_CENSUS_BUILD)
+    sa2::d3d::CensusDrawTags(uint64_t(device->m_Pending[2]), uint64_t(device->m_Pending[3]),
+                             uint64_t(device->m_Pending[4]));
+#endif
+    // sa2-nx (2026-10-28, ds2_renut_setter_marks): the chunks to compare, from the marks and the dirty tags pending
+    // (before they are cleared below).
+    const bool marks = SetterMarksOn() && !c.marks_off;
+    ds2::renut::ChunkBits marked{};
+    if (marks) {
+      marked = ds2::renut::TakeMarks() |
+               ds2::renut::TagChunks(uint64_t(device->m_Pending[2]), uint64_t(device->m_Pending[3]),
+                                     uint64_t(device->m_Pending[4])) |
+               kMarksAlways;
+    }
+    // sa2-nx (2026-10-28, ds2_renut_setters_precise): the bits held apart need nothing (the precise setters marked
+    // the bytes they changed; their constant groups did not change) and are consumed with the device's.
+    const bool precise = ds2::renut::g_setters_precise;
+    ds2::renut::DropApart();
     c.vs = c.ps = 0;
     for (auto &mask : device->m_Pending)
       mask = 0;
@@ -510,26 +716,130 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     u8 *to = begin + sizeof(DeltaHeader);
     DeltaHeader h{};
     u32 chunks = 0;
-    const DeltaChunkList &list = DeltasNarrowOn() ? kDeltaReadChunks : kDeltaAllChunks;
+    const bool narrow = DeltasNarrowOn();
     const bool neon = NeonCompareOn();  // sa2-nx (ds2_renut_neon_compare)
-    for (u32 k = 0; k < list.count; ++k) {
-      const u32 i = list.index[k];
+    // Chunk i: compared with the shadow, and kept (in the shadow and the delta) when it differs.
+    const auto compare = [&](u32 i) {
       const u32 at = DeltaChunkOffset(i), size = DeltaChunkSize(i);
       const bool differs = size == kDeltaUnitBytes ? ds2::renut::Line64Differs(bytes + at, c.shadow + at, neon)
                                                    : std::memcmp(bytes + at, c.shadow + at, size) != 0;
       if (!differs)
-        continue;
+        return false;
       std::memcpy(c.shadow + at, bytes + at, size);
       std::memcpy(to, bytes + at, size);
       to += size;
       h.chunks[i / 64] |= uint64_t(1) << (i % 64);
       ++chunks;
+#if defined(SA2_D3D_CENSUS_BUILD)
+      sa2::d3d::CensusDrawChunk(at, size);
+#endif
+      return true;
+    };
+    // sa2-nx (2026-10-28): the verify mode checks every other draw, so that the draws between take the marks' path
+    // (ds2_renut_marks_copy, the precise setters) and the render thread's compare of every rebuilt device covers it.
+    const bool check = marks && SetterMarksCheckOn() &&
+                       (DeltasVerifyOn() ? (++c.mark_draws & 1) == 0 : (++c.mark_draws & 31) == 0);
+    if (marks && !check) {
+      // The marked chunks, in order (the render thread reads the delta's chunks in index order). Their lines are all
+      // known first: prefetched together, the device's and the shadow's L2 misses overlap instead of each waiting on
+      // the compare before it (the full compare's stall was on those loads, 47 % of CaptureDelta on the console).
+      const ds2::renut::ChunkBits &mask = narrow ? kDeltaReadMask : kDeltaAllMask;
+      const uint64_t todo[2] = {marked.w[0] & mask.w[0], marked.w[1] & mask.w[1]};
+      const u32 marked_count = u32(std::popcount(todo[0]) + std::popcount(todo[1]));
+      if (MarksCopyOn()) {
+        // sa2-nx (2026-10-28, ds2_renut_marks_copy): the marked chunks as they are, into the delta and the shadow
+        // (which the checks compare with), without loading the shadow's first: the render thread finds which of them
+        // changed (DeviceForDraw). A marked chunk that did not change costs it a compare of a line in its cache.
+        for (u32 word = 0; word < 2; ++word) {
+          for (uint64_t bits = todo[word]; bits; bits &= bits - 1) {
+            const u32 at = DeltaChunkOffset(word * 64 + u32(std::countr_zero(bits)));
+            __builtin_prefetch(bytes + at);
+            __builtin_prefetch(c.shadow + at, 1);
+          }
+        }
+        for (u32 word = 0; word < 2; ++word) {
+          for (uint64_t bits = todo[word]; bits; bits &= bits - 1) {
+            const u32 i = word * 64 + u32(std::countr_zero(bits));
+            const u32 at = DeltaChunkOffset(i), size = DeltaChunkSize(i);
+            if (size == kDeltaUnitBytes) {
+              std::memcpy(c.shadow + at, bytes + at, kDeltaUnitBytes);
+              std::memcpy(to, bytes + at, kDeltaUnitBytes);
+            } else {
+              std::memcpy(c.shadow + at, bytes + at, size);
+              std::memcpy(to, bytes + at, size);
+            }
+            to += size;
+          }
+        }
+        h.chunks[0] = todo[0];
+        h.chunks[1] = todo[1];
+        chunks = marked_count;
+        c.copied += marked_count;
+      } else {
+        for (u32 word = 0; word < 2; ++word) {
+          for (uint64_t bits = todo[word]; bits; bits &= bits - 1) {
+            const u32 at = DeltaChunkOffset(word * 64 + u32(std::countr_zero(bits)));
+            __builtin_prefetch(bytes + at);
+            __builtin_prefetch(c.shadow + at);
+          }
+        }
+        for (u32 word = 0; word < 2; ++word)
+          for (uint64_t bits = todo[word]; bits; bits &= bits - 1)
+            compare(word * 64 + u32(std::countr_zero(bits)));
+        c.compared += marked_count;
+      }
+    } else {
+      const DeltaChunkList &list = narrow ? kDeltaReadChunks : kDeltaAllChunks;
+      for (u32 k = 0; k < list.count; ++k) {
+        const u32 i = list.index[k];
+        if (compare(i) && check && !(marked.w[i / 64] >> (i % 64) & 1)) {
+          // A change no mark named: the marks are off from here on (this draw keeps it, as every draw will). The
+          // verify mode, which checks every draw and so never uses them, keeps counting instead.
+          ++c.misses;
+          c.marks_off = !DeltasVerifyOn();
+          if (c.marks_off)
+            ds2::renut::g_setters_precise = false;  // sa2-nx (ds2_renut_setters_precise): with the marks
+          if (c.misses <= 32)
+            RGPU_WARN("Setter marks: device chunk +{} (0x{:X}) changed with no mark{} (ds2_renut_setter_marks)",
+                      DeltaChunkOffset(i), DeltaChunkOffset(i), c.marks_off ? "; the marks are off" : "");
+        }
+      }
+      c.compared += list.count;
+      c.checks += check;
+      // sa2-nx (2026-10-28, ds2_renut_setters_precise): the check compares float constant groups no dirty bit names
+      // with the render thread's (the shadow): 16 of the 128 at each check, in turn (all 8 KB at every 32nd draw was
+      // about 0.1 us a draw on the console), all of them in the verify mode. One that differs is taken by this draw,
+      // and the precise setters go off for the session (logged), as a chunk's miss turns the marks off.
+      if (check && precise) {
+        const u32 first = DeltasVerifyOn() ? 0 : c.const_check_next;
+        const u32 count = DeltasVerifyOn() ? 128 : 16;
+        c.const_check_next = (c.const_check_next + 16) & 127;
+        for (u32 k = 0; k < count; ++k) {
+          const u32 side = ((first + k) & 127) >> 6, g = (first + k) & 63;
+          uint64_t &dirty = side ? ps : vs;
+          const uint64_t bit = uint64_t(1) << (63 - g);
+          const u32 at = (side ? kDeltaPixelF : kDeltaVertexF) + g * kDeltaUnitBytes;
+          if ((dirty & bit) || !DeltaChunkDiffers(bytes + at, c.const_shadow + (at - kDeltaVertexF)))
+            continue;
+          dirty |= bit;
+          ++c.const_misses;
+          ds2::renut::g_setters_precise = DeltasVerifyOn();  // the verify mode keeps counting
+          if (c.const_misses <= 32)
+            RGPU_WARN("Setter marks: float constant group {} of the {} shader changed with no dirty bit{} "
+                      "(ds2_renut_setters_precise)",
+                      g, side ? "pixel" : "vertex", DeltasVerifyOn() ? "" : "; the precise setters are off");
+        }
+      }
     }
     for (const auto [dirty, base] : {std::pair{vs, kDeltaVertexF}, std::pair{ps, kDeltaPixelF}}) {
       ForEachGroupRun(dirty, [&](u32 first, u32 count) {
         const u32 group_bytes = count * kDeltaUnitBytes;
         std::memcpy(to, bytes + base + first * kDeltaUnitBytes, group_bytes);
         to += group_bytes;
+        // sa2-nx (ds2_renut_setters_precise): the render thread's constants, for the checks.
+        if (precise)
+          std::memcpy(c.const_shadow + (base - kDeltaVertexF) + first * kDeltaUnitBytes,
+                      bytes + base + first * kDeltaUnitBytes, group_bytes);
       });
     }
     h.vs = vs;
@@ -545,6 +855,9 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     capture->verify.assign(bytes, bytes + d3d::kDeviceSnapshotSize);
   else
     capture->verify.clear();
+#if defined(SA2_D3D_CENSUS_BUILD)
+  sa2::d3d::CensusDrawDone(device_va);
+#endif
   return capture;
 }
 
@@ -567,7 +880,8 @@ void ForgetSnapshotDeltas() {
 std::string SnapshotDeltaReport() {
   if (!DeltasOn())
     return {};
-  uint64_t deltas, rebases, bytes, chunks, groups, whole;
+  uint64_t deltas, rebases, bytes, chunks, groups, whole, compared, checks, misses, copied, const_misses;
+  bool marks_off, precise;
   {
     std::lock_guard lock(g_delta.mutex);
     whole = g_delta.whole;
@@ -577,7 +891,15 @@ std::string SnapshotDeltaReport() {
     bytes = g_delta.bytes;
     chunks = g_delta.chunks;
     groups = g_delta.groups;
+    compared = g_delta.compared;
+    checks = g_delta.checks;
+    misses = g_delta.misses;  // the session's
+    marks_off = g_delta.marks_off;
+    copied = g_delta.copied;              // sa2-nx (ds2_renut_marks_copy)
+    const_misses = g_delta.const_misses;  // sa2-nx (ds2_renut_setters_precise): the session's
+    precise = ds2::renut::g_setters_precise;
     g_delta.deltas = g_delta.rebases = g_delta.bytes = g_delta.chunks = g_delta.groups = 0;
+    g_delta.compared = g_delta.checks = g_delta.copied = 0;
   }
   const uint64_t draws = deltas + rebases;
   if (!draws)
@@ -589,6 +911,16 @@ std::string SnapshotDeltaReport() {
       "Begin*Vertices draws as whole copies",
       draws, double(bytes) / double(draws), d3d::kDeviceSnapshotSize, double(chunks) / per_delta,
       double(groups) / per_delta, rebases, whole);
+  if (SetterMarksOn()) {  // sa2-nx (2026-10-28)
+    line += fmt::format("; setter marks (ds2_renut_setter_marks): {:.1f} chunks compared and {:.1f} copied as "
+                        "marked (ds2_renut_marks_copy) a delta, {} checks, {} unmarked changes this session{}",
+                        double(compared) / per_delta, double(copied) / per_delta, checks, misses,
+                        marks_off ? " (the marks are off)" : "");
+    if (SettersPreciseOn())
+      line += fmt::format("; precise setters (ds2_renut_setters_precise) {}, {} float constant groups changed "
+                          "without a dirty bit this session",
+                          precise ? "on" : "off", const_misses);
+  }
   if (DeltasVerifyOn()) {
     line += fmt::format("; verify: {} draws checked, {} differ", g_delta_verified.exchange(0, std::memory_order_relaxed),
                         g_delta_differ.exchange(0, std::memory_order_relaxed));
@@ -600,9 +932,9 @@ void QueueDraw(u32 device_va, const DrawCall &call, u32 up_vertex_bytes, u32 up_
   FlushDeferredVertices(device_va);
   RunReadyCallbacks();
   // sa2-nx (2026-10-20, ds2_renut_snapshot_deltas): made and queued under the chain's lock.
-  std::unique_lock<std::mutex> chain;
+  ChainGuard chain;
   if (DeltasOn())
-    chain = std::unique_lock<std::mutex>(g_delta.mutex);
+    chain = ChainGuard(g_delta.mutex);
   DrawCapture *capture = DeltasOn() ? CaptureDelta(device_va, call) : Capture(device_va, call);
   if (!capture)
     return;
@@ -622,7 +954,7 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
   // device is made (every hook flushes its device's deferred draw first), so the render thread still applies the chain
   // in order. A draw that will not be queued (no scratch) stays a whole capture outside the chain, as before.
   if (DeltasOn() && DeferredChainOn() && scratch) {
-    std::unique_lock<std::mutex> chain(g_delta.mutex);
+    ChainGuard chain(g_delta.mutex);
     {
       std::lock_guard lock(g_deferred_mutex);
       auto it = g_deferred.find(device_va);
@@ -647,9 +979,9 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
   {
     // sa2-nx (ds2_renut_snapshot_deltas): a whole capture (queued later than made: outside the chain), whose dirty
     // constant groups ClearPending hands to the chain's next delta.
-    std::unique_lock<std::mutex> chain;
+    ChainGuard chain;
     if (DeltasOn())
-      chain = std::unique_lock<std::mutex>(g_delta.mutex);
+      chain = ChainGuard(g_delta.mutex);
     capture = Capture(device_va, call);
     if (DeltasOn())
       ++g_delta.whole;
@@ -673,9 +1005,9 @@ void FlushDeferredVertices(u32 device_va) {
     return;  // sa2-nx (2026-10-20): none waiting, no lock
   // sa2-nx (2026-10-20, ds2_renut_deferred_chain): a chain draw is queued under the chain's lock (taken before the
   // deferred map's, as QueueDeferredDraw takes them), so no draw of the chain is made or queued between.
-  std::unique_lock<std::mutex> chain;
+  ChainGuard chain;
   if (DeltasOn() && DeferredChainOn())
-    chain = std::unique_lock<std::mutex>(g_delta.mutex);
+    chain = ChainGuard(g_delta.mutex);
   DeferredDraw deferred;
   {
     std::lock_guard lock(g_deferred_mutex);

@@ -105,6 +105,36 @@ REXCVAR_DEFINE_BOOL(ds2_renut_lean_diagnostics, true, "DS2/Renderer",
                     "alignment census) are kept only while those lines are logged (log_level info or lower), and the "
                     "draw and stream dumps' checks are made once instead of a call per draw")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_lazy_resolve_mips, true, "DS2/Renderer",
+                    "Renut's renderer at a render scale above 1 (docked 1080p): a colour resolve leaves its "
+                    "destination's host mip levels to be made when a draw first samples it (or before anything else "
+                    "writes it), not at every resolve: the front buffer, which only the present reads (level 0, 1:1), "
+                    "and copies nothing samples no longer make them each frame (a draw and, on deko3d, a copy-engine "
+                    "copy with a full barrier each side, per resolve). The same levels where they are read. Off: at "
+                    "every resolve")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_clear_repeat, true, "DS2/Renderer",
+                    "Renut's renderer: a whole clear of a target that holds exactly that clear already (its last whole "
+                    "clear had the same values, and nothing has drawn into it or replaced its image since) is not sent "
+                    "to the GPU (SA2 clears its scene target whole twice at the start of each frame). The same pixels. "
+                    "Off: every clear sent")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_direct_resolve_mips, true, "DS2/Renderer",
+                    "Renut's renderer on deko3d at a render scale above 1 (docked 1080p): a resolve destination's host "
+                    "mip levels are drawn straight into the texture's own levels (render/textures.cpp "
+                    "UpdateResolveMipsDirectLocked) instead of into a scratch target copied into the level on the copy "
+                    "engine, which plume fences with a full barrier on each side. The same texels. Off: the scratch "
+                    "target and the copy")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(ds2_renut_colour_handover, true, "DS2/Renderer",
+                    "Renut's renderer: a resolve of a whole single-sampled colour target into a destination of its "
+                    "size is not copied: the destination's content stays in the target's image (the present and the "
+                    "draws that sample it read it there), and at the target's next whole clear the destinations take "
+                    "that image and the target gets their previous one (render/draw.cpp, \"Colour hand-over\"). The "
+                    "frame's two copies of the scene (the front buffer and its copy) and the 512x512 passes' copies "
+                    "are swaps of images. A draw into the target before then, or a sample that needs the copy's own "
+                    "texture, copies it as before. The same pixels. Off: every resolve copied")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DECLARE(bool, ds2_renut_neon_compare);  // sa2-nx (2026-10-20): backend/queued.cpp
 
@@ -124,6 +154,27 @@ bool DiagCountsOn() {
     return logger && logger->should_log(spdlog::level::info);
   }();
   return on;
+}
+
+// sa2-nx (2026-10-28): ds2_renut_lazy_resolve_mips, once.
+bool LazyResolveMipsOn() {
+  static const bool on = REXCVAR_GET(ds2_renut_lazy_resolve_mips);
+  return on;
+}
+// sa2-nx (2026-10-28): ds2_renut_colour_handover, once.
+bool ColourHandOverOn() {
+  static const bool on = REXCVAR_GET(ds2_renut_colour_handover);
+  return on;
+}
+// sa2-nx (2026-10-28): ds2_renut_clear_repeat, once, and its count (render thread), logged every 3,000.
+bool ClearRepeatOn() {
+  static const bool on = REXCVAR_GET(ds2_renut_clear_repeat);
+  return on;
+}
+void CountRepeatedClear() {
+  static uint64_t count = 0;
+  if (++count % 3000 == 1)
+    RGPU_INFO("[renut] clears of a target that held that clear already, not sent: {} (ds2_renut_clear_repeat)", count);
 }
 
 // banjo_renut_diag_blend_skip_exclude: the pixel shader's hash is in the list (read once).
@@ -1198,6 +1249,10 @@ uint32_t ShaderProfileLabel(const Targets &t, const ShaderRecord *ps, const Pipe
 bool BindTargets(const Targets &t) {
   if (t.depth && t.depth->handed)
     DepthHandOverBeforeBindLocked(t.depth, nullptr, 0);  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
+  for (uint32_t i = 0; i < t.color_count; ++i) {  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
+    if (t.colors[i] && t.colors[i]->handed)
+      ColourHandOverBeforeBindLocked(t.colors[i], false);
+  }
   // banjo-nx: with banjo_renut_diag_gpu_shaders the draw marks its own label (ShaderProfileLabel), the pass's name
   // in it, which saves a timestamp a draw.
   if (!banjo::renut_gpu::DiagGpuShadersOn() && gpu_profile::Timed())
@@ -5041,14 +5096,21 @@ namespace {
 void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, const float color[4],
                   float depth, u32 stencil) {
   if (banjo::renut_gpu::ResolveTraceOn()) {
-    RGPU_INFO("[trace] clear {:X} rect ({},{})-({},{}) of {}x{}", flags, rect.left, rect.top, rect.right, rect.bottom,
-              t.width, t.height);
+    RGPU_INFO("[trace] clear {:X} rect ({},{})-({},{}) of {}x{}, colour {} {} {} {}, depth {}, stencil {}", flags,
+              rect.left, rect.top, rect.right, rect.bottom, t.width, t.height, color[0], color[1], color[2], color[3],
+              depth, stencil);  // sa2-nx (2026-10-28): the values too
   }
   if (rect.right <= rect.left || rect.bottom <= rect.top)
     return;
   // banjo-nx (2026-10-19, banjo_deko3d_depth_handover): before the target is bound for the clear.
   if (t.depth && t.depth->handed)
     DepthHandOverBeforeBindLocked(t.depth, &rect, flags);
+  // sa2-nx (2026-10-28, ds2_renut_colour_handover): a clear of a target's whole colour: its destinations take the image.
+  for (uint32_t i = 0; i < t.color_count; ++i) {
+    if (t.colors[i] && t.colors[i]->handed && (flags & (1u << i)) && rect.left <= 0 && rect.top <= 0 &&
+        rect.right >= int32_t(t.colors[i]->width) && rect.bottom >= int32_t(t.colors[i]->height))
+      ColourHandOverBeforeBindLocked(t.colors[i], true);
+  }
   if (t.depth && (flags & 0x20))
     t.depth->stencil_used = true;
   if (!BindTargets(t))
@@ -5060,11 +5122,30 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
   static std::vector<HostSurface *> aliases;
   static std::vector<HostSurface *> found;
   aliases.clear();
+  // sa2-nx (2026-10-28, ds2_renut_clear_repeat): a whole clear of a target that holds exactly that clear already (its
+  // last whole clear had the same values, and neither a write nor a new image since: writes and generation as that
+  // clear left them) is not sent; everything else about it is as before. SA2 clears its scene target whole twice at
+  // the start of a frame. Draws and clears are what count a target's writes; a hand-over or a rebuild changes its
+  // generation.
+  const bool repeat_on = ClearRepeatOn();
+  const auto whole = [&](const HostSurface *s) {
+    return rect.left <= 0 && rect.top <= 0 && rect.right >= int32_t(s->width) && rect.bottom >= int32_t(s->height);
+  };
   for (uint32_t i = 0; i < t.color_count; ++i) {
     if (!(flags & (1u << i)))
       continue;
-    ++t.colors[i]->writes;  // banjo-nx (banjo_renut_resolve_skip)
-    cmd->clearColor(i, clear_color, &host_rect, 1);
+    HostSurface *c = t.colors[i];
+    const bool repeat = repeat_on && whole(c) && c->clear_known && c->clear_generation == c->generation &&
+                        c->clear_writes == c->writes && std::memcmp(c->clear_color, color, sizeof(c->clear_color)) == 0;
+    ++c->writes;  // banjo-nx (banjo_renut_resolve_skip)
+    if (repeat)
+      CountRepeatedClear();
+    else
+      cmd->clearColor(i, clear_color, &host_rect, 1);
+    c->clear_known = whole(c);
+    c->clear_generation = c->generation;
+    c->clear_writes = c->writes;
+    std::memcpy(c->clear_color, color, sizeof(c->clear_color));
     ColorAliasesLocked(t.colors[i], found);
     for (HostSurface *alias : found) {
       if (std::find(aliases.begin(), aliases.end(), alias) == aliases.end() &&
@@ -5073,9 +5154,35 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
     }
   }
   if (t.depth && (flags & 0x30)) {
-    ++t.depth->writes;  // banjo-nx (banjo_renut_resolve_skip)
-    cmd->clearDepthStencil((flags & 0x10) != 0, (flags & 0x20) != 0, depth, stencil & 0xFF,
-                           &host_rect, 1);
+    HostSurface *d = t.depth;
+    const bool zc = (flags & 0x10) != 0, sc = (flags & 0x20) != 0;
+    const bool same = whole(d) && d->clear_generation == d->generation && d->clear_writes == d->writes;
+    const bool repeat = repeat_on && same &&
+                        (!zc || (d->clear_depth_known && std::memcmp(&d->clear_depth, &depth, sizeof(depth)) == 0)) &&
+                        (!sc || (d->clear_stencil_known && d->clear_stencil == (stencil & 0xFF)));
+    ++d->writes;  // banjo-nx (banjo_renut_resolve_skip)
+    if (repeat)
+      CountRepeatedClear();
+    else
+      cmd->clearDepthStencil(zc, sc, depth, stencil & 0xFF, &host_rect, 1);
+    // sa2-nx (ds2_renut_clear_repeat): what the target holds now; a part it did not clear keeps what was known of it
+    // only while the image and its writes are the ones that knowledge was of.
+    if (!whole(d)) {
+      d->clear_depth_known = d->clear_stencil_known = false;
+    } else {
+      if (!same)
+        d->clear_depth_known = d->clear_stencil_known = false;
+      if (zc) {
+        d->clear_depth_known = true;
+        d->clear_depth = depth;
+      }
+      if (sc) {
+        d->clear_stencil_known = true;
+        d->clear_stencil = stencil & 0xFF;
+      }
+    }
+    d->clear_generation = d->generation;
+    d->clear_writes = d->writes;
   }
   for (HostSurface *alias : aliases) {
     Targets a;
@@ -5090,6 +5197,7 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
       continue;
     const plume::RenderRect alias_host = ScaleRect(alias_rect, a.scale);
     ++alias->writes;  // banjo-nx (banjo_renut_resolve_skip)
+    alias->clear_known = false;  // sa2-nx (ds2_renut_clear_repeat): not followed through aliases
     cmd->clearColor(0, clear_color, &alias_host, 1);
   }
 }
@@ -5502,6 +5610,23 @@ uint32_t DepthHandOverSlotLocked(HostTexture &d, const plume::RenderComponentMap
   return slot;
 }
 
+// sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips): the levels the resolves since the last ones left, from level 0 as
+// it is now: the same as at those resolves, since only resolves (each widening the region) wrote level 0 since; an
+// upload or words copy into it makes them first. The union of the regions is made: outside the resolves' rectangles
+// level 0 is unchanged since the levels there were last made, so those come out as they were. Every draw that samples
+// the texture binds it first (BindTextureLocked); the present reads the front buffer's level 0 only (1:1 scan-out).
+void FlushResolveMipsLocked(HostTexture &t) {
+  if (!t.mips_pending)
+    return;
+  t.mips_pending = false;
+  UpdateResolveMipsLocked(&t, t.mips_rect);
+  // The draw path binds its own targets, layout, pipeline and viewport again.
+  g_bound.framebuffer = nullptr;
+  g_bound.pipeline = nullptr;
+  g_bound.layout = false;
+  g_bound.viewport_set = false;
+}
+
 void DepthHandOverForgetLocked(HostTexture &d) {
   UnhandLocked(d);
   d.held_current = false;
@@ -5527,6 +5652,294 @@ void DepthHandOverBeforeRetireLocked(HostSurface *surface) {
       banjo::renut_gpu::CountHandOver(5);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Colour hand-over (sa2-nx, 2026-10-28, ds2_renut_colour_handover; after banjo-nx's depth hand-over above)
+// ---------------------------------------------------------------------------
+// A resolve of a whole single-sampled colour target into a 2D destination of its size, format and scale (one level,
+// at (0, 0)) is not copied: the destination's content stays in the target's image (colour_from, with the target's
+// generation and writes then). The present scans the front buffer out of that image (FrontBufferImageLocked), and a
+// draw that samples the destination reads it through a view with the destination's component mapping. Before the
+// target is bound for draws (or goes, or is a target of a draw that samples the destination, or the destination has
+// host levels a sample may read), the copy is made after all (ColourMaterialiseLocked), from the image still
+// unchanged, as the resolve would have made it. A clear of the target's whole colour instead hands the image to every
+// destination still holding it (one image object they share: colour_held, colour_current) and gives the target the
+// image those destinations held before (when none of them holds content in it any more) or a new one; the clear then
+// fills that. SA2 resolves its scene twice at the end of each frame (the front buffer and a copy) and clears the
+// target whole at the start of the next, and its 512x512 passes resolve twice each and clear whole before the next:
+// the copies become swaps of images, and nothing is copied that nothing reads.
+
+std::vector<HostTexture *> g_colour_handed;  // destinations whose content is a target's current image
+
+void ColourUnhandLocked(HostTexture &d) {
+  if (!d.colour_from)
+    return;
+  if (d.colour_from->handed)
+    --d.colour_from->handed;
+  d.colour_from = nullptr;
+  std::erase(g_colour_handed, &d);
+}
+
+// The destination's content is no longer the held image (the image object stays, to be swapped in later).
+void ColourDropHeldLocked(HostTexture &d) {
+  if (!d.colour_current)
+    return;
+  d.colour_current = false;
+  if (d.colour_held && d.colour_held->current_holders)
+    --d.colour_held->current_holders;
+}
+
+// Lets go of the held image object (retired with its last holder).
+void ColourReleaseHeldLocked(HostTexture &d) {
+  ColourDropHeldLocked(d);
+  if (d.colour_held && d.colour_held.use_count() == 1)
+    RetireColourImageLocked(*d.colour_held);
+  d.colour_held.reset();
+}
+
+// The resolve's copy as ResolveStateLocked makes it for a single-sampled source, 'rect' of the source (host pixels) to
+// (host_x, host_y) of level 0: drawn (deko3d) or copied, then the destination's host levels.
+void CopyColourResolveLocked(HostSurface *surface, HostTexture *dest, const plume::RenderRect &rect, uint32_t host_x,
+                             uint32_t host_y, uint32_t slice, uint32_t z) {
+  plume::RenderCommandList *cmd = State().command_list;
+  g_bound.framebuffer = nullptr;
+  if (IsDeko3D() && banjo::renut_gpu::DrawResolvesOn() && slice == 0 && z == 0 &&
+      DrawResolveCopy(surface, dest, rect, host_x, host_y)) {
+    // banjo-nx (2026-10-18): drawn, not copied (deko3d).
+  } else {
+    TransitionSurfaceLocked(surface, plume::RenderTextureLayout::COPY_SOURCE);
+    TransitionTextureLocked(dest, plume::RenderTextureLayout::COPY_DEST);
+    const plume::RenderBox box(rect.left, rect.top, rect.right, rect.bottom);
+    cmd->copyTextureRegion(plume::RenderTextureCopyLocation::Subresource(dest->texture.get(), 0, slice),
+                           plume::RenderTextureCopyLocation::Subresource(surface->texture.get()), host_x, host_y, z,
+                           &box);
+  }
+  TransitionTextureLocked(dest, plume::RenderTextureLayout::SHADER_READ);
+  if (!dest->extra_levels)
+    return;
+  const plume::RenderRect dest_rect(int32_t(host_x), int32_t(host_y), int32_t(host_x) + (rect.right - rect.left),
+                                    int32_t(host_y) + (rect.bottom - rect.top));
+  if (LazyResolveMipsOn()) {
+    // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips): made where they are read (FlushResolveMipsLocked). The
+    // texture memos and the chain's reused texture words skip BindTextureLocked while g_texture_epoch holds: the first
+    // pending region bumps it, so the next draw that samples the texture binds it (any bind since makes the levels,
+    // so one still pending has had none).
+    const plume::RenderRect &p = dest->mips_rect;
+    if (dest->mips_pending) {
+      dest->mips_rect = plume::RenderRect(std::min(p.left, dest_rect.left), std::min(p.top, dest_rect.top),
+                                          std::max(p.right, dest_rect.right), std::max(p.bottom, dest_rect.bottom));
+    } else {
+      dest->mips_rect = dest_rect;
+      dest->mips_pending = true;
+      ++g_texture_epoch;
+    }
+  } else {
+    UpdateResolveMipsLocked(dest, dest_rect);
+    // The draw path binds its own layout, pipeline and viewport again.
+    g_bound.pipeline = nullptr;
+    g_bound.layout = false;
+    g_bound.viewport_set = false;
+  }
+}
+
+// The whole source as the hand-over resolve read it, in host pixels of the destination's level 0.
+plume::RenderRect WholeHostRect(const HostSurface &s, const HostTexture &d) {
+  plume::RenderRect rect = ScaleRect(plume::RenderRect(0, 0, int32_t(s.width), int32_t(s.height)), s.scale);
+  rect.right = std::min(rect.right, rect.left + int32_t(d.alloc_width));
+  rect.bottom = std::min(rect.bottom, rect.top + int32_t(d.alloc_height));
+  return rect;
+}
+
+// The copy left out, into the destination's own texture, from where its content is (the target's image, unchanged,
+// or the held image).
+bool ColourMaterialiseLocked(HostTexture &d) {
+  ++g_texture_epoch;
+  if (HostSurface *source = d.colour_from) {
+    const bool same = source->texture && source->generation == d.colour_generation &&
+                      source->writes == d.colour_writes;
+    ColourUnhandLocked(d);
+    if (!same) {
+      banjo::renut_gpu::CountHandOver(5);  // lost: the target changed without a bind (none expected)
+      return false;
+    }
+    CopyColourResolveLocked(source, &d, WholeHostRect(*source, d), 0, 0, 0, 0);
+    return true;
+  }
+  if (!d.colour_held || !d.colour_current)
+    return false;
+  // The held image as the target it was taken from, for the copy.
+  DepthImage &held = *d.colour_held;
+  HostSurface image;
+  image.width = d.width;
+  image.height = d.height;
+  image.scale = d.scale;
+  image.depth = false;
+  image.format = held.format;
+  image.samples = held.samples;
+  image.format_word = held.format_word;
+  SwapDepthImageLocked(image, held);
+  CopyColourResolveLocked(&image, &d, WholeHostRect(image, d), 0, 0, 0, 0);
+  SwapDepthImageLocked(image, held);
+  ColourDropHeldLocked(d);
+  return true;
+}
+
+// A resolve into 'd' left in the target's image when it can be (true). Otherwise (false: the caller copies) a
+// destination still holding other content gets it first when the resolve does not cover it.
+bool ColourHandOverResolveLocked(HostSurface *s, HostTexture *d, const ClearRect &src, i32 dest_x, i32 dest_y,
+                                 u32 slice, u32 z) {
+  const bool whole = src.x1 == 0 && src.y1 == 0 && src.x2 == int32_t(s->width) && src.y2 == int32_t(s->height) &&
+                     dest_x == 0 && dest_y == 0;
+  const bool can = ColourHandOverOn() && whole && slice == 0 && z == 0 && s->texture && !s->depth &&
+                   s->samples == plume::RenderSampleCount::COUNT_1 && d->texture && d->width == s->width &&
+                   d->height == s->height && d->scale == s->scale && d->alloc_width == s->scale.Size(s->width) &&
+                   d->alloc_height == s->scale.Size(s->height) && d->host_format == s->format &&
+                   d->view_desc.format == s->format && d->dimension == TextureDimension::Tex2D && !d->stacked &&
+                   d->mip_levels == 1 + d->extra_levels && !d->words;  // one guest level (and its host levels)
+  if (!can) {
+    if (d->colour_from || d->colour_current) {
+      const bool covers = dest_x == 0 && dest_y == 0 && slice == 0 && z == 0 &&
+                          src.x2 - src.x1 >= int32_t(d->width) && src.y2 - src.y1 >= int32_t(d->height);
+      if (covers) {
+        ColourUnhandLocked(*d);
+        ColourDropHeldLocked(*d);
+      } else {
+        ColourMaterialiseLocked(*d);
+      }
+    }
+    return false;
+  }
+  ColourUnhandLocked(*d);  // what it held is overwritten
+  ColourDropHeldLocked(*d);
+  d->mips_pending = false;  // its own texture's levels are of content it no longer has; the copy, if made, makes them
+  d->colour_from = s;
+  d->colour_generation = s->generation;
+  d->colour_writes = s->writes;
+  ++s->handed;
+  g_colour_handed.push_back(d);
+  ++g_texture_epoch;
+  banjo::renut_gpu::CountHandOver(0);
+  return true;
+}
+
+void ColourHandOverBeforeBindLocked(HostSurface *surface, bool take) {
+  if (!surface || !surface->handed)
+    return;
+  std::vector<HostTexture *> holders;
+  for (HostTexture *d : g_colour_handed)
+    if (d->colour_from == surface)
+      holders.push_back(d);
+  if (take) {
+    // The destinations whose content is the image as it is: they take it. The image swapped in for the target: one
+    // they held before that none holds content in now, else a new one.
+    std::vector<HostTexture *> current;
+    for (HostTexture *d : holders)
+      if (surface->texture && surface->generation == d->colour_generation && surface->writes == d->colour_writes)
+        current.push_back(d);
+    std::shared_ptr<DepthImage> image;
+    const uint32_t w = surface->scale.Size(surface->width), h = surface->scale.Size(surface->height);
+    for (HostTexture *d : current) {
+      const std::shared_ptr<DepthImage> &x = d->colour_held;
+      if (x && x->current_holders == 0 && x->texture && x->host_width == w && x->host_height == h &&
+          x->format == surface->format && x->samples == surface->samples) {
+        image = x;
+        break;
+      }
+    }
+    if (!image && !current.empty()) {
+      image = std::make_shared<DepthImage>();
+      if (!MakeColourImageLocked(*surface, *image))
+        image.reset();
+    }
+    if (image) {
+      SwapDepthImageLocked(*surface, *image);
+      for (HostTexture *d : current) {
+        ColourUnhandLocked(*d);
+        ColourDropHeldLocked(*d);
+        if (d->colour_held != image) {
+          ColourReleaseHeldLocked(*d);
+          d->colour_held = image;
+        }
+        d->colour_current = true;
+        ++image->current_holders;
+      }
+      ++g_texture_epoch;
+      banjo::renut_gpu::CountHandOver(2);
+    }
+  }
+  // Any other (or all, for a bind for draws): copied now, from the image still unchanged.
+  for (HostTexture *d : holders)
+    if (d->colour_from == surface)
+      ColourMaterialiseLocked(*d);
+}
+
+void ColourHandOverBeforeRetireLocked(HostSurface *surface) {
+  if (!surface || !surface->handed)
+    return;
+  const bool list = Video::EnsureCommandListLocked();
+  std::vector<HostTexture *> holders;
+  for (HostTexture *d : g_colour_handed)
+    if (d->colour_from == surface)
+      holders.push_back(d);
+  for (HostTexture *d : holders) {
+    if (list) {
+      ColourMaterialiseLocked(*d);
+    } else {
+      ColourUnhandLocked(*d);
+      banjo::renut_gpu::CountHandOver(5);
+    }
+  }
+}
+
+void ColourHandOverBeforeReadLocked(HostTexture &d) {
+  if (!d.colour_from && !d.colour_current)
+    return;
+  // Its host levels are made from its own texture's level 0; a draw into the target cannot sample its image.
+  bool copy = d.extra_levels != 0;
+  if (d.colour_from && g_handover_targets) {
+    for (uint32_t i = 0; i < g_handover_targets->color_count; ++i)
+      copy |= g_handover_targets->colors[i] == d.colour_from;
+  }
+  if (d.colour_from && (!d.colour_from->texture || d.colour_from->generation != d.colour_generation ||
+                        d.colour_from->writes != d.colour_writes))
+    copy = true;  // counted as lost by the materialise
+  if (copy)
+    ColourMaterialiseLocked(d);
+}
+
+uint32_t ColourHandOverSlotLocked(HostTexture &d, const plume::RenderComponentMapping &mapping, BindEffects *fx) {
+  if (HostSurface *source = d.colour_from) {
+    const uint32_t slot =
+        DepthImageViewSlotLocked(source->texture.get(), source->format, source->handover_views, mapping);
+    if (slot == kInvalidDescriptor) {
+      ColourMaterialiseLocked(d);
+      return UINT32_MAX;
+    }
+    TransitionSurfaceLocked(source, plume::RenderTextureLayout::SHADER_READ);
+    if (fx)
+      fx->handover_surface = source;
+    banjo::renut_gpu::CountHandOver(1);
+    return slot;
+  }
+  if (!d.colour_held || !d.colour_current)
+    return UINT32_MAX;
+  DepthImage &image = *d.colour_held;
+  const uint32_t slot = DepthImageViewSlotLocked(image.texture.get(), image.format, image.views, mapping);
+  if (slot == kInvalidDescriptor) {
+    ColourMaterialiseLocked(d);
+    return UINT32_MAX;
+  }
+  TransitionDepthImageLocked(image, plume::RenderTextureLayout::SHADER_READ);
+  if (fx)
+    fx->handover_image = &image;
+  banjo::renut_gpu::CountHandOver(1);
+  return slot;
+}
+
+void ColourHandOverForgetLocked(HostTexture &d) {
+  ColourUnhandLocked(d);
+  ColourReleaseHeldLocked(d);
 }
 
 // banjo-nx (2026-10-19, banjo_renut_resolve_skip): what a resolve wrote into its destination: the source surface (its
@@ -5665,50 +6078,62 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
                                           int32_t(host_x) + (rect.right - rect.left),
                                           int32_t(host_y) + (rect.bottom - rect.top));
         const bool multisampled = surface->samples != plume::RenderSampleCount::COUNT_1;
-        if (multisampled && dest->extra_levels && IsVulkan()) {
-          // A destination with host levels takes it through a single-level
-          // target (ResolveStagingLocked): plume's Vulkan resolve writes every
-          // level of its destination (D3D12's writes level 0 only, and
-          // resolves in place below). Without one (device lost) nothing of
-          // the resolve lands.
-          if (HostTexture *staging = ResolveStagingLocked(dest)) {
-            TransitionSurfaceLocked(surface, plume::RenderTextureLayout::RESOLVE_SOURCE);
-            TransitionTextureLocked(staging, plume::RenderTextureLayout::RESOLVE_DEST);
-            cmd->resolveTextureRegion(staging->texture.get(), host_x, host_y,
-                                      surface->texture.get(), &rect);
-            TransitionTextureLocked(staging, plume::RenderTextureLayout::COPY_SOURCE);
-            TransitionTextureLocked(dest, plume::RenderTextureLayout::COPY_DEST);
-            const plume::RenderBox box(dest_rect.left, dest_rect.top, dest_rect.right,
-                                       dest_rect.bottom);
-            cmd->copyTextureRegion(
-                plume::RenderTextureCopyLocation::Subresource(dest->texture.get(), 0, slice),
-                plume::RenderTextureCopyLocation::Subresource(staging->texture.get()), host_x,
-                host_y, z, &box);
-          }
-        } else if (multisampled) {
-          TransitionSurfaceLocked(surface, plume::RenderTextureLayout::RESOLVE_SOURCE);
-          TransitionTextureLocked(dest, plume::RenderTextureLayout::RESOLVE_DEST);
-          cmd->resolveTextureRegion(dest->texture.get(), host_x, host_y, surface->texture.get(),
-                                    &rect);
-        } else if (IsDeko3D() && banjo::renut_gpu::DrawResolvesOn() && slice == 0 && z == 0 &&
-                   DrawResolveCopy(surface, dest, rect, host_x, host_y)) {
-          // banjo-nx (2026-10-18): drawn, not copied (deko3d).
+        // sa2-nx (2026-10-28, ds2_renut_colour_handover): left in the target's image, or (single-sampled)
+        // copied as before (CopyColourResolveLocked: drawn or copied, then the host levels).
+        if (ColourHandOverResolveLocked(surface, dest, src, dest_x, dest_y, slice, z)) {
+          // banjo::renut_gpu::CountHandOver(0) counted it
+        } else if (!multisampled) {
+          CopyColourResolveLocked(surface, dest, rect, host_x, host_y, slice, z);
         } else {
-          TransitionSurfaceLocked(surface, plume::RenderTextureLayout::COPY_SOURCE);
-          TransitionTextureLocked(dest, plume::RenderTextureLayout::COPY_DEST);
-          const plume::RenderBox box(rect.left, rect.top, rect.right, rect.bottom);
-          cmd->copyTextureRegion(
-              plume::RenderTextureCopyLocation::Subresource(dest->texture.get(), 0, slice),
-              plume::RenderTextureCopyLocation::Subresource(surface->texture.get()), host_x,
-              host_y, z, &box);
-        }
-        TransitionTextureLocked(dest, plume::RenderTextureLayout::SHADER_READ);
-        if (dest->extra_levels) {
-          UpdateResolveMipsLocked(dest, dest_rect);
-          // The draw path binds its own layout, pipeline and viewport again.
-          g_bound.pipeline = nullptr;
-          g_bound.layout = false;
-          g_bound.viewport_set = false;
+          if (dest->extra_levels && IsVulkan()) {
+            // A destination with host levels takes it through a single-level
+            // target (ResolveStagingLocked): plume's Vulkan resolve writes every
+            // level of its destination (D3D12's writes level 0 only, and
+            // resolves in place below). Without one (device lost) nothing of
+            // the resolve lands.
+            if (HostTexture *staging = ResolveStagingLocked(dest)) {
+              TransitionSurfaceLocked(surface, plume::RenderTextureLayout::RESOLVE_SOURCE);
+              TransitionTextureLocked(staging, plume::RenderTextureLayout::RESOLVE_DEST);
+              cmd->resolveTextureRegion(staging->texture.get(), host_x, host_y,
+                                        surface->texture.get(), &rect);
+              TransitionTextureLocked(staging, plume::RenderTextureLayout::COPY_SOURCE);
+              TransitionTextureLocked(dest, plume::RenderTextureLayout::COPY_DEST);
+              const plume::RenderBox box(dest_rect.left, dest_rect.top, dest_rect.right,
+                                         dest_rect.bottom);
+              cmd->copyTextureRegion(
+                  plume::RenderTextureCopyLocation::Subresource(dest->texture.get(), 0, slice),
+                  plume::RenderTextureCopyLocation::Subresource(staging->texture.get()), host_x,
+                  host_y, z, &box);
+            }
+          } else {
+            TransitionSurfaceLocked(surface, plume::RenderTextureLayout::RESOLVE_SOURCE);
+            TransitionTextureLocked(dest, plume::RenderTextureLayout::RESOLVE_DEST);
+            cmd->resolveTextureRegion(dest->texture.get(), host_x, host_y, surface->texture.get(),
+                                      &rect);
+          }
+          TransitionTextureLocked(dest, plume::RenderTextureLayout::SHADER_READ);
+          if (dest->extra_levels && LazyResolveMipsOn()) {
+            // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips): made where they are read (FlushResolveMipsLocked). The
+            // texture memos and the chain's reused texture words skip BindTextureLocked while g_texture_epoch holds: the
+            // first pending region bumps it, so the next draw that samples the texture binds it (any bind since makes
+            // the levels, so one still pending has had none).
+            const plume::RenderRect &p = dest->mips_rect;
+            if (dest->mips_pending) {
+              dest->mips_rect = plume::RenderRect(std::min(p.left, dest_rect.left), std::min(p.top, dest_rect.top),
+                                                  std::max(p.right, dest_rect.right),
+                                                  std::max(p.bottom, dest_rect.bottom));
+            } else {
+              dest->mips_rect = dest_rect;
+              dest->mips_pending = true;
+              ++g_texture_epoch;
+            }
+          } else if (dest->extra_levels) {
+            UpdateResolveMipsLocked(dest, dest_rect);
+            // The draw path binds its own layout, pipeline and viewport again.
+            g_bound.pipeline = nullptr;
+            g_bound.layout = false;
+            g_bound.viewport_set = false;
+          }
         }
       }
     }
@@ -5848,6 +6273,35 @@ PresentImage FrontBufferImageLocked(u32 texture_va) {
   image.height = texture->alloc_height;
   image.source_width = texture->scale.Size(texture->width);
   image.source_height = texture->scale.Size(texture->height);
+  // sa2-nx (2026-10-28, ds2_renut_colour_handover): its content where it is: the target's image (unchanged since the
+  // resolve) or the image it took, through a view with its own view's mapping. Its level 0, 1:1, as from its own.
+  HostTexture &t = *texture;
+  if (HostSurface *source = t.colour_from) {
+    if (source->texture && source->generation == t.colour_generation && source->writes == t.colour_writes) {
+      const uint32_t slot = DepthImageViewSlotLocked(source->texture.get(), source->format, source->handover_views,
+                                                     t.view_desc.componentMapping);
+      if (slot != kInvalidDescriptor) {
+        image.texture = source->texture.get();
+        image.layout = &source->layout;
+        image.descriptor = slot;
+        return image;
+      }
+    }
+    if (Video::EnsureCommandListLocked())
+      ColourMaterialiseLocked(t);
+  } else if (t.colour_current && t.colour_held && t.colour_held->texture) {
+    DepthImage &held = *t.colour_held;
+    const uint32_t slot =
+        DepthImageViewSlotLocked(held.texture.get(), held.format, held.views, t.view_desc.componentMapping);
+    if (slot != kInvalidDescriptor) {
+      image.texture = held.texture.get();
+      image.layout = &held.layout;
+      image.descriptor = slot;
+      return image;
+    }
+    if (Video::EnsureCommandListLocked())
+      ColourMaterialiseLocked(t);
+  }
   return image;
 }
 

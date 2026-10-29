@@ -46,6 +46,16 @@ REXCVAR_DEFINE_INT32(banjo_display_phase_us, 0, "Banjo/Enhancements",
                      "banjo_display_sync with banjo_display_phase_auto off: the release this long after the refresh "
                      "(microseconds)")
     .range(0, 16000);
+// sa2-nx (2026-10-28, the user: "I want double buffer as an option in the toml so please fix it"): display_sync.h.
+REXCVAR_DEFINE_BOOL(ds2_renut_queue_drain, true, "DS2/Renderer",
+                    "With ds2_renut_double_buffer (two swapchain images): when every new image misses its refresh for "
+                    "a second (the display queue stuck one image deep: each image waits for the one the display gives "
+                    "back at that same refresh), the game's next frame is released one refresh later, once; the queue "
+                    "empties and every image after it is shown a refresh sooner (about 17 ms less input lag). Again at "
+                    "the earliest 5 s later, doubled up to 5 minutes while the queue keeps filling again soon after. "
+                    "Also keeps late input from pushing the frames back into it (1 ms more margin a late image)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DECLARE(bool, ds2_renut_double_buffer);  // gpu/backend/video.cpp
 
 #if REX_PLATFORM_SWITCH
 // banjo-nx (2026-10-20): libnx's default window (default_window.o: __nx_win_init, __nx_win_exit, nwindowGetDefault)
@@ -158,6 +168,51 @@ uint64_t g_refreshes_with_image = 0;
 // Diagnostics (2026-10-19, emulator runs 65 and 67 stalled with the display's refresh followed): the slowest fence test
 // and the longest release wait asked for since the last report.
 std::atomic<uint64_t> g_fence_test_max_ns{0}, g_release_wait_max_ns{0}, g_release_clamped{0};
+
+// sa2-nx (2026-10-28, ds2_renut_queue_drain): the hold the next release takes (TakeHold), the late input's margin, and
+// the display thread's count of new images in a row not finished at their refresh, the last drain and the least time
+// to the next one; the report's late images and the drains so far.
+std::atomic<bool> g_hold{false};
+std::atomic<uint32_t> g_guard_us{0};
+constexpr uint32_t kDrainAfter = 60;  // a second of new images all late
+constexpr uint64_t kDrainGapNs = 5'000'000'000ull, kDrainGapMaxNs = 300'000'000'000ull;
+constexpr uint32_t kGuardStepUs = 1000, kGuardBackUs = 250, kGuardGood = 180, kGuardMaxUs = 8000;
+uint64_t g_presented_at_vsync = 0;
+uint32_t g_late_run = 0, g_guard_good = 0;
+uint64_t g_last_drain = 0, g_drain_gap = kDrainGapNs;
+uint64_t g_late_images = 0, g_drains = 0;
+
+// At a refresh, the newest image: 1 finished, 0 not (shown a refresh late), -1 no new image since the last refresh or
+// not known. Double buffering only (with three images a late image does not hold the next one back).
+void QueueDrainAtRefresh(int ready, uint64_t now) {
+  static const bool on = REXCVAR_GET(ds2_renut_queue_drain) && REXCVAR_GET(ds2_renut_double_buffer);
+  if (!on || ready < 0)
+    return;
+  if (ready == 0) {
+    ++g_late_images;
+    g_guard_good = 0;
+    g_guard_us.store(std::min(g_guard_us.load(std::memory_order_relaxed) + kGuardStepUs, kGuardMaxUs),
+                     std::memory_order_relaxed);
+    // A second of new images all late is the queue one image deep (one late image fills it, and with two images
+    // nothing empties it while the game keeps up): the next release a refresh later. A queue that fills again within
+    // twice the gap is real lateness, which a drain does not help: the gap doubles; else it starts again at 5 s.
+    if (++g_late_run >= kDrainAfter && (!g_last_drain || now - g_last_drain >= g_drain_gap)) {
+      g_drain_gap = g_last_drain && now - g_last_drain < 2 * g_drain_gap ? std::min(g_drain_gap * 2, kDrainGapMaxNs)
+                                                                         : kDrainGapNs;
+      g_last_drain = now;
+      g_hold.store(true, std::memory_order_release);
+      ++g_drains;
+      g_late_run = 0;
+    }
+    return;
+  }
+  g_late_run = 0;
+  if (++g_guard_good >= kGuardGood) {
+    g_guard_good = 0;
+    const uint32_t guard = g_guard_us.load(std::memory_order_relaxed);
+    g_guard_us.store(guard > kGuardBackUs ? guard - kGuardBackUs : 0, std::memory_order_relaxed);
+  }
+}
 
 // The phase (the display thread's).
 uint32_t g_floor[kFloorFrames];
@@ -314,6 +369,13 @@ void Run() {
     last = now;
     g_period.store(uint64_t(period), std::memory_order_relaxed);
     g_last_vsync.store(now, std::memory_order_release);
+    // sa2-nx (2026-10-28, ds2_renut_queue_drain): the newest image at this refresh, before AtRefresh's own fence tests.
+    {
+      const uint64_t presented = renut::gpu::Video::PresentCount();
+      const bool new_image = presented != g_presented_at_vsync;
+      g_presented_at_vsync = presented;
+      QueueDrainAtRefresh(new_image ? renut::gpu::Video::PresentDone(presented) : -1, now);
+    }
     AtRefresh(now, uint64_t(period));
   }
 #endif
@@ -362,6 +424,16 @@ uint64_t NextRelease(uint64_t now, uint64_t previous, uint64_t frame_ns, bool *a
   }
   *anchored = true;
   return release;
+}
+
+bool TakeHold() {
+  if (!g_hold.load(std::memory_order_relaxed))
+    return false;
+  return g_hold.exchange(false, std::memory_order_acquire);
+}
+
+uint32_t LateInputGuardUs() {
+  return g_guard_us.load(std::memory_order_relaxed);
 }
 
 void NoteRelease(uint64_t at, bool anchored) {
@@ -415,6 +487,14 @@ std::string Report() {
       g_misses_total, g_phase_ups, double(g_fence_test_max_ns.exchange(0, std::memory_order_relaxed)) / 1e6,
       double(g_release_wait_max_ns.exchange(0, std::memory_order_relaxed)) / 1e6,
       g_release_clamped.exchange(0, std::memory_order_relaxed));
+  // sa2-nx (2026-10-28): with double buffering, the queue drain's counts (ds2_renut_queue_drain).
+  static const bool drain_on = REXCVAR_GET(ds2_renut_queue_drain) && REXCVAR_GET(ds2_renut_double_buffer);
+  if (drain_on) {
+    line += fmt::format("; double buffering: {} new images not finished at their refresh, {} queue drains in all, late "
+                        "input margin +{:.2f} ms (ds2_renut_queue_drain)",
+                        g_late_images, g_drains, double(g_guard_us.load(std::memory_order_relaxed)) / 1000.0);
+    g_late_images = 0;  // (the display thread's counts, read here without its lock: a report's worth of drift at most)
+  }
   g_present_display = g_input_display = g_release_display = Sum{};
   g_refreshes = g_refreshes_with_image = g_superseded = g_misses = g_phase_ups = 0;
   return line;

@@ -99,6 +99,8 @@ struct HostTexture {
   bool lock_driven = false;    // written between Lock and Unlock (the font cache)
   bool dynamic = false;        // changes all the time (movie frames)
   uint32_t changes = 0;        // checks in a row that saw the content change
+  uint32_t stable_checks = 0;  // ds2-nx (usf4-nx): full checks in a row that saw no change
+  uint64_t static_sample = 0;  // ds2-nx (usf4-nx): SampleHash when it became stable
   uint64_t verified_frame = 0; // last periodic full check
   // What SampleHash / ContentHash read: the base level's and the mip chain's
   // first page and extent in bytes, fixed by desc, worked out at the first check.
@@ -148,6 +150,27 @@ struct HostTexture {
   uint64_t handed_writes = 0;
   std::shared_ptr<DepthImage> held;
   bool held_current = false;
+  // sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips; render/draw.cpp FlushResolveMipsLocked): the region of the host
+  // levels (extra_levels) still to be made from level 0: the resolves since they were last made leave it, the first
+  // read of the levels (a bind) or other write of level 0 (an upload, a words copy) makes it.
+  bool mips_pending = false;
+  plume::RenderRect mips_rect;
+  // sa2-nx (2026-10-28, ds2_renut_direct_resolve_mips; textures.cpp UpdateResolveMipsLocked): the host levels drawn in
+  // place on deko3d: per level k >= 1 a view of it as a target and the framebuffer over that, and per level k >= 1
+  // that a deeper one is made from, a view to sample it (made on first use; [k - 1]).
+  std::vector<std::unique_ptr<plume::RenderTextureView>> level_target_views;
+  std::vector<std::unique_ptr<plume::RenderFramebuffer>> level_framebuffers;
+  std::vector<std::unique_ptr<plume::RenderTextureView>> level_sample_views;
+  std::vector<uint32_t> level_sample_slots;
+  // sa2-nx (2026-10-28, ds2_renut_colour_handover; render/draw.cpp, "Colour hand-over"): a colour resolve
+  // destination whose content is the image of the target it was resolved from (colour_from, with that target's
+  // generation and writes then), or colour_held (that image, taken at the target's next whole clear and shared with
+  // every destination that took it there; colour_current). colour_held stays as an image to swap in at a later take.
+  HostSurface *colour_from = nullptr;
+  uint64_t colour_generation = 0;
+  uint64_t colour_writes = 0;
+  std::shared_ptr<DepthImage> colour_held;
+  bool colour_current = false;
 };
 
 struct TextureBinding {
@@ -223,6 +246,16 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
 // (its own texture); and a destination that goes stops holding anything.
 uint32_t DepthHandOverSlotLocked(HostTexture &dest, const plume::RenderComponentMapping &mapping, BindEffects *fx);
 void DepthHandOverForgetLocked(HostTexture &dest);
+// sa2-nx (2026-10-28, ds2_renut_lazy_resolve_mips; render/draw.cpp): makes a resolve destination's pending host
+// levels (before a read of them or another write of its level 0; outside a draw's framebuffer).
+void FlushResolveMipsLocked(HostTexture &t);
+// sa2-nx (2026-10-28, ds2_renut_colour_handover; render/draw.cpp): before a bind samples 'dest' (its content drawn
+// into its own texture first where the image cannot be sampled for it); the slot it is then sampled through while its
+// content is a target's image ('mapping' as for DepthHandOverSlotLocked), or UINT32_MAX (its own texture); its
+// content overwritten (an upload) or the texture going.
+void ColourHandOverBeforeReadLocked(HostTexture &dest);
+uint32_t ColourHandOverSlotLocked(HostTexture &dest, const plume::RenderComponentMapping &mapping, BindEffects *fx);
+void ColourHandOverForgetLocked(HostTexture &dest);
 
 // The guest memory a texture's data spans: pages[0]/sizes[0] its base level,
 // pages[1]/sizes[1] its mip chain (a page is 4 KiB of physical memory; a zero

@@ -166,6 +166,8 @@ void FreeDepthViews(std::vector<DepthImage::View> &views) {
 void RetireTarget(HostSurface &surface) {
   if (surface.depth && surface.handed)
     DepthHandOverBeforeRetireLocked(&surface);  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
+  if (!surface.depth && surface.handed)
+    ColourHandOverBeforeRetireLocked(&surface);  // sa2-nx (2026-10-28, ds2_renut_colour_handover)
   FreeDepthViews(surface.handover_views);
   surface.stencil_used = false;
   ++g_surface_epoch;
@@ -652,6 +654,50 @@ void RetireDepthImageLocked(DepthImage &image) {
     Video::FreeTextureSlotLocked(image.stencil_slot);
   image.stencil_slot = UINT32_MAX;
   Video::RetireLocked(std::move(image.stencil_view));
+  Video::RetireLocked(std::move(image.texture));
+}
+
+// sa2-nx (2026-10-28, ds2_renut_colour_handover): MakeDepthImageLocked and RetireDepthImageLocked for colour targets.
+bool MakeColourImageLocked(const HostSurface &surface, DepthImage &image) {
+  plume::RenderDevice *device = Video::Device();
+  const uint32_t w = surface.scale.Size(surface.width), h = surface.scale.Size(surface.height);
+  image.texture = device->createTexture(
+      plume::RenderTextureDesc::ColorTarget(w, h, surface.format, plume::RenderMultisampling(surface.samples)));
+  if (!TextureCreated(image.texture.get())) {
+    image.texture.reset();
+    ReportDeviceLost(device);
+    return false;
+  }
+  image.texture->setName("renut color surface (hand-over)");
+  image.layout = plume::RenderTextureLayout::UNKNOWN;
+  image.generation = g_next_generation++;
+  image.host_width = w;
+  image.host_height = h;
+  image.format = surface.format;
+  image.samples = surface.samples;
+  image.format_word = surface.format_word;
+  return true;
+}
+
+void RetireColourImageLocked(DepthImage &image) {
+  for (size_t i = 0; i < g_framebuffers.size();) {
+    bool over = false;
+    for (uint32_t c = 0; c < d3d::kMaxRenderTargets; ++c)
+      over |= g_framebuffers[i].key.colors[c] && g_framebuffers[i].key.color_generations[c] == image.generation;
+    if (over) {
+      Video::RetireLocked(std::move(g_framebuffers[i].framebuffer));
+      g_framebuffers[i] = std::move(g_framebuffers.back());
+      g_framebuffers.pop_back();
+      ++g_framebuffer_epoch;
+    } else {
+      ++i;
+    }
+  }
+  FreeDepthViews(image.views);
+  if (image.sample_slot != UINT32_MAX && image.sample_slot != kInvalidDescriptor)
+    Video::FreeTextureSlotLocked(image.sample_slot);
+  image.sample_slot = UINT32_MAX;
+  Video::RetireLocked(std::move(image.sample_view));
   Video::RetireLocked(std::move(image.texture));
 }
 

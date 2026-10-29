@@ -48,6 +48,9 @@ struct DepthImage {
   plume::RenderFormat format = plume::RenderFormat::UNKNOWN;
   plume::RenderSampleCounts samples = plume::RenderSampleCount::COUNT_1;
   u32 format_word = 0;
+  // sa2-nx (2026-10-28, ds2_renut_colour_handover): a colour target's image the same way (render/draw.cpp, "Colour
+  // hand-over"), shared by every destination that took it at one clear; the destinations whose content it is now.
+  uint32_t current_holders = 0;
 };
 
 struct HostSurface {
@@ -86,6 +89,14 @@ struct HostSurface {
   // only when nothing has. A stencil nothing writes is undefined either way (a depth resolve's words read it as is).
   std::vector<DepthImage::View> handover_views;
   uint32_t handed = 0;
+  // sa2-nx (2026-10-28, ds2_renut_clear_repeat; render/draw.cpp ClearTargets): the last whole clear's values and the
+  // image (generation) and writes it left; a whole clear of the same values while these still hold writes nothing new.
+  bool clear_known = false;
+  uint64_t clear_generation = 0, clear_writes = 0;
+  float clear_color[4] = {};
+  bool clear_depth_known = false, clear_stencil_known = false;
+  float clear_depth = 0.0f;
+  uint32_t clear_stencil = 0;
   bool stencil_used = false;
 
   // gpu_profile labels of draws with it as the first target: color only,
@@ -166,6 +177,13 @@ uint32_t DepthImageViewSlotLocked(plume::RenderTexture *texture, plume::RenderFo
                                   std::vector<DepthImage::View> &views, const plume::RenderComponentMapping &mapping);
 // render/draw.cpp: a depth target is about to go; the destinations that still hold its content get it first.
 void DepthHandOverBeforeRetireLocked(HostSurface *surface);
+// sa2-nx (2026-10-28, ds2_renut_colour_handover): the same for colour targets and their images (a colour target's
+// image of the surface's size, format and samples; retired with the framebuffers made over it).
+bool MakeColourImageLocked(const HostSurface &surface, DepthImage &image);
+void RetireColourImageLocked(DepthImage &image);
+void ColourHandOverBeforeRetireLocked(HostSurface *surface);
+// Before a colour target is bound for draws (take = false) or for a clear of its whole colour (take = true).
+void ColourHandOverBeforeBindLocked(HostSurface *surface, bool take);
 
 // Framebuffer over up to 4 color targets plus depth; cached per target set.
 plume::RenderFramebuffer *GetFramebufferLocked(HostSurface *const *colors, uint32_t color_count,

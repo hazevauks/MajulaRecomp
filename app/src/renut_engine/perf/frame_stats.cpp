@@ -41,6 +41,7 @@ State& S() {
 
 void OnGameFrame() {
   banjo::renut_gpu::StatsGameFrame();
+  banjo::profiler::RecordGameFrame();  // ds2-nx (2026-10-29): the profiler window
   State& s = S();
   std::lock_guard lock(s.mutex);
   const auto now = Clock::now();
@@ -107,6 +108,7 @@ void OnRenderThreadFrame(double busy_ms) {
 }
 
 void OnGameThreadWait(double ms) {
+  banjo::profiler::AddGameThreadWait(ms);  // ds2-nx (2026-10-29)
   State& s = S();
   std::lock_guard lock(s.mutex);
   s.wait_sum += ms;

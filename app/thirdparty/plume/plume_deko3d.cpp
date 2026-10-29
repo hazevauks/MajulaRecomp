@@ -1326,8 +1326,14 @@ namespace plume {
         compileDone.notify_all();
     }
 
+    // ds2-nx (2026-10-29, from usf4-nx): the pipeline list prebuilds hundreds of variants at start; a draw's compile
+    // queued behind them all waited for every one (FIFO).
+    static thread_local bool t_backgroundCompiles = false;
+    void Deko3DMarkBackgroundCompileThread() { t_backgroundCompiles = true; }
+
     bool Deko3DDevice::compile(DkStage stage, const std::string &source, std::vector<uint8_t> &dksh, std::string &log) {
         CompileJob job;
+        job.background = t_backgroundCompiles;
         job.stage = stage;
         job.source = &source;
         job.dksh = &dksh;
@@ -1339,7 +1345,12 @@ namespace plume {
                     waiterPriority < g_deko3dOptions.compilePriority;
         {
             std::lock_guard<std::mutex> lock(compileMutex);
-            compileQueue.push_back(&job);
+            if (job.background)
+                compileQueue.push_back(&job);
+            else  // ahead of the background jobs, after the other urgent ones
+                compileQueue.insert(std::find_if(compileQueue.begin(), compileQueue.end(),
+                                                 [](const CompileJob *j) { return j->background; }),
+                                    &job);
             lend = lend && compileThreadHandle != 0;
             if (lend) {
                 compileWaiters.push_back(waiterPriority);

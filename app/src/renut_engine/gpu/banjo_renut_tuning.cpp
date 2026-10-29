@@ -7,6 +7,7 @@
 #include "renut_engine/gpu/banjo_renut_record.h"
 #if defined(PLUME_DEKO3D)
 #include "renut_engine/gpu/banjo_renut_deko3d.h"
+#include <plume_deko3d.h>  // ds2-nx: Deko3DMarkBackgroundCompileThread
 #endif
 
 #include <algorithm>
@@ -1359,6 +1360,9 @@ void OnBackgroundThreadStart(const char *what) {
 
 void OnPrebuildWorkerStart() {
   OnBackgroundThreadStart("pipeline prebuild worker");
+#if defined(PLUME_DEKO3D)
+  plume::Deko3DMarkBackgroundCompileThread();  // ds2-nx (usf4-nx): its compiles behind any a draw waits for
+#endif
 }
 
 uint32_t PrebuildWorkers(uint32_t renut_count) {

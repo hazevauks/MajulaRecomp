@@ -19,6 +19,26 @@ false reading):
 Stay about 30 s at each, at 540p (720p only once deko3d frees enough GPU). The goal: 30 frames a second without drops
 at stock clocks.
 
+## Thirty-second build (2026-10-29): the resolves as image swaps (sa2-nx 1.0.4, usf4-nx)
+
+Copy over: `ds2-dk.nro`, `deko3d_shaders.bin` and `pipeline_list.bin` (the shaders compiled on the PC from your
+pipeline list of 25 October; the shaders themselves did not change).
+
+What changed (docs/ports-study.md): sa2-nx 1.0.4's renderer round, where a resolve of a whole colour target into a
+texture of the same size becomes a swap of images instead of a copy (the colour resolves were ~4 ms of GPU a frame
+here), repeated clears are not sent, and the render thread's queue is lock-free; and from usf4-nx, textures that do
+not change are checked by sample instead of hashed whole, and a shader compile a draw waits for goes first. On the PC
+the picture is unchanged; the GPU gain can only be measured on the console.
+
+New: the profiler window (docs/profiler-overlay.md). **R + Minus** shows or hides it: the frame, the game thread,
+the render thread, the GPU and the present of the last frames, and which of them limits. At 30 fps every row must stay
+under 33.3 ms (the middle line of the plot). The log also gets a `[profiler]` line every 10 s with the same averages
+and the 1 % low, so a photo of the window is a bonus, not a need.
+
+**Test:** with `configs/ds2_profile.toml` as `ds2.toml`, the four measuring points, ~30 s each, with the profiler
+window shown (a photo at each point helps); anything drawn wrong (black or stale images, flicker, the HUD or menus over an old frame) with a photo. Then
+the `logs/` folder, `pipeline_list.bin` and `deko3d_shaders.bin` (into `switch-logs`), and the normal `ds2.toml` back.
+
 ## Thirty-first build (2026-10-25): optimised by default, with the features session's work
 
 Copy over: `ds2-dk.nro` and `ds2.toml` (new keys). Delete `ds2-dk-opt.nro`: `ds2-dk.nro` is now the LTO + PGO build.
