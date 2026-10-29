@@ -47,7 +47,7 @@ stops at 50 unresolved calls, the same kind of discovery gaps `app/overrides.tom
 - Global data addresses (the Direct3D device's `0x8343B708`, the `VdGlobalDevice` import slot) are not covered by
   the map; they are found again from the functions that use them.
 
-## The plan (the user's decision: when, and whether 2014 stays as a second build)
+## The plan (the user's decision: when, and whether the 2014 executable stays as a second build)
 
 1. `game_root` from Scholar's disc 1; the codegen on its `Default.xex` with overrides made for it (the gap tools,
    then the console's runtime gaps).
@@ -59,5 +59,7 @@ stops at 50 unresolved calls, the same kind of discovery gaps `app/overrides.tom
 4. A new PGO profile, the features (the Dull Ember lots are Scholar's own: the fork's lot numbers come from the 2014
    regulation) and the trophies checked again.
 
-Scholar of the First Sin also changes the game itself (enemy placement, items, a new NPC and boss): moving to it moves
-the port off the 2014 game.
+Scholar of the First Sin on the Xbox 360 is the 2014 game with its title updates and the three DLCs (the user,
+2026-10-29): the changed enemy placement and the rest of the "Scholar" changes are the next generation's (Xbox One, PS4,
+the PC's DirectX 11 version). The disc agrees: the same title, an executable built from the same code, the 2014
+regulation kept beside the new one. Moving to it keeps the game as it is, with the patches' balance and the DLCs.
