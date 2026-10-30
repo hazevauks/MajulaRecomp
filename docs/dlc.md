@@ -120,3 +120,43 @@ regulation kept beside the new one. Moving to it keeps the game as it is, with t
     `.../Headers/00000002/<package>.header`) into `assets/dlc_content`; `tools/win/package_switch.ps1 -IncludeGame`
     copies that into the SD folder's `ds2/` (the console's content root, beside the saves). The package's only licence
     entry is for every user with no bits, so the header carries no licence mask, as a real install would.
+
+## What else differs from the 2014 disc (survey, 2026-10-30)
+
+Made after the shaders turned out not to be the same (step 8). Scratch scripts compared the two `Default.xex`
+headers, imports, XDBF and strings, the loose files and every entry of the two `GameData` archives (by its bytes),
+and the console's warnings against a 2014 session.
+
+The same:
+- The XDK: the same 19 static libraries, all 2.0.21256 (Direct3D, XAudio2, XMP, XNet...). The structures the
+  renderer's hooks read inside Direct3D's device are those of 2014.
+- The kernel imports (353), the stack size, the system flags. The image is 0x30000 bytes larger; TLS moved with the
+  data (the remap moved what the code names).
+- The achievements: 38, 1000G, the same ids (the trophies screen and our platinum stand). The XDBF's strings and the
+  title image changed a little.
+- `font/` (only Portuguese `FeFont_Small` changed, and its button page is the 2014 one), `movie/`, the sound banks
+  but `frpg2_stationary.fev`, `shader/` but `FlverShader` and `Decal`. The game asks for English in both (cvar
+  `user_language`), so the button pictures still find their page.
+- The port's other data-keyed code never matched this game in 2014 either: the sky and UE3 tone-map fingerprints of
+  `src/me/native` (SA2's and Mass Effect's shaders) and N&B's fur hashes in `render/draw.cpp`.
+  `GuestCodeMatches` has no callers. The remap's 428 unplaced addresses are the other games' (step 3).
+
+Different:
+- xam: four new imports. `XamGetLanguage` is implemented. `XamShowMarketplaceDownloadItemsUI`,
+  `XamUserGetMembershipTierFromXUID` and `XamUserGetOnlineCountryFromXUID` are `REX_EXPORT_STUB`s: they log a
+  warning and set no return value (r3 keeps the first argument). None was called up to the naming screen.
+- The archives: about 1,000 of their ~9,700 entries changed or went away. These include the interface's
+  `menu/17.febnd` and `19.febnd`, 290 text files changed and 220 removed, 37 new map-name pictures, 80 models (the
+  7530 armour set among them), 7 maps' models and collisions (Things Betwixt's `m10_10` among them), 84 params, 56
+  AI and event scripts, `filter/FilterResource.fltbnd`, `material/AllMaterialBnd.bnd`, `sfx/sfx9999` (the common
+  effects) and three of the player's TimeAct files. The executable has new mounts for them: `gamedata_patch:` (the
+  same list of files), `patch_binder:/menu/%02d.febnd.dcx`, the DLCs' `dlc_*:` and an HDD install
+  `install:/Install/DlcData.bdt`. The port reads none of these files; they reach it only as new draws.
+- A file the 2014 game never asked for: `game:\param\HollowLevelStatsParam.param`. It is not on the disc, so the
+  open fails as it would on the Xbox 360.
+- The renderer warned twice in the prologue where 2014 did not (`[flash]`: a texture made over a resolve
+  destination, a resolve dropped for a fetch of other data).
+
+Made for 2014 and not yet made again: the PGO profile (Scholar builds with `-Pgo none`), the indirect-call census
+(61 of 460 promotions dropped), the runtime gaps of areas not yet visited (code only data pointers reach, and the
+DLC areas'). The 2014 saves sit in the same title folder; loading one in Scholar is untested.
