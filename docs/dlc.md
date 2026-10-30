@@ -98,3 +98,8 @@ regulation kept beside the new one. Moving to it keeps the game as it is, with t
 8. The game shaders: Scholar's disc has the same 1,481 shaders, byte for byte (only the 72 in `Default.xex` moved), so
    the deko3d package, the PC shader cache and the players' `deko3d_shaders.bin` / `pipeline_list.bin` stay valid.
 9. The gameplay changes (`src/ds2_features.cpp`) are out of the build meanwhile (docs/features.md).
+10. The first console boots (2026-10-30) stopped right after the main thread started, "Call to invalid or unregistered
+    function at guest address 0x827AB150": a 3-instruction getter only a data pointer reaches, in a stretch of code
+    Scholar laid out anew, so the remap had no neighbours to place its 2014 override with. `tools/pointer_fixpoint.py`
+    over Scholar's image declared 26 such entries (vtable thunks, callbacks); it now reads the code range of newer
+    generated trees, rejects inline jump tables (four of its candidates) and keeps the codegen flavour on re-runs.

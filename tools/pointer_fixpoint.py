@@ -37,6 +37,7 @@ GEN = os.path.join(APP, 'generated', 'default')
 MANIFEST = os.path.join(APP, 'ds2_manifest.toml')
 OVERRIDES = os.path.join(APP, 'overrides.toml')
 IMAGE_BASE = 0x82000000
+IMAGE = b''  # the image dump, set in main()
 CODE_LO, CODE_HI = 0x82240000, 0x83402474  # set from the generated tree in main()
 
 gc = {'__name__': 'gc'}
@@ -58,6 +59,11 @@ def code_range():
     text = open(os.path.join(GEN, 'ds2_init.cpp'), errors='replace').read()
     base = re.search(r'code_base\s*=\s*0x([0-9A-Fa-f]+)', text)
     size = re.search(r'code_size\s*=\s*0x([0-9A-Fa-f]+)', text)
+    if not (base and size):
+        # Newer SDKs write `.code_base = REX_CODE_BASE` and define the values in the precompiled header.
+        pch = open(os.path.join(GEN, 'ds2_pch.h'), errors='replace').read()
+        base = re.search(r'define REX_CODE_BASE\s+0x([0-9A-Fa-f]+)', pch)
+        size = re.search(r'define REX_CODE_SIZE\s+0x([0-9A-Fa-f]+)', pch)
     if base and size:
         return int(base.group(1), 16), int(base.group(1), 16) + int(size.group(1), 16)
     return 0x82240000, 0x83402474  # from the runtime log of the first boot
@@ -237,6 +243,12 @@ def classify(gen, log, candidates):
         why = None
         if key in stubs or not ins:
             why = 'no code'
+        elif IMAGE and all(CODE_LO <= w < CODE_HI and w % 4 == 0 for w in
+                           struct.unpack_from('>2I', IMAGE, a - IMAGE_BASE)):
+            # Two code addresses in a row: an inline jump table after a function's bctr, its address built by the
+            # lis/addi just before the bctr (the SotFS run, 2026-10-30: 0x828F2FF4 and three more decode as
+            # `lwz r20,N(r15)` and passed every other check).
+            why = 'jump table'
         elif len(ins) * 4 > left and not shares_registered_tail(a, left, listing, starts):
             why = 'extends beyond its gap'
         elif any(i.split()[0] in bad_ops or i.startswith(('.long', 'invalid', 'unknown', 'illegal')) for i in ins):
@@ -298,9 +310,9 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='one pass, report only, do not touch overrides.toml')
     a = ap.parse_args()
 
-    global CODE_LO, CODE_HI
+    global CODE_LO, CODE_HI, IMAGE
     rexglue = find_rexglue()
-    image = open(a.image, 'rb').read()
+    image = IMAGE = open(a.image, 'rb').read()
     lo, hi = code_range()
     CODE_LO, CODE_HI = lo, hi
     print(f'code range {lo:08X}-{hi:08X}, rexglue {rexglue}')
@@ -334,8 +346,11 @@ def main():
         if a.dry_run or not accepted:
             break
         append_overrides(n, accepted, candidates, notes)
+        # The same flavour as the tree it started from (codegen.ps1 defaults to classic and rewrites the flavour file).
+        flavor = 'optimised' if open(os.path.join(APP, 'codegen_flavor.toml')).read().startswith('# optimised') else 'classic'
         r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-                            os.path.join(TOOLS, 'codegen.ps1'), '-Rexglue', rexglue], capture_output=True, text=True)
+                            os.path.join(TOOLS, 'codegen.ps1'), '-Rexglue', rexglue, '-Flavor', flavor],
+                           capture_output=True, text=True)
         if r.returncode != 0:
             sys.exit(f'codegen failed after pass {n}:\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}')
 

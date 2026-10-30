@@ -809,3 +809,38 @@ longjmp_address = 0x82FEC680
 # where the pointer is stored ("pointer at") or built ("built at", inside the code range).
 "0x82CB81C0" = { }  # 6 instructions, built at 0x82CB83B0
 "0x82CB81D8" = { }  # 6 instructions, built at 0x82CB83B8
+
+# Code pointers into unclaimed gaps, stored in data (vtables, callback tables) or built in code (lis/addi:
+# callbacks passed at run time), accepted by tools/pointer_fixpoint.py pass 1: the scratch listing fits
+# in the gap (or continues only into a registered function it branches to: "then the registered tail"),
+# ends in a terminator and reads no register that is undefined at a function entry. The comment says
+# where the pointer is stored ("pointer at") or built ("built at", inside the code range).
+# Scholar of the First Sin (2026-10-30): its first console boots stopped at 0x827AB150 ("Call to invalid or
+# unregistered function"); this run declares it and the other entries of the moved code whose 2014 overrides the
+# address remap could not place. Four more candidates were inline jump tables, now rejected by the tool.
+"0x822576E0" = { }  # 2 instructions, pointer at 0x82001E18 (+22 more)
+"0x822A99E8" = { }  # 4 instructions, built at 0x822AE5F0 (+3 more)
+"0x822DDDB0" = { }  # 4 instructions, pointer at 0x8200658C
+"0x82301C40" = { }  # 4 instructions, built at 0x82303278
+"0x82301C50" = { }  # 5 instructions, built at 0x8230325C
+"0x824B96C0" = { }  # 2 instructions, pointer at 0x8201BA00 (+1 more)
+"0x824B9B00" = { }  # 34 instructions, pointer at 0x8201BAB8 (+1 more)
+"0x8251A0C8" = { }  # 71 instructions, pointer at 0x8200BF48
+"0x8258EE80" = { }  # 2 instructions, pointer at 0x8200CD20 (+5 more)
+"0x82622B50" = { }  # 3 instructions, pointer at 0x82029904
+"0x8270B8E8" = { }  # 8 instructions, pointer at 0x8203219C (+1 more)
+"0x827A3810" = { }  # 4 instructions, pointer at 0x83462618 (+12 more)
+"0x827AB150" = { }  # 3 instructions, pointer at 0x82040180
+"0x827AD128" = { }  # 3 instructions, pointer at 0x8204047C
+"0x8297D9B0" = { }  # 2 instructions, pointer at 0x820601D4
+"0x82990C68" = { }  # 4 instructions, built at 0x8299130C
+"0x82C116E0" = { }  # 2 instructions, pointer at 0x820C7200 (+4 more)
+"0x82C16888" = { }  # 2 instructions, pointer at 0x820C7214 (+4 more)
+"0x82C17C48" = { }  # 2 instructions, pointer at 0x820C7228 (+4 more)
+"0x82C17C50" = { }  # 2 instructions, pointer at 0x820C7224 (+4 more)
+"0x82C29030" = { }  # 2 instructions, pointer at 0x820CB794 (+2 more)
+"0x82C295A8" = { }  # 2 instructions, pointer at 0x820CB7EC
+"0x82C2AED8" = { }  # 2 instructions, pointer at 0x820CB890 (+1 more)
+"0x82FE7768" = { }  # 2 instructions, pointer at 0x82116908 (+1 more)
+"0x830BCDA8" = { }  # 6 instructions, pointer at 0x821250B0 (+1 more)
+"0x830BF040" = { }  # 2 instructions, pointer at 0x82125114
