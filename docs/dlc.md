@@ -103,3 +103,10 @@ regulation kept beside the new one. Moving to it keeps the game as it is, with t
     Scholar laid out anew, so the remap had no neighbours to place its 2014 override with. `tools/pointer_fixpoint.py`
     over Scholar's image declared 26 such entries (vtable thunks, callbacks); it now reads the code range of newer
     generated trees, rejects inline jump tables (four of its candidates) and keeps the codegen flavour on re-runs.
+11. With them the game reached its title screen and stopped there: "Unable to start DARK SOULS II because the
+    Compatibility Pack is missing" (it lists marketplace content of the user and of xuid 0, and found none).
+    `tools/install_dlc.py` installs disc 2's package the way the SDK's `ContentManager::InstallContent` does (its files
+    in `<content root>/0000000000000000/465307E4/00000002/<package>/`, its `XCONTENT_AGGREGATE_DATA` in
+    `.../Headers/00000002/<package>.header`) into `assets/dlc_content`; `tools/win/package_switch.ps1 -IncludeGame`
+    copies that into the SD folder's `ds2/` (the console's content root, beside the saves). The package's only licence
+    entry is for every user with no bits, so the header carries no licence mask, as a real install would.

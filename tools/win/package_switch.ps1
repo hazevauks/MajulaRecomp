@@ -4,6 +4,7 @@
 #   -IncludeGame              adds them as the asset cache (assets\game_root.nxpack + .nxidx, built here with
 #                             tools\build_asset_pack.py when missing or older than the folder);
 #   -IncludeGame -LooseGame   copies the game_root folder instead: the console builds the pack on its first boot.
+#   With either, assets\dlc_content (tools\install_dlc.py: disc 2's Compatibility Pack) goes into ds2\.
 # By hand:
 #   sdmc:/switch/ds2-nx/game_root.nxpack + game_root.nxidx   <- python tools\build_asset_pack.py assets\game_root
 #
@@ -86,6 +87,12 @@ if ($IncludeGame) {
         }
         # A loose folder from an earlier package is no longer read (the pack wins): drop it from the staging copy.
         if (Test-Path (Join-Path $dest 'game_root')) { Remove-Item -Recurse -Force (Join-Path $dest 'game_root') }
+    }
+    # Scholar of the First Sin's Compatibility Pack (disc 2), installed by tools\install_dlc.py into the content root
+    # the game lists marketplace content from: the ds2 folder next to the NRO, beside the saves.
+    $dlc = Join-Path $root 'assets\dlc_content'
+    if (Test-Path $dlc) {
+        robocopy $dlc (Join-Path $dest 'ds2') /E /NFL /NDL /NJH /NJS | Out-Null
     }
 }
 Get-ChildItem $dest | Select-Object Name, Length
