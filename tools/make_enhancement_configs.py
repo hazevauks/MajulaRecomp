@@ -65,12 +65,12 @@ VARIANTS = {
     # A/B of the 53 unguarded localized copies (round 1's 15, round 3's 20 and round 4's 18; on by default since round
     # 4, smart sync since round 3), profiler on. The two guarded round-4 leaves keep their default.
     'ds2_test_copies_off.toml': {**{f'ds2_cpu_native_sub_{a}': 'false' for a in (
-        '8213A4D8', '82139DA0', '8214E130', '82555CC8', '821BC520', '82549178', '82960CE0', '82141420',
-        '82555B70', '82960928', '8295F9C0', '82552408', '82960808', '8214D6D8', '8214B6C8', '8214B520', '8213D1F8',
-        '829601B0', '82832B78', '8213D7F0', '8214ACA8', '828326F8', '82833E20', '828243A0', '821BA890', '82833938',
-        '82834458', '82816B40', '82139930', '82834538', '821472E0', '82565758', '8213E040', '82833568', '82565C60',
-        '82556A60', '82555E18', '8251D2A0', '82141050', '821390C8', '8217EB38', '82141240', '825632F8', '8251D1A8',
-        '82556718', '82227C98', '8254DED0', '8254D0E0', '82139C90', '8217F048', '8214EAF0', '8213D5C8',)}, **PROFILING},
+        '8213A4D8', '82139DA0', '8214E130', '8257AE20', '821C0160', '8256DB68', '82991068', '82141420',
+        '8257ACC8', '82990CB0', '8298FD38', '825775A0', '82990B80', '8214D6D8', '8214B6C8', '8214B520', '8213D1F8',
+        '82990528', '82862DB8', '8213D7F0', '8214ACA8', '82862938', '82864060', '82854670', '821BA890', '82863B78',
+        '82864698', '82846F00', '82139930', '82864778', '821472E0', '82565758', '8213E040', '828637A8', '8258B908',
+        '8257B930', '8257AF70', '8251AF90', '82141050', '821390C8', '8217EB38', '82141240', '82588F10', '8251D1A8',
+        '82477AF0', '82227C98', '82573328', '82572598', '82139C90', '8217F048', '8214EAF0', '8213D5C8',)}, **PROFILING},
     # A/B of round 3's cached upload buffer: the uncached memory type, as before.
     'ds2_test_upload_uncached.toml': {'ds2_native_upload_memory': '0', **PROFILING},
     # A/B of deferred Vulkan recording (round 2; on by default since round 5): the ring thread queues the vkCmd* calls

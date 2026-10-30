@@ -5,13 +5,13 @@
 // The renderer reads the game's PM4 ring by itself; these hooks only feed it what the ring cannot say:
 //
 //   - Shader objects. NoteShaderObject reads the container copy inside a D3D shader object and its microcode pointer.
-//     The draw-time shader load is sub_829BF328 (r3 = device; SA2's sub_82556A60, the same code): it reads the bound
+//     The draw-time shader load is sub_829EF4F0 (r3 = device; SA2's sub_82556A60, the same code): it reads the bound
 //     VS from device+13072 and the PS from device+13068 (the XDK 2.0.21256 layout, the same as sa2-nx's), so the
 //     objects are noted there, before the original patches the VS for the vertex declaration.
 //   - Draw records, a hint for pairing (NoteDrawCall: primitive type, then r5..r7 as D3D received them):
-//       D3DDevice_DrawVertices        sub_829C2E28 (dev, type, start, count)
-//       D3DDevice_DrawIndexedVertices sub_829C3240 (dev, type, base, start, count)
-//       D3DDevice_DrawVerticesUP      sub_829C2800 (dev, type, count, data, stride)
+//       D3DDevice_DrawVertices        sub_829F2FF0 (dev, type, start, count)
+//       D3DDevice_DrawIndexedVertices sub_829F3408 (dev, type, base, start, count)
+//       D3DDevice_DrawVerticesUP      sub_829F29C8 (dev, type, count, data, stride)
 //
 // Every hook calls the original and changes no PPC register itself. The direct renderer's steps (BeginDrawDirect /
 // EndDrawDirect, the flush hooks) and the shader dump of sa2-nx are not wired here yet: the shader containers come
@@ -47,9 +47,9 @@ const bool g_device_layout_set = [] {
 }  // namespace
 
 // Draw-time shader load (FlushState's shader part, called from every Draw*).
-REX_EXTERN(__imp__sub_829BF328);
-REX_HOOK_RAW(sub_829BF328) {
-  DS2_RENUT_YIELD(sub_829BF328)
+REX_EXTERN(__imp__sub_829EF4F0);
+REX_HOOK_RAW(sub_829EF4F0) {
+  DS2_RENUT_YIELD(sub_829EF4F0)
   const uint32_t device = ctx.r3.u32;
   if (device >= 0x40000000 && device < 0x7F000000) {
     const uint32_t vs = Load32(base, device + kDeviceVertexShader), ps = Load32(base, device + kDevicePixelShader);
@@ -58,26 +58,26 @@ REX_HOOK_RAW(sub_829BF328) {
       me::native::NoteShaderObject(base, ps, false);
     }
   }
-  __imp__sub_829BF328(ctx, base);
+  __imp__sub_829EF4F0(ctx, base);
 }
 
-REX_EXTERN(__imp__sub_829C2E28);
-REX_HOOK_RAW(sub_829C2E28) {  // D3DDevice_DrawVertices
-  DS2_RENUT_YIELD_SHARED(sub_829C2E28)
+REX_EXTERN(__imp__sub_829F2FF0);
+REX_HOOK_RAW(sub_829F2FF0) {  // D3DDevice_DrawVertices
+  DS2_RENUT_YIELD_SHARED(sub_829F2FF0)
   me::native::NoteDrawCall(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
-  __imp__sub_829C2E28(ctx, base);
+  __imp__sub_829F2FF0(ctx, base);
 }
 
-REX_EXTERN(__imp__sub_829C3240);
-REX_HOOK_RAW(sub_829C3240) {  // D3DDevice_DrawIndexedVertices
-  DS2_RENUT_YIELD_SHARED(sub_829C3240)
+REX_EXTERN(__imp__sub_829F3408);
+REX_HOOK_RAW(sub_829F3408) {  // D3DDevice_DrawIndexedVertices
+  DS2_RENUT_YIELD_SHARED(sub_829F3408)
   me::native::NoteDrawCall(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
-  __imp__sub_829C3240(ctx, base);
+  __imp__sub_829F3408(ctx, base);
 }
 
-REX_EXTERN(__imp__sub_829C2800);
-REX_HOOK_RAW(sub_829C2800) {  // D3DDevice_DrawVerticesUP
-  DS2_RENUT_YIELD_SHARED(sub_829C2800)
+REX_EXTERN(__imp__sub_829F29C8);
+REX_HOOK_RAW(sub_829F29C8) {  // D3DDevice_DrawVerticesUP
+  DS2_RENUT_YIELD_SHARED(sub_829F29C8)
   me::native::NoteDrawCall(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
-  __imp__sub_829C2800(ctx, base);
+  __imp__sub_829F29C8(ctx, base);
 }

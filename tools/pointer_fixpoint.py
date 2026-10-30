@@ -76,8 +76,8 @@ def read_gaps(scratch):
 
 
 # ds2-nx: how many instructions after the `lis` the scan looks for its addi/ori. It was 8; Dark Souls II fills a
-# callback structure with six `lis` in a row and their `addi` up to 12 instructions later (0x82C88578-0x82C885C0),
-# and the two thunks past the old window (0x82C883C8, 0x82C883E0) stopped the game in Forest of Fallen Giants with
+# callback structure with six `lis` in a row and their `addi` up to 12 instructions later (0x82CB8370-0x82CB83B8),
+# and the two thunks past the old window (0x82CB81C0, 0x82CB81D8) stopped the game in Forest of Fallen Giants with
 # "Call to invalid or unregistered function". The sequence still ends at a branch or when the register is written.
 BUILT_WINDOW = 64
 
@@ -86,7 +86,7 @@ def built_addresses(image, lo, hi):
     """Code addresses the code builds as constants: `lis rX,hi` followed (within BUILT_WINDOW instructions, before rX is written
     again) by `addi rY,rX,lo` or `ori rY,rX,lo`. That is how a function pointer is passed as a callback or stored in
     a table at run time; no data word holds it, so the plain pointer scan misses it (SA2's sub_829427B8: built at
-    0x82942810, the 2-minute recording stopped at its first call). Yields (value, address of the addi/ori)."""
+    0x829728D0, the 2-minute recording stopped at its first call). Yields (value, address of the addi/ori)."""
     for off in range(lo - IMAGE_BASE, hi - IMAGE_BASE - 3, 4):
         x = struct.unpack_from('>I', image, off)[0]
         if x >> 26 != 15 or (x >> 16) & 31:  # lis rX,imm is addis rX,0,imm
@@ -209,7 +209,7 @@ def shares_registered_tail(a, left, listing, starts):
     """True when the part of the listing past the gap is only code of functions that already exist and that the
     part inside the gap branches to: the generator split the function's tail off as a function of its own (often
     the instruction after an early blr) and copies it back in as labels. SA2's vtable entry sub_825A5E18 (null
-    check, return E_POINTER) continues at the registered sub_825A5E2C; sub_8256F120 ends in 8 bdz to registered
+    check, return E_POINTER) continues at the registered sub_825CEE74; sub_82595078 ends in 8 bdz to registered
     one-line functions."""
     inside = [(x, t) for x, t in listing if a <= x < a + left]
     outside = [x for x, t in listing if not a <= x < a + left]

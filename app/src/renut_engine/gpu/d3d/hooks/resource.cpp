@@ -4,7 +4,7 @@
  *          N&B's D3D (d3d_native.h).
  *
  * Surfaces are the renderer's records, with EDRAM allocated by a port of
- * D3D's allocator (sub_82661C38 / MarkBits). The other resources D3D creates
+ * D3D's allocator (sub_82691788 / MarkBits). The other resources D3D creates
  * (CreateTexture, CreateVertexBuffer, CreateIndexBuffer, the level surfaces
  * and volumes) get their headers from the records heap and their data from
  * the guest physical heap, where N&B's XMemAlloc would put them (its physical
@@ -46,8 +46,8 @@ using namespace renut::gpu;
 
 // N&B's XMemFree (0x822399D8), its own allocator (not D3D code): for the
 // memory of resources N&B's code allocated itself. sa2-nx: SA2's XMemFree
-// (sub_828074B8, what SA2's D3DResource_Destroy calls).
-REX_IMPORT(__imp__sub_828074B8, GameXMemFree, void(u32, u32));
+// (sub_828371A8, what SA2's D3DResource_Destroy calls).
+REX_IMPORT(__imp__sub_828371A8, GameXMemFree, void(u32, u32));
 // The kernel's physical memory, as XPhysicalAlloc / XPhysicalFree use it.
 REX_IMPORT(__imp__MmAllocatePhysicalMemoryEx, MmAllocatePhysicalMemoryEx,
            u32(u32, u32, u32, u32, u32, u32));
@@ -91,10 +91,10 @@ void FreeHeader(u32 va) {
   records::FreeRaw(GuestPtr<void>(va));
 }
 
-// Resource data: XMemAlloc's physical path for its attributes (0x82265B90:
+// Resource data: XMemAlloc's physical path for its attributes (0x822689D0:
 // the alignment from bits 24-27, the protection from bits 28-29), then
-// XPhysicalAlloc (0x82716060), which asks the kernel. 0 on failure.
-constexpr u32 kGameNoLargePagesVa = 0x82F39E34;  // XPhysicalAlloc drops MEM_LARGE_PAGES while set
+// XPhysicalAlloc (0x82752BC0), which asks the kernel. 0 on failure.
+constexpr u32 kGameNoLargePagesVa = 0x82F6E0B4;  // XPhysicalAlloc drops MEM_LARGE_PAGES while set
 
 u32 AllocPhysical(u32 size, u32 attributes) {
   static constexpr u32 kAlignment[16] = {4,    4,    4,     8,     16,    32,     64,     128,
@@ -111,7 +111,7 @@ u32 AllocPhysical(u32 size, u32 attributes) {
   return va;
 }
 
-// XPhysicalFree (0x827160F0).
+// XPhysicalFree (0x82752C50).
 void FreePhysical(u32 va) {
   if (va)
     MmFreePhysicalMemory(0, va);
@@ -130,8 +130,8 @@ u32 FormatBitsPerPixel(u32 format) {
   return FormatTableEntry(format) & 0xFF;
 }
 
-// The word at 0x82FA36C8: set while a depth surface owns the HiZ memory.
-constexpr u32 kHiZOwnerVa = 0x82FA36C8;
+// The word at 0x82FD8420: set while a depth surface owns the HiZ memory.
+constexpr u32 kHiZOwnerVa = 0x82FD8420;
 
 u32 LoadU32(u32 va) {
   const auto *p = GuestPtr<const be_u32>(va);
@@ -159,7 +159,7 @@ u32 AtomicAddGuest(u32 va, u32 delta) {
 }
 
 // ---------------------------------------------------------------------------
-// EDRAM (D3D's Edram allocator: sub_82661C38 and MarkBits 0x82661AF0)
+// EDRAM (D3D's Edram allocator: sub_82691788 and MarkBits 0x82691640)
 // ---------------------------------------------------------------------------
 
 // 0x1800 tiles of 5120 bytes, a bit each (most significant first); the word
@@ -294,7 +294,7 @@ u32 EdramTileCount(u32 width, u32 height, u32 format, u32 multisample) {
 
 // D3D::SetSurfaceHeader(Width, Height, D3DFORMAT, D3DMULTISAMPLE_TYPE,
 //     const D3DSURFACE_PARAMETERS*, D3DSurface*, DWORD *pEdramTiles,
-//     DWORD *pHiZSize) [0x82655A50]
+//     DWORD *pHiZSize) [0x82684FF8]
 void SetSurfaceHeader(u32 width, u32 height, u32 format, u32 multisample, u32 parameters_va,
                       be_u32 *s, u32 &edram_tiles, u32 &hiz_size) {
   u32 f = format & 0x3F;
@@ -366,7 +366,7 @@ void SetSurfaceHeader(u32 width, u32 height, u32 format, u32 multisample, u32 pa
 namespace renut::gpu::native {
 
 // D3DSurface *D3DDevice_CreateSurface(UINT Width, UINT Height, D3DFORMAT,
-//     D3DMULTISAMPLE_TYPE, const D3DSURFACE_PARAMETERS *pParameters) [0x82655FE8]
+//     D3DMULTISAMPLE_TYPE, const D3DSURFACE_PARAMETERS *pParameters) [0x82685590]
 // Without parameters the surface gets EDRAM (and the first depth surface HiZ).
 u32 CreateSurface(u32 width, u32 height, u32 format, u32 multisample, u32 parameters_va) {
   auto *record = CreateRecord<SurfaceRecord>(RecordKind::Surface);
@@ -460,7 +460,7 @@ u32 CeilLog2(u32 v) {
   return 32 - CountLeadingZeros(v - 1);
 }
 
-// GetMipTailLevelOffsetCoords (0x826555E0): bytes from the tail level to
+// GetMipTailLevelOffsetCoords (0x82684B88): bytes from the tail level to
 // 'level' within it, and its block coordinates.
 u32 MipTailOffset(u32 level, u32 width, u32 height, u32 depth, u32 row_pitch, u32 slice_pitch,
                   u32 format, u32 &x_blocks, u32 &y_blocks, u32 &z) {
@@ -626,7 +626,7 @@ Subresource SubresourceLayout(u32 texture, u32 slice, u32 level) {
 // Locks
 // ---------------------------------------------------------------------------
 
-// D3D's resource lock (sub_82654968): waits for the GPU to be done with the
+// D3D's resource lock (sub_82683F10): waits for the GPU to be done with the
 // resource (its read fence for a read-only lock), notes the range the CPU
 // writes (BaseFlush / MipFlush, in 128-byte lines) and counts the lock.
 // Returns the address the CPU writes at.
@@ -674,7 +674,7 @@ u32 LockResource(u32 resource, u32 mip_lock, u32 base_address, u32 mip_address, 
   return address;
 }
 
-// The lock (sub_82654968) as N&B's code calls it: (resource, 0, blocker type,
+// The lock (sub_82683F10) as N&B's code calls it: (resource, 0, blocker type,
 // mip lock, base, mip, address, size, flags, cache flags).
 u32 LockResource_hook(u32 resource, u32 /*unused*/, u32 /*type*/, u32 mip_lock, u32 base_address,
                       u32 mip_address, u32 address, u32 size, u32 flags, u32 /*cache_flags*/) {
@@ -682,21 +682,21 @@ u32 LockResource_hook(u32 resource, u32 /*unused*/, u32 /*type*/, u32 mip_lock, 
 }
 
 // void *D3DVertexBuffer_Lock(D3DVertexBuffer*, UINT OffsetToLock, UINT SizeToLock,
-//     DWORD Flags) [0x82654E80]: the whole buffer.
+//     DWORD Flags) [0x82684428]: the whole buffer.
 u32 D3DVertexBuffer_Lock_hook(u32 buffer, u32 /*offset*/, u32 /*size*/, u32 flags) {
   const u32 base = LoadU32(buffer + 0x18) & ~3u;
   return LockResource(buffer, 0, base, 0, base, LoadU32(buffer + 0x1C) & 0x3FFFFFC, flags);
 }
 
 // void *D3DIndexBuffer_Lock(D3DIndexBuffer*, UINT OffsetToLock, UINT SizeToLock,
-//     DWORD Flags) [0x82654F90]
+//     DWORD Flags) [0x82684538]
 u32 D3DIndexBuffer_Lock_hook(u32 buffer, u32 /*offset*/, u32 /*size*/, u32 flags) {
   const u32 base = LoadU32(buffer + 0x18);
   return LockResource(buffer, 0, base, 0, base, LoadU32(buffer + 0x1C), flags | 2);
 }
 
 // D3D::LockSurface(D3DBaseTexture*, 0, ArrayIndex, Level, Flags, DWORD *pAddress,
-//     DWORD *pRowPitch, DWORD *pSliceBytes, DWORD *pTailOffset) [0x82655838]:
+//     DWORD *pRowPitch, DWORD *pSliceBytes, DWORD *pTailOffset) [0x82684DE0]:
 // the row pitch reported is per row of blocks.
 void LockSurface(u32 texture, u32 slice, u32 level, u32 flags, u32 &address, u32 &row_pitch,
                  u32 &slice_bytes, u32 &tail_offset) {
@@ -728,7 +728,7 @@ void D3D_LockSurface_hook(u32 texture, u32 /*unused*/, u32 slice, u32 level, u32
 }
 
 // D3D::Lock2DSurface(D3DBaseTexture*, 0, ArrayIndex, Level, D3DLOCKED_RECT*,
-//     const RECT*, DWORD Flags) [0x82655908]
+//     const RECT*, DWORD Flags) [0x82684EB0]
 void D3D_Lock2DSurface_hook(u32 texture, u32 /*unused*/, u32 slice, u32 level,
                             mapped_u32 locked_rect, mapped_u32 rect, u32 flags) {
   u32 address, row_pitch, slice_bytes, tail_offset;
@@ -744,7 +744,7 @@ void D3D_Lock2DSurface_hook(u32 texture, u32 /*unused*/, u32 slice, u32 level,
 }
 
 // D3D::Lock3DSurface(D3DBaseTexture*, UINT Level, D3DLOCKED_BOX*, const D3DBOX*,
-//     DWORD Flags) [0x826559A0]
+//     DWORD Flags) [0x82684F48]
 void D3D_Lock3DSurface_hook(u32 texture, u32 level, mapped_u32 locked_box, mapped_u32 box,
                             u32 flags) {
   u32 address, row_pitch, slice_bytes, tail_offset;
@@ -762,27 +762,27 @@ void D3D_Lock3DSurface_hook(u32 texture, u32 level, mapped_u32 locked_box, mappe
 
 // The lock entry points, which only pick the texture, slice and level.
 void D3DArrayTexture_LockRect_hook(u32 texture, u32 slice, u32 level, mapped_u32 locked_rect,
-                                   mapped_u32 rect, u32 flags) {  // 0x82655DB0
+                                   mapped_u32 rect, u32 flags) {  // 0x82685358
   D3D_Lock2DSurface_hook(texture, 0, slice, level, locked_rect, rect, flags);
 }
 void D3DLineTexture_LockRect_hook(u32 texture, u32 level, mapped_u32 locked_rect, mapped_u32 rect,
-                                  u32 flags) {  // 0x82655EA8
+                                  u32 flags) {  // 0x82685450
   D3D_Lock2DSurface_hook(texture, 0, 0, level, locked_rect, rect, flags);
 }
 void D3DSurface_LockRect_hook(u32 surface, mapped_u32 locked_rect, mapped_u32 rect,
-                              u32 flags) {  // 0x82656150: a texture level's surface
+                              u32 flags) {  // 0x826856F8: a texture level's surface
   const u32 info = LoadU32(surface + 0x1C);
   D3D_Lock2DSurface_hook(LoadU32(surface + 0x18), 0, native::Extract(info, 22, 6), info >> 28,
                          locked_rect, rect, flags);
 }
 void D3DVolume_LockBox_hook(u32 volume, mapped_u32 locked_box, mapped_u32 box,
-                            u32 flags) {  // 0x826561C0
+                            u32 flags) {  // 0x82685768
   D3D_Lock3DSurface_hook(LoadU32(volume + 0x18), LoadU32(volume + 0x1C) >> 28, locked_box, box,
                          flags);
 }
 
 // void D3D::UnlockResource(D3DResource *pResource, DWORD BaseAddress,
-//     DWORD MipAddress) [0x82654C28]: the end of every Lock (D3DVertexBuffer_Unlock,
+//     DWORD MipAddress) [0x826841D0]: the end of every Lock (D3DVertexBuffer_Unlock,
 // D3DSurface_UnlockRect, D3DArrayTexture_UnlockRect...), after the CPU has
 // written the data. The last unlock clears the written ranges, which D3D
 // flushes from the CPU cache first. N&B's font cache (sub_82B8F848) writes
@@ -798,12 +798,12 @@ void D3D_UnlockResource_hook(u32 resource, u32 /*base_address*/, u32 mip_address
   NoteTextureUnlocked(resource);
 }
 
-// void D3DVertexBuffer_Unlock(D3DVertexBuffer*) [0x82654ED0]
+// void D3DVertexBuffer_Unlock(D3DVertexBuffer*) [0x82684478]
 void D3DVertexBuffer_Unlock_hook(u32 buffer) {
   D3D_UnlockResource_hook(buffer, LoadU32(buffer + 0x18) & ~3u, 0);
 }
 
-// void D3DSurface_UnlockRect(D3DSurface*) [0x826561E0]
+// void D3DSurface_UnlockRect(D3DSurface*) [0x82685788]
 void D3DSurface_UnlockRect_hook(u32 surface) {
   const u32 texture = LoadU32(surface + 0x18);
   D3D_UnlockResource_hook(texture, LoadU32(texture + 0x20) & ~0xFFFu,
@@ -926,7 +926,7 @@ void D3DResource_Destroy_hook(u32 resource) {
   }
 }
 
-// D3DSurface *D3DDevice_CreateSurface(...) [0x82655FE8]
+// D3DSurface *D3DDevice_CreateSurface(...) [0x82685590]
 u32 D3DDevice_CreateSurface_hook(u32 width, u32 height, u32 format, u32 multisample,
                                  u32 parameters) {
   return native::CreateSurface(width, height, format, multisample, parameters);
@@ -1015,7 +1015,7 @@ void TextureDimensions(u32 texture, u32 &width, u32 &height, u32 &depth) {
   }
 }
 
-// _GetGpuTextureDimensions (0x82655540): the same from a fetch constant; a
+// _GetGpuTextureDimensions (0x82684AE8): the same from a fetch constant; a
 // 2D one's depth is its array size.
 void GpuTextureDimensions(u32 fetch, u32 &width, u32 &height, u32 &depth) {
   const u32 size = LoadU32(fetch + 8);
@@ -1147,7 +1147,7 @@ void Get2DSurfaceDesc(u32 texture, u32 level, mapped_u32 desc) {
   desc[4] = 0u;  // MultiSampleType
 }
 
-// void Get3DSurfaceDesc(D3DBaseTexture*, UINT Level, D3DVOLUME_DESC*) [0x82655738]
+// void Get3DSurfaceDesc(D3DBaseTexture*, UINT Level, D3DVOLUME_DESC*) [0x82684CE0]
 void Get3DSurfaceDesc(u32 texture, u32 level, mapped_u32 desc) {
   if (!desc)
     return;
@@ -1181,7 +1181,7 @@ void D3DSurface_GetDesc_hook(u32 surface, mapped_u32 desc) {
   desc[1] = 4u;  // D3DRTYPE_SURFACE
 }
 
-// void D3DVolume_GetDesc(D3DVolume*, D3DVOLUME_DESC*) [0x82656178]
+// void D3DVolume_GetDesc(D3DVolume*, D3DVOLUME_DESC*) [0x82685720]
 void D3DVolume_GetDesc_hook(u32 volume, mapped_u32 desc) {
   if (!desc)
     return;
@@ -1194,7 +1194,7 @@ u32 D3DBaseTexture_GetLevelCount_hook(u32 texture) {
   return native::Extract(LoadU32(texture + 0x2C), 6, 4) + 1;
 }
 
-// UINT D3DArrayTexture_GetArraySize(D3DArrayTexture*) [0x82655DA0]
+// UINT D3DArrayTexture_GetArraySize(D3DArrayTexture*) [0x82685348]
 u32 D3DArrayTexture_GetArraySize_hook(u32 texture) {
   return (LoadU32(texture + 0x24) >> 26) + 1;
 }
@@ -1224,17 +1224,17 @@ u32 D3DTexture_GetSurfaceLevel_hook(u32 texture, u32 level) {
 }
 
 // D3DSurface *D3DCubeTexture_GetCubeMapSurface(D3DCubeTexture*, D3DCUBEMAP_FACES,
-//     UINT Level) [0x82655CD0]
+//     UINT Level) [0x82685278]
 u32 D3DCubeTexture_GetCubeMapSurface_hook(u32 texture, u32 face, u32 level) {
   return LevelHeader(texture, 0x30, (level << 28) | ((face & 0x3F) << 22));
 }
 
-// D3DVolume *D3DVolumeTexture_GetVolumeLevel(D3DVolumeTexture*, UINT Level) [0x82655DD8]
+// D3DVolume *D3DVolumeTexture_GetVolumeLevel(D3DVolumeTexture*, UINT Level) [0x82685380]
 u32 D3DVolumeTexture_GetVolumeLevel_hook(u32 texture, u32 level) {
   return LevelHeader(texture, 0x20, level << 28);
 }
 
-// void D3DArrayTexture_UnlockRect(D3DArrayTexture*, ...) [0x82655D88]
+// void D3DArrayTexture_UnlockRect(D3DArrayTexture*, ...) [0x82685330]
 void D3DArrayTexture_UnlockRect_hook(u32 texture) {
   D3D_UnlockResource_hook(texture, LoadU32(texture + 0x20) & ~0xFFFu,
                           LoadU32(texture + 0x30) & ~0xFFFu);
@@ -1249,14 +1249,14 @@ void D3DConstantBuffer_Unlock_hook(u32 buffer) {
 // Buffers and textures
 // ---------------------------------------------------------------------------
 
-// The XMemAlloc attributes of buffer data (0x82800000, write-combined, or
+// The XMemAlloc attributes of buffer data (0x8282FCF0, write-combined, or
 // cached for D3DUSAGE_CPU_CACHED_MEMORY) and Common's usage bits.
 u32 BufferAttributes(u32 usage) {
   return 0x82800000u | ((usage & 4) ? 0x20000000u : 0x30000000u);
 }
 
 // D3DVertexBuffer *D3DDevice_CreateVertexBuffer(UINT Length, DWORD Usage,
-//     D3DPOOL) [0x82654DB8]
+//     D3DPOOL) [0x82684360]
 u32 D3DDevice_CreateVertexBuffer_hook(u32 length, u32 usage, u32 /*pool*/) {
   const u32 header = AllocHeader(0x20);
   if (!header)
@@ -1279,7 +1279,7 @@ u32 D3DDevice_CreateVertexBuffer_hook(u32 length, u32 usage, u32 /*pool*/) {
 }
 
 // D3DIndexBuffer *D3DDevice_CreateIndexBuffer(UINT Length, DWORD Usage,
-//     D3DFORMAT, D3DPOOL) [0x82654EE0]
+//     D3DFORMAT, D3DPOOL) [0x82684488]
 u32 D3DDevice_CreateIndexBuffer_hook(u32 length, u32 usage, u32 format) {
   const u32 header = AllocHeader(0x20);
   if (!header)
@@ -1303,7 +1303,7 @@ u32 D3DDevice_CreateIndexBuffer_hook(u32 length, u32 usage, u32 format) {
   return header;
 }
 
-// _GetMaxMipLevels (0x826554B8): the levels down to 1x1x1 of the largest
+// _GetMaxMipLevels (0x82684A60): the levels down to 1x1x1 of the largest
 // dimension, without the border.
 u32 GetMaxMipLevels(u32 width, u32 height, u32 depth, u32 border) {
   const u32 b2 = border * 2;
@@ -1315,7 +1315,7 @@ u32 GetMaxMipLevels(u32 width, u32 height, u32 depth, u32 border) {
   return 32 - CountLeadingZeros(w > hm ? w : hm);
 }
 
-// _FindTextureSize (0x82287E60): the aligned width of the base level (in
+// _FindTextureSize (0x8228B110): the aligned width of the base level (in
 // texels), its bytes and the mip levels' bytes. Returns the level count (all
 // of them for 0).
 u32 FindTextureSize(u32 width, u32 height, u32 depth, u32 levels, u32 format, u32 dimension,
@@ -1395,7 +1395,7 @@ u32 FindTextureSize(u32 width, u32 height, u32 depth, u32 levels, u32 format, u3
 
 // D3D::SetTextureHeader(D3DRESOURCETYPE, Width, Height, Depth, Levels, Usage,
 //     D3DFORMAT, MIPPACKINGTYPE, Border, ExpAdjust, Pitch, D3DBaseTexture*,
-//     DWORD *pBaseSize, DWORD *pMipSize) [0x8228E990]: the header and fetch
+//     DWORD *pBaseSize, DWORD *pMipSize) [0x822923F0]: the header and fetch
 // constant of a texture; the sizes of its base and mip data.
 void SetTextureHeader(u32 type, u32 width, u32 height, u32 depth, u32 levels, u32 usage,
                       u32 format, u32 packing, u32 border, u32 exp_adjust, u32 pitch,
@@ -1491,7 +1491,7 @@ void SetTextureHeader(u32 type, u32 width, u32 height, u32 depth, u32 levels, u3
 }
 
 // D3DBaseTexture *D3DDevice_CreateTexture(UINT Width, UINT Height, UINT Depth,
-//     UINT Levels, DWORD Usage, D3DFORMAT, D3DPOOL, D3DRESOURCETYPE) [0x82655EC8]
+//     UINT Levels, DWORD Usage, D3DFORMAT, D3DPOOL, D3DRESOURCETYPE) [0x82685470]
 u32 D3DDevice_CreateTexture_hook(u32 width, u32 height, u32 depth, u32 levels, u32 usage,
                                  u32 format, u32 /*pool*/, u32 type) {
   const u32 header = AllocHeader(0x34);
@@ -1539,7 +1539,7 @@ void GetTextureDimensions_hook(u32 texture, mapped_u32 width, mapped_u32 height,
 }
 
 void GetGpuTextureDimensions_hook(u32 fetch, mapped_u32 width, mapped_u32 height,
-                                  mapped_u32 depth) {  // 0x82655540
+                                  mapped_u32 depth) {  // 0x82684AE8
   u32 w, h, d;
   GpuTextureDimensions(fetch, w, h, d);
   if (width)
@@ -1572,7 +1572,7 @@ u32 AlignTextureDimensions_hook(mapped_u32 width, mapped_u32 height, mapped_u32 
   return size;
 }
 
-// (Level, Width, Height, Depth, RowPitch, SlicePitch, Format, *pX, *pY, *pZ) [0x826555E0]
+// (Level, Width, Height, Depth, RowPitch, SlicePitch, Format, *pX, *pY, *pZ) [0x82684B88]
 u32 GetMipTailLevelOffsetCoords_hook(u32 level, u32 width, u32 height, u32 depth, u32 row_pitch,
                                      u32 slice_pitch, u32 format, mapped_u32 x, mapped_u32 y,
                                      mapped_u32 z) {
@@ -1589,7 +1589,7 @@ u32 GetMipTailLevelOffsetCoords_hook(u32 level, u32 width, u32 height, u32 depth
 }
 
 // (Width, Height, Depth, Levels, Format, Dimension, Tiled, Packed, Border,
-//  unused, Pitch, *pWidth, *pBaseSize, *pMipSize) [0x82287E60]
+//  unused, Pitch, *pWidth, *pBaseSize, *pMipSize) [0x8228B110]
 u32 FindTextureSize_hook(u32 width, u32 height, u32 depth, u32 levels, u32 format, u32 dimension,
                          u32 tiled, u32 packed, u32 border, u32 /*unused*/, u32 pitch,
                          mapped_u32 out_width, mapped_u32 out_base, mapped_u32 out_mips) {
@@ -1607,7 +1607,7 @@ u32 FindTextureSize_hook(u32 width, u32 height, u32 depth, u32 levels, u32 forma
 
 void SetTextureHeader_hook(u32 type, u32 width, u32 height, u32 depth, u32 levels, u32 usage,
                            u32 format, u32 packing, u32 border, u32 exp_adjust, u32 pitch,
-                           u32 texture, mapped_u32 base_size, mapped_u32 mip_size) {  // 0x8228E990
+                           u32 texture, mapped_u32 base_size, mapped_u32 mip_size) {  // 0x822923F0
   u32 b = 0, m = 0;
   SetTextureHeader(type, width, height, depth, levels, usage, format, packing, border, exp_adjust,
                    pitch, texture, b, m);
@@ -1617,7 +1617,7 @@ void SetTextureHeader_hook(u32 type, u32 width, u32 height, u32 depth, u32 level
     *mip_size = m;
 }
 
-u32 GetMaxMipLevels_hook(u32 width, u32 height, u32 depth, u32 border) {  // 0x826554B8
+u32 GetMaxMipLevels_hook(u32 width, u32 height, u32 depth, u32 border) {  // 0x82684A60
   return GetMaxMipLevels(width, height, depth, border);
 }
 
@@ -1692,8 +1692,8 @@ u32 AddRefResource(u32 resource) {
 // queued before that uses them, then SA2's own D3DResource_Destroy waits for the resource's fence (through the hooked
 // BlockOnFence: the render thread is then past it) and frees it.
 
-// void D3DResource_Destroy(D3DResource*) [sub_829ACF00; N&B 0x822084F0]
-BANJO_RENUT_HOOK_RAW(sub_829ACF00) {
+// void D3DResource_Destroy(D3DResource*) [sub_829DD0D0; N&B 0x822084F0]
+BANJO_RENUT_HOOK_RAW(sub_829DD0D0) {
   const u32 resource = ctx.r3.u32;
   render_thread::Queue([resource] {
     ReleaseHostSurfaceLocked(resource);
@@ -1701,5 +1701,5 @@ BANJO_RENUT_HOOK_RAW(sub_829ACF00) {
     ReleaseGuestShaderLocked(resource);
     ReleaseGuestDeclarationLocked(resource);
   });
-  __imp__sub_829ACF00(ctx, base);
+  __imp__sub_829DD0D0(ctx, base);
 }

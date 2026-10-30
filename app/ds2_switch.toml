@@ -42,10 +42,3 @@ switch_profile_report = true
 log_level = "info"
 log_to_file = true
 
-# The port's gameplay changes (docs/features.md), on by default; false gives the original game. Early Dull Ember: the
-# Dull Ember is in the iron chest by The Tower Apart bonfire (Lost Bastille), and its old place in the Iron Keep gives
-# a Titanite Slab. Better fog walls: no damage while crossing a fog wall (not in effect yet).
-ds2_early_dull_ember = true
-ds2_fog_wall_iframes = true
-# While the fog wall's crossing is investigated: the item lots the game reads and the fog wall's functions in the log.
-ds2_diag_features = true

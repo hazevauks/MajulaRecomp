@@ -3258,7 +3258,7 @@ constexpr u32 kMaxMemExportStreams = 4;
 constexpr u32 kMaxMemExportBytes = 64u << 20;
 
 // The streams the shader's stream constants describe, laid out as N&B's own
-// export passes build them (sub_82317020 before D3DDevice_EndExport): x the
+// export passes build them (sub_82323E08 before D3DDevice_EndExport): x the
 // GPU address in dwords (bits 0-29) tagged 01 in bits 30-31, z the endian in
 // bits 0-2, the format in 8-13 and the number format in 16-18, w the element
 // count in bits 0-22 (y, z and w carry 0x4B high bits to stay floats).
@@ -4542,9 +4542,9 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   std::memcpy(sc.pixel_origin, viewport.pixel_origin, sizeof(sc.pixel_origin));  // Renut upstream 574b488
   if (call.primitive == kPointList) {
     // PA_SU_POINT_SIZE: height 0-15, width 16-31, half the size in 12.4 fixed
-    // point (SetRenderState_PointSize 0x8264C6C0 stores the size * 8);
+    // point (SetRenderState_PointSize 0x8267BA08 stores the size * 8);
     // PA_SU_POINT_MINMAX: minimum 0-15, maximum 16-31, the size in 12.4
-    // (SetRenderState_PointSizeMin 0x8264C720 stores the minimum * 16).
+    // (SetRenderState_PointSizeMin 0x8267BA68 stores the minimum * 16).
     const auto *tessellator = reinterpret_cast<const be_u32 *>(dev.m_TessellatorPacket);
     const u32 point_size = tessellator[0], point_min_max = tessellator[1];
     sc.point_state[0] = float(point_size >> 16) / 8.0f;

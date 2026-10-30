@@ -3,7 +3,7 @@
  * @brief   N&B's D3D state-setting calls, natively (see d3d_native.h).
  *
  * The render and sampler state setters are the functions of N&B's state
- * tables (off_82E506F0, 101 render states; off_82E50BD0, 20 sampler states:
+ * tables (off_82E81070, 101 render states; off_82E81550, 20 sampler states:
  * getter, setter, default), each ported from its disassembly. The rest are
  * D3DDevice_Set* and the CDevice internals they share. Their register
  * packets, which N&B's D3D writes into the ring, are left out.
@@ -129,12 +129,12 @@ void SetBlendAlphaField(Device d, u32 value, u32 shift, u32 width) {
 }
 
 // ---------------------------------------------------------------------------
-// Render states (off_82E506F0 order)
+// Render states (off_82E81070 order)
 // ---------------------------------------------------------------------------
 
 void RsNone(Device, u32) {}
 
-void RsZEnable(Device d, u32 v) {  // 0x8264C140
+void RsZEnable(Device d, u32 v) {  // 0x8267B418
   d.SetW(kZEnable, v);
   if (!d.W(off::DepthStencil))
     v = 0;
@@ -145,11 +145,11 @@ void RsZFunc(Device d, u32 v) {  // 0x821FB7B0
   d.SetW(off::DepthControl, Insert(d.W(off::DepthControl), v, 4, 3));
   d.Dirty(kPendingStates, 0x800 | 0x20000);
 }
-void RsZWriteEnable(Device d, u32 v) {  // 0x8264C180
+void RsZWriteEnable(Device d, u32 v) {  // 0x8267B458
   d.SetW(off::DepthControl, Insert(d.W(off::DepthControl), v, 2, 1));
   d.Dirty(kPendingStates, 0x800);
 }
-void RsFillMode(Device d, u32 v) {  // 0x8228F330
+void RsFillMode(Device d, u32 v) {  // 0x82292E28
   d.SetW(off::ModeControl, Insert(d.W(off::ModeControl), v, 3, 8));
   d.Dirty(kPendingStates, 0x40);
 }
@@ -173,7 +173,7 @@ void RsSeparateAlphaBlendEnable(Device d, u32 v) {  // 0x8222A690
     control = 0x10001;
   StoreBlendControl(d, control, true);
 }
-void RsBlendFactor(Device d, u32 v) {  // 0x8226E8E0
+void RsBlendFactor(Device d, u32 v) {  // 0x822717F0
   d.SetF(0x28E8, float(v & 0xFF) * kInv255);           // blue
   d.SetF(0x28E4, float((v >> 8) & 0xFF) * kInv255);    // green
   d.SetF(0x28E0, float((v >> 16) & 0xFF) * kInv255);   // red
@@ -189,7 +189,7 @@ void RsDestBlend(Device d, u32 v) {  // 0x822307B8
 void RsBlendOp(Device d, u32 v) {  // 0x82226380
   SetBlendColorField(d, v, 5, 3);
 }
-void RsSrcBlendAlpha(Device d, u32 v) {  // 0x822672B8
+void RsSrcBlendAlpha(Device d, u32 v) {  // 0x8226A170
   SetBlendAlphaField(d, v, 16, 5);
 }
 void RsDestBlendAlpha(Device d, u32 v) {  // 0x822208E8
@@ -202,15 +202,15 @@ void RsAlphaTestEnable(Device d, u32 v) {  // 0x8264BE98
   d.SetW(off::ColorControl, Insert(d.W(off::ColorControl), v, 3, 1));
   d.Dirty(kPendingStates, 0x200 | 0x40000);
 }
-void RsAlphaRef(Device d, u32 v) {  // 0x8264BF50
+void RsAlphaRef(Device d, u32 v) {  // 0x8267B228
   d.SetF(0x2904, float(v) * kInv255);
   d.Dirty(kPendingStates, 0x8000000);
 }
-void RsAlphaFunc(Device d, u32 v) {  // 0x8264BFB8
+void RsAlphaFunc(Device d, u32 v) {  // 0x8267B290
   d.SetW(off::ColorControl, (d.W(off::ColorControl) & ~7u) | (v & 7));
   d.Dirty(kPendingStates, 0x200);
 }
-void RsStencilEnable(Device d, u32 v) {  // 0x8264C1C0
+void RsStencilEnable(Device d, u32 v) {  // 0x8267B498
   d.SetW(kStencilEnable, v);
   if (!d.W(off::DepthStencil))
     v = 0;
@@ -224,7 +224,7 @@ void RsDepthControlField(Device d, u32 v) {
   d.Dirty(kPendingStates, Bits);
 }
 
-void RsTwoSidedStencilMode(Device d, u32 v) {  // 0x8264C200
+void RsTwoSidedStencilMode(Device d, u32 v) {  // 0x8267B4D8
   d.SetW(off::DepthControl, Insert(d.W(off::DepthControl), v, 7, 1));
   d.Dirty(kPendingStates, 0x800 | 0x20000);
 }
@@ -257,31 +257,31 @@ void RsClipPlaneEnable(Device d, u32 v) {  // 0x8228F370
   d.SetW(0x28B4, v ? 0x1000u : 0u);
   d.Dirty(kPendingStates, 0x80 | Bit(44));
 }
-void RsPointSize(Device d, u32 v) {  // 0x8264C6C0
+void RsPointSize(Device d, u32 v) {  // 0x8267BA08
   d.SetW(kPointSize, v);
   const u16 size = u16(TruncateToI32(AsFloat(v) * 8.0f));
   d.SetH(0x2966, size);
   d.SetH(0x2964, size);
   d.Dirty(kPendingFetch, Bit(54));
 }
-void RsPointSizeMin(Device d, u32 v) {  // 0x8264C720
+void RsPointSizeMin(Device d, u32 v) {  // 0x8267BA68
   d.SetW(kPointSizeMin, v);
   d.SetH(0x296A, u16(TruncateToI32(AsFloat(v) * 16.0f)));
   d.Dirty(kPendingFetch, Bit(53));
 }
-void RsPointSpriteEnable(Device d, u32 v) {  // 0x8264C6B0
+void RsPointSpriteEnable(Device d, u32 v) {  // 0x8267B9F8
   d.SetW(kPointSpriteEnable, v);
 }
-void RsPointSizeMax(Device d, u32 v) {  // 0x822687D0
+void RsPointSizeMax(Device d, u32 v) {  // 0x8226B6E8
   d.SetW(kPointSizeMax, v);
   d.SetH(0x2968, u16(TruncateToI32(AsFloat(v) * 16.0f)));
   d.Dirty(kPendingFetch, Bit(53));
 }
-void RsMultiSampleAntiAlias(Device d, u32 v) {  // 0x8264C598
+void RsMultiSampleAntiAlias(Device d, u32 v) {  // 0x8267B8E0
   d.SetW(off::ModeControl, Insert(d.W(off::ModeControl), v, 15, 1));
   d.Dirty(kPendingStates, 0x40);
 }
-void RsMultiSampleMask(Device d, u32 v) {  // 0x8264C5C8
+void RsMultiSampleMask(Device d, u32 v) {  // 0x8267B910
   d.SetW(0x2A00, v & 0xFFFF);
   d.Dirty(kPendingMisc, 0x80000);
 }
@@ -290,7 +290,7 @@ void RsScissorTestEnable(Device d, u32 v) {  // 0x8264C4A8
   SetScissorRect(d, i32(d.W(off::ScissorRect)), i32(d.W(off::ScissorRect + 4)),
                  i32(d.W(off::ScissorRect + 8)), i32(d.W(off::ScissorRect + 12)));
 }
-void RsSlopeScaleDepthBias(Device d, u32 v) {  // 0x8264C4C0
+void RsSlopeScaleDepthBias(Device d, u32 v) {  // 0x8267B808
   const float scale = AsFloat(v) * 16.0f;
   u32 mode = d.W(off::ModeControl);
   mode = Insert(mode, (scale != 0.0f || d.F(0x2A54) != 0.0f) ? 1 : 0, 11, 1);
@@ -316,7 +316,7 @@ void RsDepthBias(Device d, u32 v) {  // 0x821FB718
 }
 
 template <u32 Target>
-void RsColorWriteEnable(Device d, u32 v) {  // 0x821FB6E0, 0x8264C5F0, 0x8264C630, 0x8264C670
+void RsColorWriteEnable(Device d, u32 v) {  // 0x821FB6E0, 0x8267B938, 0x8267B978, 0x8267B9B8
   d.SetW(kColorWriteEnable + Target * 4, v);
   if (!d.W(off::RenderTargets + Target * 4))
     v = 0;
@@ -324,15 +324,15 @@ void RsColorWriteEnable(Device d, u32 v) {  // 0x821FB6E0, 0x8264C5F0, 0x8264C63
   d.Dirty(kPendingStates, Bit(37));
 }
 
-void RsTessellationMode(Device d, u32 v) {  // 0x8264CDC0
+void RsTessellationMode(Device d, u32 v) {  // 0x8267C108
   d.SetW(0x2978, (d.W(0x2978) & ~3u) | (v & 3));
   d.Dirty(kPendingFetch, Bit(49));
 }
-void RsMinTessellationLevel(Device d, u32 v) {  // 0x8264CD50
+void RsMinTessellationLevel(Device d, u32 v) {  // 0x8267C098
   d.SetW(0x2980, v);
   d.Dirty(kPendingFetch, Bit(47));
 }
-void RsMaxTessellationLevel(Device d, u32 v) {  // 0x8264CD88
+void RsMaxTessellationLevel(Device d, u32 v) {  // 0x8267C0D0
   d.SetW(0x297C, v);
   d.Dirty(kPendingFetch, Bit(48));
 }
@@ -340,7 +340,7 @@ void RsMaxTessellationLevel(Device d, u32 v) {  // 0x8264CD88
 // Wrap0-7 in PA_SU_WRAPPING0 (0x292C), Wrap8-15 in WRAPPING1 (0x2930). The
 // first of each word ORs the value in unmasked, as N&B's code does.
 template <u32 Index>
-void RsWrap(Device d, u32 v) {  // 0x8264C780 + ...
+void RsWrap(Device d, u32 v) {  // 0x8267BAC8 + ...
   constexpr u32 kWord = Index < 8 ? 0x292C : 0x2930;
   constexpr u32 kShift = (Index % 8) * 4;
   u32 word = d.W(kWord);
@@ -380,76 +380,76 @@ void ApplyHighPrecisionBlend(Device d, u32 slot, u32 enable) {
 }
 
 template <u32 Target>
-void RsHighPrecisionBlendEnable(Device d, u32 v) {  // 0x8264CAF0 + 0x98 * Target
+void RsHighPrecisionBlendEnable(Device d, u32 v) {  // 0x8267BE38 + 0x98 * Target
   d.SetW(kHighPrecisionBlend + Target * 4, v);
   if (!d.W(off::RenderTargets + Target * 4))
     return;
   ApplyHighPrecisionBlend(d, Target ? Target + 1 : 0, v);
 }
 
-void RsHalfPixelOffset(Device d, u32 v) {  // 0x8264CDF8
+void RsHalfPixelOffset(Device d, u32 v) {  // 0x8267C140
   d.SetW(0x29C0, (d.W(0x29C0) & ~1u) | (v & 1));
   d.Dirty(kPendingMisc, Bit(35));
 }
-void RsPrimitiveResetEnable(Device d, u32 v) {  // 0x8264CE30
+void RsPrimitiveResetEnable(Device d, u32 v) {  // 0x8267C178
   d.SetW(off::ModeControl, Insert(d.W(off::ModeControl), v, 21, 1));
   d.Dirty(kPendingStates, 0x40);
 }
-void RsPrimitiveResetIndex(Device d, u32 v) {  // 0x8264CE60
+void RsPrimitiveResetIndex(Device d, u32 v) {  // 0x8267C1A8
   d.SetW(0x28D8, v);
   d.Dirty(kPendingStates, Bit(38));
 }
-void RsAlphaToMaskEnable(Device d, u32 v) {  // 0x8264CE88
+void RsAlphaToMaskEnable(Device d, u32 v) {  // 0x8267C1D0
   d.SetW(off::ColorControl, Insert(d.W(off::ColorControl), v, 4, 1));
   d.Dirty(kPendingStates, 0x200);
 }
-void RsAlphaToMaskOffsets(Device d, u32 v) {  // 0x8264CEB8
+void RsAlphaToMaskOffsets(Device d, u32 v) {  // 0x8267C200
   d.SetW(off::ColorControl, Insert(d.W(off::ColorControl), v, 24, 8));
   d.Dirty(kPendingStates, 0x200);
 }
-void RsGuardBandX(Device d, u32 v) {  // 0x8264CEF0
+void RsGuardBandX(Device d, u32 v) {  // 0x8267C238
   d.SetW(0x29CC, v);
   d.Dirty(kPendingMisc, Bit(32));
 }
-void RsGuardBandY(Device d, u32 v) {  // 0x8264CF20
+void RsGuardBandY(Device d, u32 v) {  // 0x8267C268
   d.SetW(0x29C4, v);
   d.Dirty(kPendingMisc, Bit(34));
 }
-void RsDiscardBandX(Device d, u32 v) {  // 0x8264CF50
+void RsDiscardBandX(Device d, u32 v) {  // 0x8267C298
   d.SetW(0x29D0, v);
   d.Dirty(kPendingMisc, 0x80000000u);
 }
-void RsDiscardBandY(Device d, u32 v) {  // 0x8264CF78
+void RsDiscardBandY(Device d, u32 v) {  // 0x8267C2C0
   d.SetW(0x29C8, v);
   d.Dirty(kPendingMisc, Bit(33));
 }
-void RsHiStencilEnable(Device d, u32 v) {  // 0x8264CFE8
+void RsHiStencilEnable(Device d, u32 v) {  // 0x8267C330
   d.SetW(off::HiControl, Insert(d.W(off::HiControl), v, 3, 1));
   d.Dirty(kPendingStates, 0x100);
 }
-void RsHiStencilWriteEnable(Device d, u32 v) {  // 0x8264D018
+void RsHiStencilWriteEnable(Device d, u32 v) {  // 0x8267C360
   d.SetW(off::HiControl, Insert(d.W(off::HiControl), v, 2, 1));
   d.Dirty(kPendingStates, 0x100);
 }
-void RsHiStencilFunc(Device d, u32 v) {  // 0x8264D048
+void RsHiStencilFunc(Device d, u32 v) {  // 0x8267C390
   d.SetW(off::HiControl, Insert(d.W(off::HiControl), v, 5, 1));
   d.Dirty(kPendingStates, 0x100);
 }
-void RsHiStencilRef(Device d, u32 v) {  // 0x8264D078
+void RsHiStencilRef(Device d, u32 v) {  // 0x8267C3C0
   d.SetB(0x2942, u8(v));
   d.Dirty(kPendingStates, 0x100);
 }
-void RsPresentInterval(Device d, u32 v) {  // 0x8264D098
+void RsPresentInterval(Device d, u32 v) {  // 0x8267C3E0
   d.SetW(kPresentInterval, v);
 }
-void RsPresentImmediateThreshold(Device d, u32 v) {  // 0x8264D0A8
+void RsPresentImmediateThreshold(Device d, u32 v) {  // 0x8267C3F0
   d.SetW(kBlendFlags, Insert(d.W(kBlendFlags), v, 23, 7));
 }
-void RsHiZEnable(Device d, u32 v) {  // 0x8264CFA8
+void RsHiZEnable(Device d, u32 v) {  // 0x8267C2F0
   d.SetW(kBlendFlags, Insert(d.W(kBlendFlags), v, 20, 3));
   d.Dirty(kPendingStates, 0x20000);
 }
-void RsHiZWriteEnable(Device d, u32 v) {  // 0x822899D0
+void RsHiZWriteEnable(Device d, u32 v) {  // 0x8228CCB8
   const u32 flags = Insert(d.W(kBlendFlags), v, 17, 3);
   d.SetW(kBlendFlags, flags);
   u64 predicated = d.Q(off::PredicatedPending2);
@@ -460,15 +460,15 @@ void RsHiZWriteEnable(Device d, u32 v) {  // 0x822899D0
   d.SetQ(off::PredicatedPending2, predicated);
   d.Dirty(kPendingStates, 0x100);
 }
-void RsLastPixel(Device d, u32 v) {  // 0x8264C060
+void RsLastPixel(Device d, u32 v) {  // 0x8267B338
   d.SetW(0x29B8, Insert(d.W(0x29B8), v, 10, 1));
   d.Dirty(kPendingMisc, Bit(37));
 }
-void RsLineWidth(Device d, u32 v) {  // 0x8264C098
+void RsLineWidth(Device d, u32 v) {  // 0x8267B370
   d.SetH(0x296E, u16(TruncateToI64(AsFloat(v) * 8.0f)));
   d.Dirty(kPendingFetch, Bit(52));
 }
-void RsBuffer2Frames(Device d, u32 v) {  // 0x8264C110
+void RsBuffer2Frames(Device d, u32 v) {  // 0x8267B3E8
   const u32 flags = d.W(kBehaviorFlags2);
   d.SetW(kBehaviorFlags2, v ? (flags | 1) : (flags & ~1u));
 }
@@ -558,7 +558,7 @@ constexpr RenderStateFn kRenderStateFns[kRenderStates] = {
 };
 
 // ---------------------------------------------------------------------------
-// Sampler states (off_82E50BD0 order)
+// Sampler states (off_82E81550 order)
 // ---------------------------------------------------------------------------
 
 // The texture's Z filter (fetch dword 4, bits 0-1) from the min/mag filters
@@ -573,16 +573,16 @@ void SsAddress(Device d, u32 s, u32 v, u32 shift) {
   d.SetW(Fetch(s, 0), Insert(d.W(Fetch(s, 0)), v, shift, 3));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsAddressU(Device d, u32 s, u32 v) {  // 0x8227D2D0
+void SsAddressU(Device d, u32 s, u32 v) {  // 0x822800D0
   SsAddress(d, s, v, 10);
 }
 void SsAddressV(Device d, u32 s, u32 v) {  // 0x8220C4E0
   SsAddress(d, s, v, 13);
 }
-void SsAddressW(Device d, u32 s, u32 v) {  // 0x8264D630
+void SsAddressW(Device d, u32 s, u32 v) {  // 0x8267CA88
   SsAddress(d, s, v, 16);
 }
-void SsBorderColor(Device d, u32 s, u32 v) {  // 0x8264D590
+void SsBorderColor(Device d, u32 s, u32 v) {  // 0x8267C9E8
   d.SetW(Fetch(s, 5), (d.W(Fetch(s, 5)) & ~3u) | (v ? 1u : 0u));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
@@ -617,11 +617,11 @@ void SsMagFilter(Device d, u32 s, u32 v) {
 void SsMinFilter(Device d, u32 s, u32 v) {
   SsFilter(d, s, v, false);
 }
-void SsMipFilter(Device d, u32 s, u32 v) {  // 0x8228F2F0
+void SsMipFilter(Device d, u32 s, u32 v) {  // 0x82292DE8
   d.SetW(Fetch(s, 3), Insert(d.W(Fetch(s, 3)), v, 23, 2));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsMipMapLodBias(Device d, u32 s, u32 v) {  // 0x8264D460
+void SsMipMapLodBias(Device d, u32 s, u32 v) {  // 0x8267C7A8
   const u32 bias = u32(TruncateToI64(AsFloat(v) * 32.0f));
   d.SetW(Fetch(s, 4), Insert(d.W(Fetch(s, 4)), bias, 12, 10));
   d.Dirty(kPendingFetch, FetchBit(s));
@@ -638,7 +638,7 @@ void SsMaxMipLevel(Device d, u32 s, u32 v) {  // 0x8222F590
   }
   d.SetB(kMaxMipLevel + s, u8(v));
 }
-void SsMinMipLevel(Device d, u32 s, u32 v) {  // 0x8264D510
+void SsMinMipLevel(Device d, u32 s, u32 v) {  // 0x8267C858
   if (const u32 texture = d.W(off::Textures + s * 4)) {
     const auto *format = GuestPtr<const be_u32>(texture + 0x2C);
     u32 level = format ? Extract(*format, 6, 4) : 0;
@@ -649,7 +649,7 @@ void SsMinMipLevel(Device d, u32 s, u32 v) {  // 0x8264D510
   }
   d.SetB(kMinMipLevel + s, u8(v));
 }
-void SsMaxAnisotropy(Device d, u32 s, u32 v) {  // 0x8264D340
+void SsMaxAnisotropy(Device d, u32 s, u32 v) {  // 0x8267C688
   const u32 dword4 = d.W(Fetch(s, 4));
   if ((dword4 & 0x800) || (dword4 & 0x400)) {
     d.SetW(Fetch(s, 3), Insert(d.W(Fetch(s, 3)), kAnisoFilter[v % kAnisoFilter.size()], 25, 3));
@@ -659,7 +659,7 @@ void SsMaxAnisotropy(Device d, u32 s, u32 v) {  // 0x8264D340
 }
 // MagFilterZ / MinFilterZ / SeparateZFilterEnable: bits 0 / 1 / 2 of the
 // sampler's Z filter state, then the fetch constant's Z filter.
-void SsZFilterState(Device d, u32 s, u32 v, u32 bit) {  // 0x8264D1E0 / 0x8264D100 / 0x8264D298
+void SsZFilterState(Device d, u32 s, u32 v, u32 bit) {  // 0x8267C528 / 0x8267C448 / 0x8267C5E0
   const u8 z_state = u8((d.B(kZFilter + s) & ~(1u << bit)) | (v << bit));
   const u32 dword3 = d.W(Fetch(s, 3));
   d.SetW(Fetch(s, 4), (d.W(Fetch(s, 4)) & ~3u) | ZFilterBits(dword3, z_state));
@@ -675,28 +675,28 @@ void SsMinFilterZ(Device d, u32 s, u32 v) {
 void SsSeparateZFilterEnable(Device d, u32 s, u32 v) {
   SsZFilterState(d, s, v, 2);
 }
-void SsTrilinearThreshold(Device d, u32 s, u32 v) {  // 0x8264D680
+void SsTrilinearThreshold(Device d, u32 s, u32 v) {  // 0x8267CAD8
   d.SetW(Fetch(s, 5), Insert(d.W(Fetch(s, 5)), v, 3, 2));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsAnisotropyBias(Device d, u32 s, u32 v) {  // 0x8264D3B8
+void SsAnisotropyBias(Device d, u32 s, u32 v) {  // 0x8267C700
   const u32 bias = u32(TruncateToI64(AsFloat(v) * -8.0f));
   d.SetW(Fetch(s, 5), Insert(d.W(Fetch(s, 5)), bias, 5, 4));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsHGradientExpBias(Device d, u32 s, u32 v) {  // 0x8264D6D8
+void SsHGradientExpBias(Device d, u32 s, u32 v) {  // 0x8267CB30
   d.SetW(Fetch(s, 4), Insert(d.W(Fetch(s, 4)), v, 22, 5));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsVGradientExpBias(Device d, u32 s, u32 v) {  // 0x8264D730
+void SsVGradientExpBias(Device d, u32 s, u32 v) {  // 0x8267CB88
   d.SetW(Fetch(s, 4), Insert(d.W(Fetch(s, 4)), v, 27, 5));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsWhiteBorderColorW(Device d, u32 s, u32 v) {  // 0x8264D788
+void SsWhiteBorderColorW(Device d, u32 s, u32 v) {  // 0x8267CBE0
   d.SetW(Fetch(s, 5), Insert(d.W(Fetch(s, 5)), v, 2, 1));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
-void SsPointBorderEnable(Device d, u32 s, u32 v) {  // 0x8264D7E0
+void SsPointBorderEnable(Device d, u32 s, u32 v) {  // 0x8267CCB0
   d.SetW(Fetch(s, 1), Insert(d.W(Fetch(s, 1)), v ? 0 : 1, 11, 1));
   d.Dirty(kPendingFetch, FetchBit(s));
 }
@@ -727,8 +727,8 @@ constexpr SamplerStateFn kSamplerStateFns[kSamplerStates] = {
 };
 
 // N&B's state tables: {getter, setter, default} per state.
-constexpr u32 kRenderStateTable = 0x82E506F0;
-constexpr u32 kSamplerStateTable = 0x82E50BD0;
+constexpr u32 kRenderStateTable = 0x82E81070;
+constexpr u32 kSamplerStateTable = 0x82E81550;
 constexpr u32 kTextureSamplers = 26;
 
 u32 TableWord(u32 table, u32 index, u32 field) {
@@ -750,13 +750,13 @@ void SetSamplerState(Device device, u32 sampler, u32 state, u32 value) {
     kSamplerStateFns[state](device, sampler, value);
 }
 
-// The getters (0x8264BE78-0x8264D840), each a read of the state's storage.
+// The getters (0x8264BE78-0x8267CD10), each a read of the state's storage.
 // Entries 0-9 of the table share a getter returning 0.
 u32 GetRenderState(Device d, u32 state) {
   if (!d)
     return 0;
   auto bits = [&d](u32 offset, u32 shift, u32 width) { return Extract(d.W(offset), shift, width); };
-  // A [0, 1] float as a byte: fmadds by 255 and 0.5 (flt_821258F4, flt_82000C74), fctidz.
+  // A [0, 1] float as a byte: fmadds by 255 and 0.5 (flt_821258F4, flt_82000E2C), fctidz.
   auto byte = [](float v) { return u32(TruncateToI64(std::fma(v, 255.0f, 0.5f))); };
   switch (state) {
     case 10: return d.W(kZEnable);
@@ -766,7 +766,7 @@ u32 GetRenderState(Device d, u32 state) {
     case 14: return bits(off::ModeControl, 0, 3);    // CullMode
     case 15: return d.W(kBlendFlags) >> 31;          // AlphaBlendEnable
     case 16: return bits(kBlendFlags, 30, 1);        // SeparateAlphaBlendEnable
-    case 17: {  // BlendFactor (sub_8264BFE8): ARGB from the RGBA floats
+    case 17: {  // BlendFactor (sub_8267B2C0): ARGB from the RGBA floats
       const u32 r = byte(d.F(0x28E0)), g = byte(d.F(0x28E4)), b = byte(d.F(0x28E8));
       const u32 a = byte(d.F(0x28EC));
       return (a << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
@@ -778,7 +778,7 @@ u32 GetRenderState(Device d, u32 state) {
     case 22: return bits(kBlendState, 24, 5);        // DestBlendAlpha
     case 23: return bits(kBlendState, 21, 3);        // BlendOpAlpha
     case 24: return bits(off::ColorControl, 3, 1);   // AlphaTestEnable
-    case 25: return byte(d.F(0x2904));               // AlphaRef (sub_8264BF88)
+    case 25: return byte(d.F(0x2904));               // AlphaRef (sub_8267B260)
     case 26: return bits(off::ColorControl, 0, 3);   // AlphaFunc
     case 27: return d.W(kStencilEnable);
     case 28: return bits(off::DepthControl, 7, 1);   // TwoSidedStencilMode
@@ -832,7 +832,7 @@ u32 GetRenderState(Device d, u32 state) {
     case 96: return bits(kBlendFlags, 20, 3);        // HiZEnable
     case 97: return bits(kBlendFlags, 17, 3);        // HiZWriteEnable
     case 98: return bits(0x29B8, 10, 1);             // LastPixel
-    case 99: return std::bit_cast<u32>(float(d.H(0x296E)) * 0.125f);  // LineWidth (sub_8264C0D8)
+    case 99: return std::bit_cast<u32>(float(d.H(0x296E)) * 0.125f);  // LineWidth (sub_8267B3B0)
     case 100: return bits(kBehaviorFlags2, 0, 1);    // Buffer2Frames
     default:
       if (state >= 60 && state <= 75) {  // Wrap0-15, a nibble each
@@ -866,7 +866,7 @@ u32 GetSamplerState(Device d, u32 s, u32 state) {
     case 12: return (d.B(kZFilter + s) >> 2) & 1;    // SeparateZFilterEnable
     case 13: return d.B(kMinMipLevel + s);
     case 14: return Extract(fetch(5), 3, 2);         // TrilinearThreshold
-    case 15:                                         // AnisotropyBias (sub_8264D418): -signed 4 bits / 8
+    case 15:                                         // AnisotropyBias (sub_8267C760): -signed 4 bits / 8
       return std::bit_cast<u32>(-(float(i32(fetch(5) << 23) >> 28) * 0.125f));
     case 16: return u32(i32(fetch(4) << 5) >> 27);   // HGradientExpBias
     case 17: return u32(i32(fetch(4)) >> 27);        // VGradientExpBias
@@ -1136,7 +1136,7 @@ void SetViewport(Device device, u32 viewport_va) {
               float(double(u32(v[2]))), float(double(u32(v[3]))), AsFloat(v[4]), AsFloat(v[5]));
 }
 
-// D3D::SetSurfaceInfo(CDevice*, D3DSurface*) [0x8227AEB0]: RB_SURFACE_INFO and
+// D3D::SetSurfaceInfo(CDevice*, D3DSurface*) [0x8227DD10]: RB_SURFACE_INFO and
 // the MSAA config from the surface; the scissor and viewport reset to it.
 void SetSurfaceInfo(Device device, u32 surface) {
   const auto *s = GuestPtr<const be_u32>(surface);
@@ -1155,7 +1155,7 @@ void SetSurfaceInfo(Device device, u32 surface) {
   SetViewport(device, 0.0f, 0.0f, 65535.0f, 65535.0f, 0.0f, 1.0f);  // unk_820018DC
 }
 
-// void D3DDevice_SetRenderTarget(D3DDevice*, DWORD Index, D3DSurface*) [0x8227AB68]
+// void D3DDevice_SetRenderTarget(D3DDevice*, DWORD Index, D3DSurface*) [0x8227D9D0]
 void SetRenderTarget(Device device, u32 index, u32 surface) {
   if (!device || index >= 4)
     return;
@@ -1188,7 +1188,7 @@ void SetRenderTarget(Device device, u32 index, u32 surface) {
   device.Dirty(kPendingStates, Bit(37));
 }
 
-// void D3DDevice_SetDepthStencilSurface(D3DDevice*, D3DSurface*) [0x8227AF40]
+// void D3DDevice_SetDepthStencilSurface(D3DDevice*, D3DSurface*) [0x8227DD38]
 void SetDepthStencilSurface(Device device, u32 surface) {
   if (!device)
     return;
@@ -1237,7 +1237,7 @@ void SetPredication(Device device, u32 mask) {
 }
 
 // void D3DDevice_SetCommandBufferPredication(D3DDevice*, DWORD TilePredication,
-//     DWORD RunPredication) [0x82658678]
+//     DWORD RunPredication) [0x82687C78]
 void SetCommandBufferPredication(Device device, u32 tile_predication, u32 run_predication) {
   if (!device)
     return;
@@ -1258,7 +1258,7 @@ void SetCommandBufferPredication(Device device, u32 tile_predication, u32 run_pr
   device.SetW(off::RunPredication, run_predication);
 }
 
-// D3D::CleanupGprAllocationSetup (0x8264E2C0): the state a GPR allocation
+// D3D::CleanupGprAllocationSetup (0x8267D790): the state a GPR allocation
 // change invalidates.
 void CleanupGprAllocationSetup(Device device) {
   if (!device)
@@ -1296,14 +1296,14 @@ void SetShaderGPRAllocation(Device device, u32 flags, u32 vertex_count, u32 pixe
 }
 
 // void D3DDevice_SetScreenExtentQueryMode(D3DDevice*, D3DSCREENEXTENTQUERYMODE)
-// [0x82658988]
+// [0x82688000]
 void SetScreenExtentQueryMode(Device device, u32 mode) {
   if (!device)
     return;
   device.SetW(kScreenExtentQueryMode, Insert(device.W(kScreenExtentQueryMode), mode, 12, 2));
 }
 
-// void D3DDevice_UnsetAll(D3DDevice*) [0x8264E1A8]: everything but the
+// void D3DDevice_UnsetAll(D3DDevice*) [0x8267D678]: everything but the
 // device's own (InitializePresentationParameters') surfaces.
 void UnsetAll(Device device) {
   if (!device)
@@ -1325,7 +1325,7 @@ void UnsetAll(Device device) {
     SetTexture(device, sampler, 0);
 }
 
-// D3D::ResetAllState(CDevice*, BOOL) [0x82287D38]: besides the packets that
+// D3D::ResetAllState(CDevice*, BOOL) [0x8228AFE8]: besides the packets that
 // restore the predication and the screen extent mode, every dirty mask set.
 void ResetAllState(Device device) {
   if (!device)
@@ -1334,7 +1334,7 @@ void ResetAllState(Device device) {
     device.SetPending(word, ~u64(0));
 }
 
-// D3D::InvalidateConstants (0x8264E128): an invalidate packet, after which
+// D3D::InvalidateConstants (0x8267D5F8): an invalidate packet, after which
 // the constants are not known to be loaded.
 void InvalidateConstants(Device device) {
   if (!device)
@@ -1343,7 +1343,7 @@ void InvalidateConstants(Device device) {
   device.SetB(off::Flags1, device.B(off::Flags1) & 0xFB);
 }
 
-// D3D::InvalidateConstants (0x82657488): a cache flush packet, then a wait
+// D3D::InvalidateConstants (0x82686A38): a cache flush packet, then a wait
 // for the current fence.
 void InvalidateConstantsAndWait(Device device) {
   if (!device)
@@ -1567,7 +1567,7 @@ void Resolve(Device device, u32 flags, u32 dest_texture, float clear_z, u32 clea
   if (flags & 0x200)
     SetDepthClear(device, parameters, clear_z, clear_stencil);
   if (flags & 0x100)
-    device.Dirty(kPendingMisc, 0xC0);  // SetColorClear (0x82290DE0)
+    device.Dirty(kPendingMisc, 0xC0);  // SetColorClear (0x82294B00)
   FlushStatePackets(device);
   device.SetB(off::Flags2, device.B(off::Flags2) & 0xF7);
   if (flags & 0x200) {
@@ -1609,15 +1609,15 @@ constexpr u32 kExportCount = 0x34C0;         // BeginExports not yet ended
 constexpr u32 kExportNanVertexDone = 0x34C4;
 constexpr u32 kExportFlags = 0x34C8;
 // N&B's switches for the two GPU workarounds below (dword_82FAD204/208).
-constexpr u32 kSkipExportNanVertex = 0x82FAD204;
-constexpr u32 kSkipExport512Pixels = 0x82FAD208;
+constexpr u32 kSkipExportNanVertex = 0x82FE1F5C;
+constexpr u32 kSkipExport512Pixels = 0x82FE1F60;
 
 u32 GuestWord(u32 va) {
   const auto *p = GuestPtr<const be_u32>(va);
   return p ? u32(*p) : 0;
 }
 
-// DoBeginExportNanVertex (0x82654FD8): a draw of one NaN vertex, from its own
+// DoBeginExportNanVertex (0x82684580): a draw of one NaN vertex, from its own
 // shaders and state.
 void ExportNanVertex(Device d) {
   if (GuestWord(kSkipExportNanVertex))
@@ -1625,7 +1625,7 @@ void ExportNanVertex(Device d) {
   d.Dirty(kPendingStates, 0x80000 | Bit(41) | Bit(40) | Bit(39) | 8);
 }
 
-// DoEndExport512Pixels (0x82655130): a 512-pixel draw, from its own shaders
+// DoEndExport512Pixels (0x826846D8): a 512-pixel draw, from its own shaders
 // and state.
 void Export512Pixels(Device d) {
   if (GuestWord(kSkipExport512Pixels))
@@ -1669,7 +1669,7 @@ void BeginExport(Device device, u32 index, u32 resource, u32 flags) {
   device.SetW(kExportCount, device.W(kExportCount) + 1);
 }
 
-// The written range's cache invalidation (InvalidateCaches 0x8226BA20) goes
+// The written range's cache invalidation (InvalidateCaches 0x8226EAB8) goes
 // into the ring.
 void EndExport(Device device, u32 index, u32 resource, u32 flags) {
   if (!device || index > 51)

@@ -10,8 +10,8 @@ A simple linear scan of each function would report rotated loops (a `goto` forwa
 the body textually first) as reads before writes. Marking such a normal
 function share_registers is harmful: its __savegprlr/__restgprlr calls are elided (global gate), it
 then clobbers ctx.r14-r31, and a `bl` caller copies those clobbered values back into its locals
-(emit_call_sharing_registers copyBack). That corrupted sub_82978560's registers after its call to
-sub_82977800 (startup crash, first attempt).
+(emit_call_sharing_registers copyBack). That corrupted sub_829A8908's registers after its call to
+sub_829A7BA8 (startup crash, first attempt).
 
 This version builds the control-flow graph from the generated labels/gotos/switches and runs a
 must-be-written dataflow, so a read is reported only if some path from entry reaches it with the
@@ -27,9 +27,9 @@ separately on stderr and ignored: with locals they store a dead value, which is 
 
 Run it on code generated WITHOUT share_registers marks (they turn the marked functions back to ctx.*,
 which hides them). Usage:
-  tools/read_before_write.py app/generated/default --noreturn=82ACA550            # report
-  tools/read_before_write.py app/generated/default --noreturn=82ACA550 --toml     # perf_overrides.toml lines
-  ... --why=sub_827F6558       # print every offending line of that function with its label (stderr)
+  tools/read_before_write.py app/generated/default --noreturn=82AF9D18            # report
+  tools/read_before_write.py app/generated/default --noreturn=82AF9D18 --toml     # perf_overrides.toml lines
+  ... --why=sub_82826210       # print every offending line of that function with its label (stderr)
 
 Volatile mode (non_argument_as_local): the registers are r0, r2, r11, r12, f0, v32-v63 and the
 lwarx reservation (reserved_as_local).

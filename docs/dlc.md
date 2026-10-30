@@ -49,8 +49,11 @@ stops at 50 unresolved calls, the same kind of discovery gaps `app/overrides.tom
 
 ## The plan
 
-**Decided (the user, 2026-10-29):** after the optimisation rounds, the whole project moves to Scholar of the First
-Sin's executable and data (no second build for the 2014 one).
+**Decided (the user, 2026-10-29):** the whole project moves to Scholar of the First Sin's executable and data (no
+second build for the 2014 one). First planned for after the optimisation rounds, then the same day moved forward: the
+migration comes first and the optimisation goes on with the new version. The 2014 port's last commit is tagged
+`ds2-2014-final` (the 33rd build); its generated code and image are kept in `out/gen_2014/` (the remap reads them) and
+its game data in `assets/game_root_2014/`.
 
 1. `game_root` from Scholar's disc 1; the codegen on its `Default.xex` with overrides made for it (the gap tools,
    then the console's runtime gaps).
@@ -66,3 +69,32 @@ Scholar of the First Sin on the Xbox 360 is the 2014 game with its title updates
 2026-10-29): the changed enemy placement and the rest of the "Scholar" changes are the next generation's (Xbox One, PS4,
 the PC's DirectX 11 version). The disc agrees: the same title, an executable built from the same code, the 2014
 regulation kept beside the new one. Moving to it keeps the game as it is, with the patches' balance and the DLCs.
+
+## The migration, step by step (started 2026-10-29)
+
+1. `assets/game_root` is Scholar's disc 1 (`tools/extract_iso.py`), the 2014 one moved to `assets/game_root_2014`.
+2. `tools/xex_func_map.py` got a neighbour pass: a function the scan left out (short, ambiguous) is tried at the
+   displacement of the mapped functions around it. 76,676 of the 82,889 functions map (92.5 %; was 38,874).
+3. `tools/xex_addr_remap.py` moved every address of `app/` and `tools/` (`--write`; its report in
+   `out/sotfs/remap_applied.txt`): code addresses by the function that holds them (at least four normalised words
+   checked at the new place; the render state's tiny entries by their exact words near their neighbours), data
+   addresses by the code that loads them (`lis`/D-form pairs) or by the code pointers stored around them. Tokens on a
+   comment line after "N&B", "SA2" and the like are other games' addresses and stay. Left as they were: the
+   addresses in `.pdata` and the other games' data addresses that banjo-nx's and sa2-nx's code kept (they named
+   nothing in the 2014 executable either), and the comments' evidence addresses the tool could not place.
+4. `app/overrides.toml`: 29 entries whose code is not in Scholar's executable and 3 that landed on an address already
+   listed (vtable thunks that differ only by their offset) are commented out; the gap tools find what is missing.
+5. 253 of the 294 hooks of `app/src` name an address that was no function of the 2014 code (banjo-nx's census of
+   Nuts & Bolts's Direct3D, never matched in Dark Souls II): dead there. After Scholar's codegen every hook is
+   checked again, so that none of them becomes live on a Scholar function it was never meant for.
+6. Scholar's codegen (optimised flavour) with the moved overrides: 5 unresolved calls (50 without them), fixed in
+   `app/overrides.toml` (three more frameless leaves bounded by hand, two 2-instruction thunks); 83,806 functions.
+   `app/indirect_promotions.txt`: 61 of its 460 lines named a function, a target or a site Scholar's code does not
+   have and are dropped (the guards make the rest safe; a census of Scholar on the PC replaces the list).
+7. The hooks against Scholar's functions (`tools/hook_liveness.sh`): one dead 2014 hook would have become live on a
+   Scholar function, and it is one of a whole class: `gpu/d3d/hooks/state.cpp`'s 255 hooks are N&B's Direct3D census,
+   none of them Dark Souls II's Direct3D, and the 8 of them that were live in the 2014 build had replaced ordinary
+   game functions (a constructor among them). Out of the build (`DS2_NB_STATE_HOOKS`, 0).
+8. The game shaders: Scholar's disc has the same 1,481 shaders, byte for byte (only the 72 in `Default.xex` moved), so
+   the deko3d package, the PC shader cache and the players' `deko3d_shaders.bin` / `pipeline_list.bin` stay valid.
+9. The gameplay changes (`src/ds2_features.cpp`) are out of the build meanwhile (docs/features.md).

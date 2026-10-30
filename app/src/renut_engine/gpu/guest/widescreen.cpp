@@ -36,27 +36,27 @@ constexpr double kMaxAspect = 32.0 / 9.0;
 
 // Camera projection aspect modes (sub_82239C40): the active camera's mode at
 // +0x6C, where 3 means the console's (0 = 4:3, 1 = 16:9, 2 = 2.35:1).
-constexpr u32 kActiveCameraVa = 0x82FADD20;
+constexpr u32 kActiveCameraVa = 0x82FE2A78;
 constexpr u32 kCameraAspectModeOffset = 0x6C;
-constexpr u32 kConsoleAspectModeVa = 0x82FADDE8;
+constexpr u32 kConsoleAspectModeVa = 0x82FE2B40;
 constexpr u32 kAspectModeConsole = 3;
 constexpr u32 kAspectMode4x3 = 0;
 
 // sub_823191B8's buffers: pools of 1280x736 32bpp texels (0x398000 bytes)
 // and a 0x730000-byte one, created once (kPoolsCreatedVa) and freed by
-// sub_823ED2A8. Their sizes are kept for placing textures at a pool's end.
-constexpr u32 kPoolsCreatedVa = 0x82F835E8;
+// sub_82403BA0. Their sizes are kept for placing textures at a pool's end.
+constexpr u32 kPoolsCreatedVa = 0x82FB8588;
 constexpr u32 kScreenPoolBytes = 0x398000;
 constexpr u32 kImagePoolBytes = 0x730000;
-constexpr u32 kScratchPoolSizeVa = 0x82F835B0;
-constexpr u32 kScratchPoolVa = 0x82F835B4;
-constexpr u32 kCopyPoolSizeVa = 0x82F835B8;
-constexpr u32 kDepthPoolSizeVa = 0x82F835D0;
-// Scratch textures over the scratch pool sized for 1280 (sub_82319650 /
+constexpr u32 kScratchPoolSizeVa = 0x82FB8550;
+constexpr u32 kScratchPoolVa = 0x82FB8554;
+constexpr u32 kCopyPoolSizeVa = 0x82FB8558;
+constexpr u32 kDepthPoolSizeVa = 0x82FB8570;
+// Scratch textures over the scratch pool sized for 1280 (sub_82326464 /
 // sub_82230E18 pick them by the camera viewport): the whole screen at its
 // start, the split-screen halves at its end.
 constexpr u32 kScreenScratchVa = 0x82F8336C;      // 1280x720
-constexpr u32 kHalfWidthScratchVa = 0x82F833A0;   // 640x720
+constexpr u32 kHalfWidthScratchVa = 0x82FB8120;   // 640x720
 constexpr u32 kTopScratchVa = 0x82F833D4;         // 1280x352
 constexpr u32 kBottomScratchVa = 0x82F83408;      // 1280x368
 
@@ -155,7 +155,7 @@ void WidenScratchTextures() {
 }
 
 // sub_823191B8's pool allocations, sized for the wider screen. The image
-// pool keeps its recorded size: sub_82575010 puts a screen texture at its
+// pool keeps its recorded size: sub_8259AF88 puts a screen texture at its
 // recorded size less one 1280 screen, so only the room past it grows.
 u32 PoolAllocationBytes(u32 bytes) {
   if (bytes == kScreenPoolBytes)
@@ -181,7 +181,7 @@ u32 CameraAspectMode() {
   return mode == kAspectModeConsole ? LoadU32(kConsoleAspectModeVa) : mode;
 }
 
-// XUI's root is the back buffer's size (sub_823E92E8), so its units are
+// XUI's root is the back buffer's size (sub_823FFD18), so its units are
 // screen pixels; sub_82208338 still scales its view by the render target
 // over 1280x720, which on a wider screen would stretch XUI sideways. That
 // view keeps the vertical scale on both axes. The target is the screen, or
@@ -221,14 +221,14 @@ uint32_t GuestScreenWidth() {
 
 using namespace renut::gpu;
 
-// void sub_823ED828(int query, int *mode, DWORD *width, DWORD *height,
+// void sub_82404148(int query, int *mode, DWORD *width, DWORD *height,
 //                   BOOL *hidef): the screen size for the video mode, 1280x720
 // for every HD mode. Widened here.
-REX_EXTERN(__imp__sub_823ED828);
-BANJO_RENUT_HOOK_RAW(sub_823ED828) {
+REX_EXTERN(__imp__sub_82404148);
+BANJO_RENUT_HOOK_RAW(sub_82404148) {
   const u32 width_va = ctx.r5.u32;
   const u32 height_va = ctx.r6.u32;
-  __imp__sub_823ED828(ctx, base);
+  __imp__sub_82404148(ctx, base);
   if (width_va && height_va && LoadU32(width_va) == kNativeWidth &&
       LoadU32(height_va) == kNativeHeight)
     StoreU32(width_va, GuestScreenWidth());
@@ -245,13 +245,13 @@ BANJO_RENUT_HOOK_RAW(sub_823191B8) {
   t_sizing_pools = false;
 }
 
-// LPVOID sub_82364C78(SIZE_T size, int alignment, DWORD protect): the game's
+// LPVOID sub_82375B00(SIZE_T size, int alignment, DWORD protect): the game's
 // XPhysicalAlloc.
-REX_EXTERN(__imp__sub_82364C78);
-BANJO_RENUT_HOOK_RAW(sub_82364C78) {
+REX_EXTERN(__imp__sub_82375B00);
+BANJO_RENUT_HOOK_RAW(sub_82375B00) {
   if (t_sizing_pools)
     ctx.r3.u64 = PoolAllocationBytes(ctx.r3.u32);
-  __imp__sub_82364C78(ctx, base);
+  __imp__sub_82375B00(ctx, base);
 }
 
 // float sub_82239C40(): the active camera's projection aspect.

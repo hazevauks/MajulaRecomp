@@ -2,14 +2,14 @@
  * @file    gpu/guest/photo_capture.cpp
  * @brief   N&B's frame capture for photos, native.
  *
- * sub_82535F20 (BOOL (D3DTexture *photo)) copies the frame into a CPU
- * texture: photo mode's shot (sub_8229BFF8, state 3) and the pause menu's
- * backdrop (sub_82577A98, sub_82546838), all into stru_82F83564, the
+ * sub_825593E8 (BOOL (D3DTexture *photo)) copies the frame into a CPU
+ * texture: photo mode's shot (sub_8229F160, state 3) and the pause menu's
+ * backdrop (sub_8259D958, sub_82546838), all into stru_82F83564, the
  * screen-sized D3DFMT_LIN_X8R8G8B8 texture sub_823191B8 sets up. The game
- * then shows it and saves it to the album from guest memory (sub_825360B0).
+ * then shows it and saves it to the album from guest memory (sub_82559578).
  * The original resolves render target 0 (the size of the device's automatic
  * back buffer, +0x39F0) into an X8R8G8B8 header over scratch memory
- * (sub_821E80A0: dword_82F835AC), locks both and untiles the resolve into the
+ * (sub_821E80A0: dword_82FB854C), locks both and untiles the resolve into the
  * photo with XGRAPHICS::UntileSurface. The renderer's resolves stay on the
  * host GPU, so that untile copied memory nothing wrote: a black photo.
  *
@@ -17,7 +17,7 @@
  * after the work queued before the call) and the words go into the photo's
  * rows, which is what the untile leaves there. Left out: the scratch header
  * and its resolve's device work (fences on a header that lives for the call),
- * and the cache flushes of both ranges (sub_82654C28).
+ * and the cache flushes of both ranges (sub_826841D0).
  */
 #include <algorithm>
 #include <cstring>
@@ -45,15 +45,15 @@ using namespace renut::gpu;
 
 namespace {
 
-// dword_82FAC7C0: N&B's D3DDevice.
-constexpr u32 kDevicePointer = 0x82FAC7C0;
+// dword_82FE1518: N&B's D3DDevice.
+constexpr u32 kDevicePointer = 0x82FE1518;
 
 u32 LoadU32(u32 va) {
   const auto *p = GuestPtr<const be_u32>(va);
   return p ? u32(*p) : 0;
 }
 
-// BOOL sub_82535F20(D3DTexture *photo) [0x82535F20]
+// BOOL sub_825593E8(D3DTexture *photo) [0x825593E8]
 u32 PhotoCapture_hook(u32 photo) {
   const u32 device = LoadU32(kDevicePointer);
   const u32 back_buffer = device ? LoadU32(device + native::off::AutoBackBuffer) : 0;
@@ -121,4 +121,4 @@ u32 PhotoCapture_hook(u32 photo) {
 
 } // namespace
 
-BANJO_RENUT_HOOK(sub_82535F20, PhotoCapture_hook);  // sub_82535F20
+BANJO_RENUT_HOOK(sub_825593E8, PhotoCapture_hook);  // sub_825593E8

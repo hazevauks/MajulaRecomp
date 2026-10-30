@@ -64,7 +64,7 @@ def hooked():
             if path.endswith(CODE_SUFFIXES):
                 text = CodeOnly(text)
             # ds2-nx: Dark Souls II's code runs from 0x82240000 to 0x83402474, so 83xxxxxx addresses count too (the
-            # pattern was 82xxxxxx only: a hook on a function above 0x83000000 would have been called around).
+            # pattern was 82xxxxxx only: a hook on a function above 0x83035178 would have been called around).
             for m in re.findall(r'(?<![0-9A-Fa-f])(8[23][0-9A-Fa-f]{6})(?![0-9A-Fa-f])', text):
                 names.add('sub_' + m.upper())
     return names

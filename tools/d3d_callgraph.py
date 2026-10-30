@@ -7,8 +7,8 @@ and who calls it. Then answers queries:
 
   python tools/d3d_callgraph.py --build                 # (re)make out/d3d_callgraph.json
   python tools/d3d_callgraph.py --import VdSwap         # the functions calling an import, with their callers
-  python tools/d3d_callgraph.py --func 829BB060         # one function: size, callees, callers
-  python tools/d3d_callgraph.py --range 829B0000 829D0000 --imports   # every function of a range that calls imports
+  python tools/d3d_callgraph.py --func 829EB228         # one function: size, callees, callers
+  python tools/d3d_callgraph.py --range 829E01C8 82A001C8 --imports   # every function of a range that calls imports
 """
 import argparse
 import glob

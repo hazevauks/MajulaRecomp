@@ -63,7 +63,7 @@ using Clock = std::chrono::steady_clock;
 constexpr uint32_t kDeviceOffsetPresentationInterval = 14000;  // the device's copy of D3DPRESENT_PARAMETERS + 52
 constexpr Clock::duration kRefresh = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / 60.0));
 
-// Refreshes per frame for D3DPRESENT_INTERVAL_*: as DS2's SynchronizeToPresentationInterval (sub_829BB060) maps them.
+// Refreshes per frame for D3DPRESENT_INTERVAL_*: as DS2's SynchronizeToPresentationInterval (sub_829EB228) maps them.
 uint32_t RefreshesPerFrame(uint32_t interval) {
   switch (interval) {
     case 0:  // DEFAULT

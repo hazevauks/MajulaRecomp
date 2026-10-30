@@ -124,7 +124,7 @@ def main():
     funcs = elf_functions(a.elf)
     data, segs = elf_code(a.elf)
     native = set(re.findall(r'^([0-9A-F]{8})', open(os.path.join(ROOT, 'app', 'src', 'cpu', 'hot', 'localized.txt'))
-                            .read(), re.M)) | {'827F05C0', '827EFEA0', '827EF8B0'}
+                            .read(), re.M)) | {'82820278', '8281FB58', '8281F568'}
     rows = []
     for addr, n in counts.most_common(a.top):
         body = funcs.get('__imp__sub_' + addr) or funcs.get('sub_' + addr)

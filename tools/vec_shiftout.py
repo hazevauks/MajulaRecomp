@@ -2,8 +2,8 @@
 """Byte-level proof that a function's results do not depend on the entry values of v32-v63.
 
 non_argument_as_local turns v32-v63 into C++ locals that start at zero. tools/non_argument_audit.py lists three SA2
-functions that read some of them before writing them: the audio resamplers sub_828A0DB0 (32-bit samples),
-sub_828A2A60 (16-bit) and sub_828A3220 (8-bit). Their software-pipelined loops build each input vector in a shift
+functions that read some of them before writing them: the audio resamplers sub_828D1110 (32-bit samples),
+sub_828D2CB0 (16-bit) and sub_828D3470 (8-bit). Their software-pipelined loops build each input vector in a shift
 register (`vsldoi128 vD,vOld,vNew,4` per sample, after an unaligned `lvlx128`), so the first iteration starts from
 whatever the registers held; those bytes are shifted out before the vector is used.
 
@@ -12,10 +12,10 @@ every vector register: v32-v63 start undefined, everything else defined. Bytes f
 their exact mapping (vsldoi shifts bytes, vspltw splats a word, element-wise arithmetic needs every byte of its source
 elements, loads and splat-immediates define everything). A vector store, or an instruction it does not model, that
 may see an undefined byte is reported. Must-defined dataflow (intersection at joins, loops to a fixpoint); the count
-register is tracked as a constant from `li`/`mtctr`, so a loop that always runs N times is unrolled (sub_828A2A60's
+register is tracked as a constant from `li`/`mtctr`, so a loop that always runs N times is unrolled (sub_828D2CB0's
 inner loop runs exactly twice: 2 x 4 shifts of 2 bytes = 16).
 
-  python tools/vec_shiftout.py app/generated/default sub_828A0DB0 sub_828A2A60 sub_828A3220
+  python tools/vec_shiftout.py app/generated/default sub_828D1110 sub_828D2CB0 sub_828D3470
 Exit status 0 when no undefined byte reaches a sink in any of them. Generated code with or without the option.
 """
 import glob

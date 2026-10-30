@@ -6,10 +6,10 @@
  *
  * - renut_shadow_resolution: the shadow maps' render scale. The sun's two
  *   cascades are 1024x1024 and 768x768 D24S8 targets (512x512 in split
- *   screen; sub_822998C8), and the local lights render 512x512 D24S8 depth
+ *   screen; sub_8229CC18), and the local lights render 512x512 D24S8 depth
  *   converted in a 512x512 16_16_FLOAT target into a 2048x2048 atlas
- *   (sub_823B3CE0); by default they follow the render resolution.
- * - renut_ambient_occlusion: the SSAO pass (sub_8235FA90) renders at half
+ *   (sub_823C7E20); by default they follow the render resolution.
+ * - renut_ambient_occlusion: the SSAO pass (sub_82370560) renders at half
  *   the screen, into 640x360 targets at EDRAM base 1864; Full renders it at
  *   the screen's resolution.
  * - renut_anisotropic_filtering: the least a texture's linear minification

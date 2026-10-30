@@ -1,5 +1,5 @@
 """Print the PPC listing of recompiled functions (from the generated code's comments), compactly.
-   python ppcfn.py 82565C60 [82563AB0 ...] [--max N]"""
+   python ppcfn.py 8258B908 [825896D0 ...] [--max N]"""
 import glob, os, re, sys
 GEN = os.path.join(os.path.dirname(__file__), '..', '..', 'app', 'generated', 'default')
 want = [a.upper().replace('0X', '') for a in sys.argv[1:] if not a.startswith('--')]

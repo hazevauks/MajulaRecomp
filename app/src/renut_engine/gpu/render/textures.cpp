@@ -292,7 +292,7 @@ uint64_t SampleHash(const TextureFetch &fetch, HostTexture &t) {
 
 // Fingerprint of every guest byte of a texture, for the CPU-written linear
 // ones, whose writes land anywhere: N&B's font cache (FontCache.cpp,
-// sub_82B8F848) inflates each new glyph into its cell of a 1920x1920 texture
+// sub_82BBF6D8) inflates each new glyph into its cell of a 1920x1920 texture
 // between D3DLineTexture_LockRect and D3DArrayTexture_UnlockRect.
 uint64_t ContentHash(const TextureFetch &fetch, HostTexture &t) {
   KnowGuestExtent(fetch, t);
@@ -548,7 +548,7 @@ bool Create(HostTexture &t, const TextureFetch &fetch, bool render_target,
   t.height = height;
   t.depth = depth;
   t.scale = scale;
-  // No more levels than the size has (GetMaxMipLevels, 0x826554B8).
+  // No more levels than the size has (GetMaxMipLevels, 0x82684A60).
   const u32 largest = std::max({width, height, fetch.Dimension() == TextureDimension::Tex3D ? depth : 1u});
   const u32 size_levels = 32 - u32(std::countl_zero(largest));
   t.mip_levels = render_target ? 1 : std::min(fetch.MaxMipLevel() + 1, size_levels);
@@ -870,7 +870,7 @@ void ApplyUnlocksLocked() {
 // 7 MB every frame still cost more than half a millisecond. How a texture
 // changes decides how it is checked, once per frame it is bound:
 // - Lock-driven: the game writes it between a Lock and D3D::UnlockResource
-//   (the font cache, sub_82B8F848). An unlock uploads; the content is watched
+//   (the font cache, sub_82BBF6D8). An unlock uploads; the content is watched
 //   for kUnlockWatchFrames after one, and checked every kLinearVerifyFrames
 //   for a write that went around the unlock (which ends lock-driven).
 // - Dynamic: changed at kDynamicChanges checks in a row (the XMV logo movies,

@@ -153,7 +153,7 @@ constexpr u32 TileRects = 13128;           // D3DRECT[TileCount] [0x31D0] +376
 constexpr u32 TileOrigins = 13368;         // per tile, x & ~31, y & ~31 [0x32C0] +376
 constexpr u32 TilingExtent = 13556;        // widest and tallest tile edge [0x337C] +376
 constexpr u32 CommandBuffer = 13920;       // the D3DCommandBuffer being recorded [0x34CC]
-constexpr u32 SideBuffer = 17136;          // [0x4158] (sub_8255C808)
+constexpr u32 SideBuffer = 17136;          // [0x4158] (sub_82582308)
 constexpr u32 AutoDepthStencil = 15228;    // InitializePresentationParameters' surfaces [0x39E8]
 constexpr u32 AutoFrontBuffer = 15232;     // [0x39EC] (SA2's Present)
 constexpr u32 AutoBackBuffer = 15236;      // [0x39F0] (SA2's Present)
@@ -223,7 +223,7 @@ bool TilingBoundSurfaces(Device device);
 // What D3D does with a resource the device stops using: it is busy until the
 // current fence (a recorded buffer's resource list is the GPU's; left out).
 void TagResourceFence(Device device, u32 resource, bool read_fence);
-// D3D's InvalidateConstants (0x8264E128) and its waiting variant (0x82657488,
+// D3D's InvalidateConstants (0x8267D5F8) and its waiting variant (0x82686A38,
 // D3DDevice_BlockUntilIdle).
 void InvalidateConstants(Device device);
 void InvalidateConstantsAndWait(Device device);
@@ -233,13 +233,13 @@ void InvalidateConstantsAndWait(Device device);
 struct Rect {
   i32 x1, y1, x2, y2;
 };
-// D3DDevice_ClearF (0x822811A0, D3D::ClearF 0x82223560); no rect: the bound
+// D3DDevice_ClearF (0x82284360, D3D::ClearF 0x82223560); no rect: the bound
 // target's (or the tiling extent's).
 void Clear(Device device, u32 flags, const Rect *rect);
 // D3DDevice_Resolve (0x8222D6C8).
 void Resolve(Device device, u32 flags, u32 dest_texture, float clear_z, u32 clear_stencil,
              u32 parameters);
-// D3DDevice_BeginExport (0x82269618) / D3DDevice_EndExport (0x822693B0): a
+// D3DDevice_BeginExport (0x82269618) / D3DDevice_EndExport (0x8226C2D8): a
 // memexport stream's destination, Index, is Resource.
 void BeginExport(Device device, u32 index, u32 resource, u32 flags);
 void EndExport(Device device, u32 index, u32 resource, u32 flags);

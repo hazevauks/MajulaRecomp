@@ -2,7 +2,7 @@
  * @file    gpu/guest/widescreen.h
  * @brief   Widescreen: N&B renders its frame at the window's aspect ratio.
  *
- * The game's screen is 1280x720 (sub_823ED828). For a window wider than 16:9
+ * The game's screen is 1280x720 (sub_82404148). For a window wider than 16:9
  * (renut_aspect_ratio) the game is told a wider screen of the same height, so
  * its back buffer, viewports, safe areas and XUI root follow it, and its
  * projection widens (Hor+): the vertical field of view stays the game's.

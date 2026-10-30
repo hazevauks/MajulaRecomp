@@ -7,12 +7,17 @@ Each function of the port's generated code (app/generated/default, DEFINE_REX_FU
 immediates and branch displacements go (they hold addresses, which move between builds); as tools/d3d_match.py.
 The other image is scanned once: at every word, the first kKey normalised instructions are looked up among the
 port's functions' first kKey, and a candidate is kept when the function's whole sequence is there. A function found
-at exactly one place is mapped.
+at exactly one place is mapped ("u" in the map).
+
+Then the neighbour pass (2026-10-29, the SotFS migration): the code moved in blocks, so a function left over (shorter
+than MIN_INSNS, ambiguous, or changed only in its immediates' neighbours) is tried at the displacement of the mapped
+functions before and after it; it is mapped ("n") when its whole normalised sequence is there at exactly one of them.
+Run twice, the second pass taking the first's as anchors.
 
   python tools/xex_func_map.py --other out/sotfs/image.bin [--image out/default_image.bin]
       [--gen app/generated/default] [--out out/sotfs/func_map.txt] [--check <addresses file or list>]
 
-Writes "<port address> <other address> <size in instructions>" for each unique match, and prints how much of the
+Writes "<port address> <other address> <size in instructions> <u|n>" for each match, and prints how much of the
 code maps: unique, ambiguous (the same code more than once), not found (changed, or moved inside another).
 """
 import argparse
@@ -95,6 +100,38 @@ def main():
         window.append(other[i + KEY])
 
     unique = {s: v[0] for s, v in found.items() if len(v) == 1}
+    how = {s: 'u' for s in unique}
+    # The neighbour pass, over every function (short ones included).
+    every = []
+    for i, s in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else s + 4 * MAX_INSNS
+        n = min((end - s) // 4, MAX_INSNS)
+        at = (s - BASE) // 4
+        if n >= 1 and at + n <= len(port):
+            every.append((s, at, n))
+    for _ in range(2):
+        anchors = sorted(unique.items())
+        keys = [k for k, _ in anchors]
+        import bisect
+        added = {}
+        for s, at, n in every:
+            if s in unique:
+                continue
+            j = bisect.bisect_left(keys, s)
+            deltas = set()
+            if j > 0:
+                deltas.add(anchors[j - 1][1] - anchors[j - 1][0])
+            if j < len(anchors):
+                deltas.add(anchors[j][1] - anchors[j][0])
+            hits = [d for d in deltas
+                    if 0 <= at + d // 4 and at + d // 4 + n <= len(other) and other[at + d // 4:at + d // 4 + n] == port[at:at + n]]
+            if len(hits) == 1:
+                added[s] = s + hits[0]
+        for s, o in added.items():
+            unique[s] = o
+            how[s] = 'n'
+        print(f'neighbour pass: {len(added)} more', file=sys.stderr)
+    funcs = every
     ambiguous = sum(1 for v in found.values() if len(v) > 1)
     total_insns = sum(n for _, _, n in funcs)
     mapped_insns = sum(n for s, _, n in funcs if s in unique)
@@ -107,14 +144,15 @@ def main():
         size = {s: n for s, _, n in funcs}
         with open(a.out, 'w') as f:
             for s in sorted(unique):
-                f.write(f'{s:08X} {unique[s]:08X} {size[s]}\n')
+                f.write(f'{s:08X} {unique[s]:08X} {size[s]} {how[s]}\n')
         print(f'map: {a.out}')
     if a.check:
         items = open(a.check).read().split() if os.path.isfile(a.check) else a.check.split(',')
         for item in items:
             s = int(item, 16)
             v = found.get(s)
-            state = f'{v[0]:08X}' if v and len(v) == 1 else (f'{len(v)} places' if v else 'not found')
+            state = (f'{unique[s]:08X} ({how[s]})' if s in unique else
+                     f'{len(v)} places' if v else 'not found')
             print(f'  {s:08X} -> {state}')
 
 

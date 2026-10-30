@@ -24,19 +24,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Dark Souls II (2026-10-10, classic codegen, no LTO). Its image has no "b ." instruction at all; the five
 # branch-to-self the first NRO has are loops of the original code that never end for an input the game does not
 # produce, and that read no memory on that path: a list search that keeps comparing a null node with the wanted one
-# (sub_82BE8748), a fill loop whose count is not reloaded (sub_828FC278). GCC proves them endless and emits "b .".
-# Read in the generated code: sub_82BE8748 and sub_828FC278; the other three have the same shape in the disassembly
+# (sub_82C187B8), a fill loop whose count is not reloaded (sub_8292C568). GCC proves them endless and emits "b .".
+# Read in the generated code: sub_82C187B8 and sub_8292C568; the other three have the same shape in the disassembly
 # (a compare of two unchanged registers before the branch). A branch-to-self anywhere else is a polling loop that lost
 # its barrier.
 # Two more of the same kind show as "b ." only in the PGO-instrumented build (2026-10-11; the plain build compiles them
-# as a compare and a conditional branch): sub_8285E1D0, a copy of a quoted string that stops reading at 512 bytes and
-# then compares the last byte with '"' forever when there was no quote (read in the generated code), and sub_82B482D8
+# as a compare and a conditional branch): sub_8288E410, a copy of a quoted string that stops reading at 512 bytes and
+# then compares the last byte with '"' forever when there was no quote (read in the generated code), and sub_82B77BB0
 # (in the disassembly: a test of an unchanged register's low byte before the branch, no memory access on that path).
 # And one in the instrumented build of the sa2-nx 1.0.2 rounds (2026-10-17): sub_82DD01A8, a remainder by repeated
 # subtraction (subf r9,r10,r9 until r9 < r8) entered only when the divisor r10 is 0, which never changes in the loop;
 # on the game's path r10 is the count it has just set to 0 and incremented, so 1 (read in the generated code).
-KNOWN_HALTS = ['sub_828FC278', 'sub_82B11CB8', 'sub_82BE8748', 'sub_82C3FAA0', 'sub_82DE5A18',
-               'sub_8285E1D0', 'sub_82B482D8', 'sub_82DD01A8']
+KNOWN_HALTS = ['sub_8292C568', 'sub_82B41518', 'sub_82C187B8', 'sub_82C6F9D0', 'sub_82E15628',
+               'sub_8288E410', 'sub_82B77BB0', 'sub_82DFFE60']
 DEVKITA64 = next((d + '/devkitA64/bin/' for d in (os.environ.get('DS2_DEVKITPRO', ''), os.environ.get('DEVKITPRO', ''),
                                                   'C:/devkitPro', os.path.expanduser('~/Downloads/devkitPro'),
                                                   '/opt/devkitpro')
@@ -133,7 +133,7 @@ def main():
                 self_loops.append(func)
         elif op in ('fmla', 'fmls') and guest and '.2d' in args:
             # ds2-nx: two of the guest's own scalar fmadd/fmsub (double lanes) that GCC put in one vector instruction
-            # (sub_82C31A30 has 24 of them in a row). VMX arithmetic is single precision (.4s lanes).
+            # (sub_82C61958 has 24 of them in a row). VMX arithmetic is single precision (.4s lanes).
             scalar_fma += 2
         elif op in ('fmla', 'fmls') and guest:
             vector_fma[func] += 1
@@ -144,8 +144,8 @@ def main():
     functions = {f.replace('__imp__', '') for f in self_loops}
     unknown = sorted(functions - known)
     # Round 7: GCC may inline a known halt into a caller (non_volatile_as_local made the callees smaller: the halts of
-    # sub_828DB988 and sub_8293FA08 then appear in sub_828D71E8 and sub_8293FE28), and with a higher inline limit
-    # that caller into its own caller (sub_828C5D60 inlines sub_828D71E8). A function whose generated body reaches
+    # sub_8290BC30 and sub_8296FA90 then appear in sub_82907490 and sub_8296FEB0), and with a higher inline limit
+    # that caller into its own caller (sub_828F6008 inlines sub_82907490). A function whose generated body reaches
     # a known-halt function through at most four direct calls is accepted, and named with the chain.
     inlined = []
     if unknown:

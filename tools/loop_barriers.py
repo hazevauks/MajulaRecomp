@@ -6,7 +6,7 @@ With guest loads that are not volatile, GCC -O3 (the Switch build) hoists the lo
 (`while (device[x] != 0) {}`: a real wait on the Xbox 360, another thread or the GPU changes the word) out of the loop
 and turns it into a branch to itself: the thread spins forever. clang on the PC did not, so PC runs looked fine. Found
 by futari-nx on its console; tools/find_self_loops.py counts these in an ELF (SA2 optimised build without barriers:
-40 in recompiled functions, e.g. sub_8255A760 in Direct3D).
+40 in recompiled functions, e.g. sub_82580248 in Direct3D).
 
 A loop header is a label `loc_X:` that a later `goto loc_X;` of the same function jumps back to. The line after it gets
 REX_LOOP_BARRIER(), a compiler memory barrier (defined in the pch): no guest load is reused across iterations, also

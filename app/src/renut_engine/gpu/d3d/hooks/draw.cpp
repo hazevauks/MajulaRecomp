@@ -119,7 +119,7 @@ void D3DDevice_DrawVertices_hook(u32 device, u32 primitive, u32 start_vertex, u3
 }
 
 // void D3DDevice_DrawIndexedVertices(D3DDevice*, D3DPRIMITIVETYPE, INT BaseVertexIndex,
-//                                    UINT StartIndex, UINT IndexCount) [0x826567C8]
+//                                    UINT StartIndex, UINT IndexCount) [0x82685D70]
 void D3DDevice_DrawIndexedVertices_hook(u32 device, u32 primitive, u32 base_vertex,
                                         u32 start_index, u32 index_count) {
   if (!Active())
@@ -179,7 +179,7 @@ void D3DDevice_DrawVerticesUP_hook(u32 device, u32 primitive, u32 vertex_count, 
 
 // void D3DDevice_DrawIndexedVerticesUP(D3DDevice*, D3DPRIMITIVETYPE, UINT MinVertexIndex,
 //     UINT NumVertices, UINT IndexCount, const void *pIndexData, D3DFORMAT IndexDataFormat,
-//     const void *pVertexStreamZeroData, UINT VertexStreamZeroStride) [0x82656728]
+//     const void *pVertexStreamZeroData, UINT VertexStreamZeroStride) [0x82685CD0]
 void D3DDevice_DrawIndexedVerticesUP_hook(u32 device, u32 primitive, u32 min_vertex,
                                           u32 num_vertices, u32 index_count, u32 index_data,
                                           u32 index_format, u32 vertex_data, u32 stride) {
@@ -250,9 +250,9 @@ u32 IndicesScratch(u32 device) {
 
 // HRESULT D3DDevice_BeginIndexedVertices(D3DDevice*, D3DPRIMITIVETYPE, INT BaseVertexIndex,
 //     UINT NumVertices, UINT IndexCount, D3DFORMAT IndexDataFormat, UINT VertexStreamZeroStride,
-//     void **ppIndexData, void **ppVertexData) [DS2 0x829C2848; SA2's linker dropped it]
+//     void **ppIndexData, void **ppVertexData) [DS2 0x829F2A10; SA2's linker dropped it]
 // ds2-nx (2026-10-24): Dark Souls II's effects (the bonfire flames, fog walls, item glows, splashes) draw through it,
-// most of them by DrawIndexedVerticesUP (0x829C2D88, which calls it and copies the data in). Unhooked, the original
+// most of them by DrawIndexedVerticesUP (0x829F2F50, which calls it and copies the data in). Unhooked, the original
 // wrote their packets into the ring nobody reads: every effect of the game was missing. As BeginVertices: the inline
 // end restores m_pRing from the device, the draw's state is captured now and its data copied at the device's next hook.
 // An index i fetches vertex i + BaseVertexIndex of the vertices written (call.base_vertex).
@@ -326,7 +326,7 @@ void Resolve(u32 device, u32 flags, const ClearRect *rect, u32 dest_texture, i32
 }
 
 // void D3DDevice_ClearF(D3DDevice*, DWORD Flags, const D3DRECT *pRect,
-//                       const D3DVECTOR4 *pColor, float Z, DWORD Stencil) [0x822811A0]
+//                       const D3DVECTOR4 *pColor, float Z, DWORD Stencil) [0x82284360]
 // Z takes r7's slot, so Stencil arrives in r8.
 void D3DDevice_ClearF_hook(u32 device, u32 flags, u32 rect_va, u32 color_va, double z,
                            u32 /*z_slot*/, u32 stencil) {
@@ -339,7 +339,7 @@ void D3DDevice_ClearF_hook(u32 device, u32 flags, u32 rect_va, u32 color_va, dou
 }
 
 // void D3DDevice_Clear(D3DDevice*, DWORD Count, const D3DRECT *pRects, DWORD Flags,
-//     D3DCOLOR Color, float Z, DWORD Stencil) [0x822812C8]: ClearF with the
+//     D3DCOLOR Color, float Z, DWORD Stencil) [0x82284488]: ClearF with the
 // color as a vector (XMLoadColor: each byte as 1 + b / 2^23, scaled by
 // 2^23 / 255 and offset), per rect. Z takes r8's slot.
 void D3DDevice_Clear_hook(u32 device, u32 count, u32 rects_va, u32 flags, u32 color_argb,
@@ -383,7 +383,7 @@ void D3DDevice_Resolve_hook(u32 device, u32 flags, u32 rect_va, u32 dest_texture
 
 // void D3DDevice_BeginTiling(D3DDevice*, DWORD Flags, DWORD Count,
 //     const D3DRECT *pTileRects, const D3DVECTOR4 *pClearColor, float ClearZ,
-//     DWORD ClearStencil) [0x822788A0]
+//     DWORD ClearStencil) [0x8227B848]
 // The surfaces bound from here to EndTiling are backed by targets covering
 // every tile (SetTilingExtentLocked). N&B's BeginTiling clears with Z 0.0 and
 // stencil 0 (its ClearZ and ClearStencil go unused), unless the device records
@@ -573,13 +573,13 @@ void D3DDevice_BeginExport_hook(u32 device, u32 index, u32 resource, u32 flags) 
 }
 
 // void D3DDevice_EndExport(D3DDevice*, DWORD Index, D3DResource*, DWORD Flags)
-// [0x822693B0]: the resource is busy until the current fence, which completes
+// [0x8226C2D8]: the resource is busy until the current fence, which completes
 // once the render thread has written the stream's results.
 void D3DDevice_EndExport_hook(u32 device, u32 index, u32 resource, u32 flags) {
   native::EndExport(native::DeviceAt(device), index, resource, flags);
 }
 
-// void D3DDevice_Present(D3DDevice*) [0x82654778]: the automatic back buffer
+// void D3DDevice_Present(D3DDevice*) [0x82683D20]: the automatic back buffer
 // resolved into the automatic front buffer, then Swap. N&B creates its device
 // without an automatic front buffer, so its callers (XUI, the threaded movie
 // player) have nothing to resolve to.
@@ -595,7 +595,7 @@ void D3DDevice_Present_hook(u32 device) {
   for (u32 i = 0; i < 4; ++i)
     scissor[i] = i32(d.W(native::off::ScissorRect + i * 4));
   native::SetRenderTarget(d, 0, d.W(native::off::AutoBackBuffer));
-  // SynchronizeToPresentationInterval (0x8228A748): its swap callback and wait
+  // SynchronizeToPresentationInterval (0x8228DB30): its swap callback and wait
   // go into the ring; the swap is pending.
   native::SetPredication(d, 0);
   d.SetB(native::off::Flags1, d.B(native::off::Flags1) | d3d::kSwapFlagPending);
@@ -658,18 +658,18 @@ void QueueHostResolve(u32 device, u32 flags, const ClearRect *rect, u32 dest_tex
 
 }  // namespace
 
-BANJO_RENUT_HOOK_SHARED(sub_829C2E28, D3DDevice_DrawVertices_hook);  // D3DDevice_DrawVertices [0x8222C7A0]
-BANJO_RENUT_HOOK_SHARED(sub_829C3240, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices [0x826567C8]
-BANJO_RENUT_HOOK_SHARED(sub_829C2800, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP [0x8222E520]
-BANJO_RENUT_HOOK_SHARED(sub_829C2340, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices [0x8222CC50]
+BANJO_RENUT_HOOK_SHARED(sub_829F2FF0, D3DDevice_DrawVertices_hook);  // D3DDevice_DrawVertices [0x8222C7A0]
+BANJO_RENUT_HOOK_SHARED(sub_829F3408, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices [0x82685D70]
+BANJO_RENUT_HOOK_SHARED(sub_829F29C8, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP [0x8222E520]
+BANJO_RENUT_HOOK_SHARED(sub_829F2508, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices [0x8222CC50]
 // ds2-nx (2026-10-24): Dark Souls II's two indexed immediate draws (no native hook at either). Its
 // DrawIndexedVerticesUP takes the 9th argument (the stride) from the stack, as N&B's [0x82656728].
-BANJO_RENUT_HOOK(sub_829C2D88, D3DDevice_DrawIndexedVerticesUP_hook);  // D3DDevice_DrawIndexedVerticesUP
-BANJO_RENUT_HOOK(sub_829C2848, D3DDevice_BeginIndexedVertices_hook);  // D3DDevice_BeginIndexedVertices
+BANJO_RENUT_HOOK(sub_829F2F50, D3DDevice_DrawIndexedVerticesUP_hook);  // D3DDevice_DrawIndexedVerticesUP
+BANJO_RENUT_HOOK(sub_829F2A10, D3DDevice_BeginIndexedVertices_hook);  // D3DDevice_BeginIndexedVertices
 
 // void D3DDevice_ClearF(D3DDevice*, DWORD Flags, const D3DRECT *pRect, const D3DVECTOR4 *pColor, float Z,
-//     DWORD Stencil) [sub_829CCC28; N&B 0x822811A0]: Z in f1 (r7's slot), Stencil in r8.
-BANJO_RENUT_HOOK_RAW(sub_829CCC28) {
+//     DWORD Stencil) [sub_829FCDF0; N&B 0x822811A0]: Z in f1 (r7's slot), Stencil in r8.
+BANJO_RENUT_HOOK_RAW(sub_829FCDF0) {
   const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, color_va = ctx.r6.u32;
   ClearRect rect;
   const bool has_rect = rect_va && ReadRect(rect_va, rect);
@@ -677,16 +677,16 @@ BANJO_RENUT_HOOK_RAW(sub_829CCC28) {
   if (color_va)
     ReadVector4(color_va, color);
   QueueHostClear(device, flags, has_rect ? &rect : nullptr, color, float(ctx.f1.f64), ctx.r8.u32);
-  __imp__sub_829CCC28(ctx, base);
+  __imp__sub_829FCDF0(ctx, base);
 }
 
 // void D3DDevice_Resolve(D3DDevice*, DWORD Flags, const D3DRECT *pSourceRect, D3DBaseTexture *pDestTexture,
 //     const D3DPOINT *pDestPoint, UINT DestLevel, UINT DestSliceOrFace, const D3DVECTOR4 *pClearColor, float ClearZ,
-//     DWORD ClearStencil, const D3DRESOLVE_PARAMETERS *pParameters) [sub_829B60E8; N&B 0x8222D6C8]: ClearZ in f1,
-// ClearStencil and pParameters in the caller's argument words at +92 and +100 (sub_829B60E8 reads them there). Every
+//     DWORD ClearStencil, const D3DRESOLVE_PARAMETERS *pParameters) [sub_829E62B0; N&B 0x8222D6C8]: ClearZ in f1,
+// ClearStencil and pParameters in the caller's argument words at +92 and +100 (sub_829E62B0 reads them there). Every
 // resolve of SA2 comes here: the game's, the Present's and Direct3D's own (sub_825645A0, the core, has no other
 // caller).
-BANJO_RENUT_HOOK_RAW(sub_829B60E8) {
+BANJO_RENUT_HOOK_RAW(sub_829E62B0) {
   const u32 device = ctx.r3.u32, flags = ctx.r4.u32, rect_va = ctx.r5.u32, dest_texture = ctx.r6.u32;
   const u32 point_va = ctx.r7.u32, dest_level = ctx.r8.u32, dest_slice = ctx.r9.u32, color_va = ctx.r10.u32;
   const u32 clear_stencil = LoadU32(ctx.r1.u32 + 92);
@@ -699,5 +699,5 @@ BANJO_RENUT_HOOK_RAW(sub_829B60E8) {
   }
   QueueHostResolve(device, flags, has_rect ? &rect : nullptr, dest_texture, dest_x, dest_y, dest_level, dest_slice,
                    color_va, float(ctx.f1.f64), clear_stencil);
-  __imp__sub_829B60E8(ctx, base);
+  __imp__sub_829E62B0(ctx, base);
 }

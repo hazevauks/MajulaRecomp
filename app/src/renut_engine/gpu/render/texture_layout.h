@@ -5,18 +5,18 @@
  *
  * Every field and rule here comes from the game's statically linked
  * libraries (addresses in the N&B database):
- * - The fetch constant: D3D::SetTextureHeader (0x8228E990) writes the data
+ * - The fetch constant: D3D::SetTextureHeader (0x822923F0) writes the data
  *   fields, D3DDevice_SetTexture (0x8222F410) merges them with the sampler
  *   state the D3DDevice_SetSamplerState_* setters keep.
- * - Sizes: GetGpuTextureDimensions (0x82655540); per-format bits per pixel
+ * - Sizes: GetGpuTextureDimensions (0x82684AE8); per-format bits per pixel
  *   (table 0x820052F8) and block size (BlockSizeOfGpuFormat, 0x82207B90);
  *   alignment (AlignTextureDimensions, 0x82207C28); total sizes
- *   (FindTextureSize, 0x82287E60).
+ *   (FindTextureSize, 0x8228B110).
  * - Level placement: the subresource layout D3D and XGGetTextureLayout use
  *   (0x82207680) and the packed mip tail (GetMipTailLevelOffsetCoords,
- *   0x826555E0).
- * - Tiling: XGRAPHICS::UntileSurface (0x8280A050) and
- *   XGAddress3DTiledOffset (0x8280D318).
+ *   0x82684B88).
+ * - Tiling: XGRAPHICS::UntileSurface (0x82839D40) and
+ *   XGAddress3DTiledOffset (0x8283D008).
  */
 #pragma once
 

@@ -2,7 +2,7 @@
 """Prints the size and FNV-1a 64 hash of guest functions, for the code checks of the native replacements
 (app/src/cpu: a native engages only when the loaded game code is byte for byte the code it was written from).
 
-  python tools/guest_code_hash.py 827F05C0 827EFEA0 ...   [--image out/default_image.bin] [--gen app/generated/default]
+  python tools/guest_code_hash.py 82820278 8281FB58 ...   [--image out/default_image.bin] [--gen app/generated/default]
 
 A function's size is the distance to the next function start of the generated code. The image is the loaded guest
 image (DS2_DUMP_IMAGE, see src/ds2_app.h), based at 0x82000000.

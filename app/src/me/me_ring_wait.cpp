@@ -100,6 +100,6 @@ void NotifyRingProgress() {
 }  // namespace me::native
 
 // banjo-nx: Mass Effect's hooks on its D3D busy-waits (sub_8222FA98 ring space, sub_822FE760 render-thread
-// handoff, sub_82811750 occlusion poll) were here, with its device offsets (+10768 read-pointer word, +10813
+// handoff, sub_82841440 occlusion poll) were here, with its device offsets (+10768 read-pointer word, +10813
 // state). Banjo's equivalents are still to be identified (its device layout is 280 bytes further on for the
 // shader fields: +12696 vs +12416), so only NotifyRingProgress above is kept.

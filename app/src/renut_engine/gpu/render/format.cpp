@@ -327,7 +327,7 @@ void DecodeBlockRow(TexelConversion conversion, const uint8_t *src, uint8_t *dst
                     uint32_t dst_row_pitch) {
   if (conversion != TexelConversion::CTX1)
     return;
-  // CTX1, as the game's own encoder writes it (EncodeBlockCTX1, 0x828D1580):
+  // CTX1, as the game's own encoder writes it (EncodeBlockCTX1, 0x82901828):
   // two endpoints A and B of two components, then a 2-bit palette entry per
   // texel, one byte per row, texel x in bits 2x. Entries 0 and 1 are A and B,
   // 2 and 3 its 168:88 and 88:168 blends of them. In memory the block is

@@ -4,8 +4,10 @@
 # the prefix of everything generated: generated/default/ds2_{init,pch,funcs}.h, ds2_recomp.N.cpp, and the CMake target
 # ds2_recomp built by CMakeLists.txt.
 #
-# Default.xex (tools/extract_iso.py --info, 2026-10-09): image base 0x82000000, entry point 0x82993BB0, image size
-# 0x016C0000 (23,855,104 bytes), XEX version 0.0.0.8, media ID 72EA8B94, AES-128 "normal" encryption, basic compression.
+# Default.xex of Scholar of the First Sin's disc 1 (tools/extract_iso.py --info, 2026-10-29): image base 0x82000000,
+# entry point 0x829C3DE0, image size 0x016F0000 (24,051,712 bytes), XEX version 0.0.0.22, AES-128 "normal"
+# encryption, basic compression. Until 2026-10-29 the port was built from the 2014 disc's 0.0.0.8 (tag
+# ds2-2014-final); every address of app/ moved with tools/xex_addr_remap.py (docs/dlc.md).
 
 [project]
 name = "ds2"

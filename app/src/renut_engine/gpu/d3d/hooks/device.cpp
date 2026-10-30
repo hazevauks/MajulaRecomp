@@ -88,15 +88,15 @@ constexpr u32 kRingSinkGuaranteeMargin = 256u << 10;
 // circle: nothing reads it either.
 constexpr u32 kRingDataSize = 1u << 20;
 
-// CDevice-private state Direct3D_CreateDevice (0x8264DF28) sets up, as byte
+// CDevice-private state Direct3D_CreateDevice (0x8267D3F8) sets up, as byte
 // offsets into the device allocation. sa2-nx (2026-10-20): SA2's (d3d.h),
-// read from its Direct3D_CreateDevice sub_829BA480, sub_8255C808, sub_8255C878
-// and the hardware path sub_829C20B0; N&B's in brackets.
+// read from its Direct3D_CreateDevice sub_829EA648, sub_82582308, sub_82582378
+// and the hardware path sub_829F2278; N&B's in brackets.
 // Byte whose 0x80 bit marks a device without GPU hardware (its device-type-2
 // path sets it); D3D's code skips hardware work for it.
 constexpr u32 kDeviceOffsetFlags = 11068;  // [10940]
 constexpr u8 kDeviceFlagNoHardware = 0x80;
-// Byte whose 0x2 bit makes CDevice::SetFence (0x82278528) write each fence's
+// Byte whose 0x2 bit makes CDevice::SetFence (0x8227B4D0) write each fence's
 // completion value itself instead of waiting for the GPU to. The title device
 // runs without it once created: its fences complete on the render thread.
 constexpr u32 kDeviceOffsetFlags2 = 11069;  // [10941]
@@ -112,11 +112,11 @@ constexpr u32 kSideBufferSize = 0x12C0;
 // Set to -1 by the device-type-2 path.
 constexpr u32 kDeviceOffsetsMinusOne[] = {21968, 21972, 15340};  // [21560, 21564, 14936]
 constexpr u32 kDeviceTypeNoHardware = 2;
-// Copied from the global qword at 0x82F39B38 into every device.
+// Copied from the global qword at 0x82F6DDB8 into every device.
 constexpr u32 kDeviceOffsetGlobalQword = 11008;  // [10880]
-// ds2-nx (2026-10-22): DS2's sub_829C1B18 loads it from 0x8343B708 (lis 0x8344, ld -18680) and stores it at
+// ds2-nx (2026-10-22): DS2's sub_829F1CE0 loads it from 0x8346BC88 (lis 0x8344, ld -18680) and stores it at
 // +11008 (SA2: 0x82980268).
-constexpr u32 kGlobalQwordVa = 0x8343B708;  // [0x82F39B38]
+constexpr u32 kGlobalQwordVa = 0x8346BC88;  // [0x82F6DDB8]
 // Hardware-path fields: two critical sections, QueryPerformanceFrequency and
 // its reciprocal as floats, and 41 words set to -1.
 constexpr u32 kDeviceOffsetCriticalSection0 = 15348;  // [14944]
@@ -125,9 +125,9 @@ constexpr u32 kDeviceOffsetPerfFrequency = 21996;  // [21588]
 constexpr u32 kDeviceOffsetTitleMinusOne = 23380;
 // Import slot holding the address of the kernel's VdGlobalDevice variable.
 // sa2-nx: DS2's (sub_829C20B0 stores the title device there) [0x820007FC].
-// ds2-nx (2026-10-22): DS2's hardware path sub_829C20B0 stores the device through 0x82000728 for a title process
-// (0x8200072C, VdGlobalXamDevice, for a system one: the imports are in ordinal order, 0x1BE then 0x1BF). SA2: 0x82000710.
-constexpr u32 kVdGlobalDeviceImportSlot = 0x82000728;
+// ds2-nx (2026-10-22): DS2's hardware path sub_829F2278 stores the device through 0x82000738 for a title process
+// (0x8200073C, VdGlobalXamDevice, for a system one: the imports are in ordinal order, 0x1BE then 0x1BF). SA2: 0x82000710.
+constexpr u32 kVdGlobalDeviceImportSlot = 0x82000738;
 
 constexpr u32 kE_OUTOFMEMORY = 0x8007000Eu;
 
@@ -153,7 +153,7 @@ u32 LoadGuestU32(u32 va) {
 // The newest fence queued for completion (the title device's).
 std::atomic<u32> g_queued_fence{0};
 
-// What CDevice::SetFence (0x82278528) does at a KickOff: the current fence
+// What CDevice::SetFence (0x8227B4D0) does at a KickOff: the current fence
 // covers the work issued so far, and the device moves on to the next. The
 // fence completes when the render thread has read that work's data (and
 // written its memexport results): until then the game must not reuse it.
@@ -178,7 +178,7 @@ bool FencePending(const u8 *bytes, u32 fence) {
 // Device initialisation (N&B's D3D, natively)
 // ---------------------------------------------------------------------------
 
-// D3D::XenonGpu_Initialize (0x82663208): the register image's power-on
+// D3D::XenonGpu_Initialize (0x82693160): the register image's power-on
 // values, everything dirty. (Its register writes go into the ring.)
 void XenonGpuInitialize(native::Device d) {
   d.SetQ(0x2E30, 0x00000000FFFFFFFFull);
@@ -263,7 +263,7 @@ void SetGammaRamp(native::Device d, const u16 *ramp);
 void SetPWLGamma(native::Device d, const u16 *pwl);
 
 // BOOL D3D::InitializePresentationParameters(CDevice*, D3DPRESENT_PARAMETERS*)
-// [0x82659AA8]: the video mode, the automatic back/depth buffers and the
+// [0x82689278]: the video mode, the automatic back/depth buffers and the
 // presentation state. N&B's parameters (sub_823ED9E8) disable the automatic
 // front buffer and depth buffer and ask for the back buffer.
 bool InitializePresentationParameters(native::Device d, u32 parameters_va) {
@@ -343,7 +343,7 @@ bool InitializePresentationParameters(native::Device d, u32 parameters_va) {
   return true;
 }
 
-// The hardware path (D3D__InitializeHardwareDevice 0x82659F30) minus the GPU:
+// The hardware path (D3D__InitializeHardwareDevice 0x82689700) minus the GPU:
 // the device becomes the one D3D internals find through VdGlobalDevice, and
 // gets the presentation state and per-device fields they read.
 bool InitializeTitleDevice(native::Device d, u32 present_parameters) {
@@ -366,7 +366,7 @@ bool InitializeTitleDevice(native::Device d, u32 present_parameters) {
   return !present_parameters || InitializePresentationParameters(d, present_parameters);
 }
 
-// D3D's CDevice teardown (0x8265A198) for our devices: they carry the
+// D3D's CDevice teardown (0x82689968) for our devices: they carry the
 // no-hardware flag, which skips everything but unbinding. The side buffer is
 // part of our device block, and N&B never gives a device a query block.
 void UninitializeDevice(native::Device d) {
@@ -376,7 +376,7 @@ void UninitializeDevice(native::Device d) {
 
 // HRESULT Direct3D_CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, void *pUnused,
 //     DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentParameters,
-//     IDirect3DDevice9 **ppReturnedDeviceInterface)   [0x8264DF28]
+//     IDirect3DDevice9 **ppReturnedDeviceInterface)   [0x8267D3F8]
 // N&B creates two: type 1 (the title's rendering device) and type 2 (D3D's
 // own no-hardware device, which N&B keeps alongside).
 u32 Direct3D_CreateDevice_hook(u32 /*adapter*/, u32 device_type, u32 /*unused*/,
@@ -469,7 +469,7 @@ u32 Direct3D_CreateDevice_hook(u32 /*adapter*/, u32 device_type, u32 /*unused*/,
   return 0;  // S_OK
 }
 
-// ULONG D3DDevice_Release(D3DDevice*) [0x8264E080]
+// ULONG D3DDevice_Release(D3DDevice*) [0x8267D550]
 // As the original, but on the last release the device block goes back to our
 // free list instead of N&B's heap (the original frees the side buffer and the
 // raw allocation Direct3D_CreateDevice kept at device - 4).
@@ -545,7 +545,7 @@ u32 BeginRingBig_hook(u32 device_va, u32 count) {
   return d.W(native::off::Ring);
 }
 
-// PRING CDevice::BeginRingManual() [0x82A11158]
+// PRING CDevice::BeginRingManual() [0x82A40C70]
 u32 BeginRingManual_hook(u32 device_va) {
   const native::Device d = native::DeviceAt(device_va);
   return d ? d.W(native::off::Ring) : 0;
@@ -577,7 +577,7 @@ u32 AllocateInlineData_hook(u32 /*device*/, u32 dwords, u32 alignment) {
 }
 
 // HRESULT D3DDevice_SetRingBufferParameters(D3DDevice*,
-//     const D3DRING_BUFFER_PARAMETERS*) [0x82657508]: would replace the ring
+//     const D3DRING_BUFFER_PARAMETERS*) [0x82686AB8]: would replace the ring
 // (and our sink) with a freshly allocated one.
 u32 D3DDevice_SetRingBufferParameters_hook(u32 /*device*/, u32 /*parameters*/) {
   return 0;  // S_OK
@@ -621,7 +621,7 @@ u32 BlockOnFence_hook(u32 device_va, u32 fence, u32 /*type*/, u32 /*no_kick*/) {
   return 0;
 }
 
-// BOOL D3DDevice_IsFencePending(DWORD Fence) [0x8228F650]: on the device D3D
+// BOOL D3DDevice_IsFencePending(DWORD Fence) [0x82293340]: on the device D3D
 // finds through VdGlobalDevice; the current fence is kicked first. Games
 // poll it, and the fence may be waiting for callbacks only a guest thread can
 // run.
@@ -639,7 +639,7 @@ u32 IsFencePending_hook(u32 fence) {
   return FencePending(bytes, fence) ? 1 : 0;
 }
 
-// BOOL CBlocker::Check() [0x8264DCD0]: one poll of a D3D wait for the GPU
+// BOOL CBlocker::Check() [0x8267D1A0]: one poll of a D3D wait for the GPU
 // (ring space, fence markers, streaming). Fence waits no longer come here
 // (BlockOnFence_hook); nothing on the host advances the others.
 u32 CBlocker_Check_hook(u32 /*blocker*/) {
@@ -659,7 +659,7 @@ constexpr u32 kBufferFixedMemory = 0x98;  // memory the caller gave it, or 0 for
 constexpr u32 kBufferAllocatorSize = 0xA8;
 
 // D3D::ConfigureForOnePassZPass(CDevice*, BOOL, DWORD TileCount, DWORD Width)
-// [0x82658818]: the EDRAM layout of a buffer recorded for a one-pass Z pass.
+// [0x82687E90]: the EDRAM layout of a buffer recorded for a one-pass Z pass.
 void ConfigureForOnePassZPass(native::Device d, bool flag, u32 tile_count, u32 width) {
   u8 flags3 = d.B(native::off::Flags3) | 0x20;
   if (flag)
@@ -694,7 +694,7 @@ void ConfigureForOnePassZPass(native::Device d, bool flag, u32 tile_count, u32 w
 
 // HRESULT D3DDevice_BeginCommandBuffer(D3DDevice*, D3DCommandBuffer*, DWORD Flags,
 //     const D3DTAGCOLLECTION *pInheritTags, ..., const D3DRECT *pTilingRects,
-//     DWORD TileCount) [0x82657CB0]
+//     DWORD TileCount) [0x82687260]
 // The device records into the buffer: the draws on the host (command_buffers.h),
 // so the buffer's segments and the reset of their allocator are left out.
 u32 D3DDevice_BeginCommandBuffer_hook(u32 device_va, u32 command_buffer, u32 flags,
@@ -811,7 +811,7 @@ u32 D3DDevice_BeginCommandBuffer_hook(u32 device_va, u32 command_buffer, u32 fla
   return 0;
 }
 
-// HRESULT D3DDevice_EndCommandBuffer(D3DDevice*) [0x826582A0]
+// HRESULT D3DDevice_EndCommandBuffer(D3DDevice*) [0x826875D8]
 // The state left dirty would be written into the buffer (Flags bit 5 at
 // Begin); then everything is unbound, and the device is pointed at its side
 // buffer until the next Begin.
@@ -865,7 +865,7 @@ void D3DDevice_RunCommandBuffer_hook(u32 device_va, u32 command_buffer,
 }
 
 // void D3DDevice_Swap(D3DDevice *pDevice, D3DBaseTexture *pFrontBuffer,
-//     const D3DVIDEO_SCALER_PARAMETERS *pParameters) [0x82287590]
+//     const D3DVIDEO_SCALER_PARAMETERS *pParameters) [0x8228A840]
 // The frame goes to the render thread, which presents it; the game thread
 // goes on with the next one, waiting only when it is more than
 // render_thread::kMaxFramesAhead ahead.
@@ -976,7 +976,7 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
 // and the caller may reuse whatever the preceding work reads once it runs: it
 // runs once the render thread has read that work's data (callbacks.h). N&B's
 // callers: EndTiling (D3D's WorkerDpc) and the XMV renderer
-// (CCalVideoRenderer::Render 0x82A0D9E8, which counts frames in flight until
+// (CCalVideoRenderer::Render 0x82A3D500, which counts frames in flight until
 // IXMediaXmvPlayer_Resume and frees itself after the last).
 void D3DDevice_InsertCallback_hook(u32 device, u32 /*type*/, u32 callback, u32 context) {
   if (!callback)
@@ -994,9 +994,9 @@ constexpr u32 kDeviceOffsetReferenceCount = 0x3C;
 constexpr u32 kDeviceOffsetOwnerThread = 0x2A88;
 constexpr u32 kDeviceCapsVa = 0x82183B00;  // N&B's constant D3DCAPS9
 constexpr u32 kDeviceCapsSize = 0x130;
-constexpr u32 kFusionVa = 0x82F597B4;      // non-zero on a Fusion GPU
+constexpr u32 kFusionVa = 0x82F8E2FC;      // non-zero on a Fusion GPU
 
-// ULONG D3DDevice_AddRef(D3DDevice*) [0x8264E068]
+// ULONG D3DDevice_AddRef(D3DDevice*) [0x8267D538]
 u32 D3DDevice_AddRef_hook(u32 device_va) {
   native::Device d = native::DeviceAt(device_va);
   if (!d)
@@ -1006,14 +1006,14 @@ u32 D3DDevice_AddRef_hook(u32 device_va) {
   return count;
 }
 
-// void D3DDevice_AcquireThreadOwnership(D3DDevice*) [0x8264E0D8]
+// void D3DDevice_AcquireThreadOwnership(D3DDevice*) [0x8267D5A8]
 void D3DDevice_AcquireThreadOwnership_hook(u32 device_va) {
   native::Device d = native::DeviceAt(device_va);
   if (d)
     d.SetW(kDeviceOffsetOwnerThread, GuestGetCurrentThreadId());
 }
 
-// void D3DDevice_ReleaseThreadOwnership(D3DDevice*) [0x8264E118]
+// void D3DDevice_ReleaseThreadOwnership(D3DDevice*) [0x8267D5E8]
 void D3DDevice_ReleaseThreadOwnership_hook(u32 device_va) {
   native::Device d = native::DeviceAt(device_va);
   std::atomic_thread_fence(std::memory_order_seq_cst);  // eieio
@@ -1021,7 +1021,7 @@ void D3DDevice_ReleaseThreadOwnership_hook(u32 device_va) {
     d.SetW(kDeviceOffsetOwnerThread, 0);
 }
 
-// void D3DDevice_GetDeviceCaps(D3DDevice*, D3DCAPS9*) [0x82658948]
+// void D3DDevice_GetDeviceCaps(D3DDevice*, D3DCAPS9*) [0x82687FC0]
 void D3DDevice_GetDeviceCaps_hook(u32 /*device*/, u32 caps_va) {
   auto *caps = GuestPtr<u8>(caps_va);
   const auto *source = GuestPtr<const u8>(kDeviceCapsVa);
@@ -1030,7 +1030,7 @@ void D3DDevice_GetDeviceCaps_hook(u32 /*device*/, u32 caps_va) {
 }
 
 // void D3DDevice_GetDisplayMode(D3DDevice*, UINT iSwapChain, D3DDISPLAYMODE*)
-// [0x82658960]: width, height, refresh rate, format.
+// [0x82687FD8]: width, height, refresh rate, format.
 void D3DDevice_GetDisplayMode_hook(u32 device_va, u32 /*swap_chain*/, mapped_u32 mode) {
   const native::Device d = native::DeviceAt(device_va);
   if (!d || !mode)
@@ -1048,7 +1048,7 @@ void D3DDevice_BlockOnFence_hook(u32 fence) {
     native::BlockOnFence(native::GlobalDevice(), fence);
 }
 
-// void D3D::SynchronizeToPresentationInterval(CDevice*, BOOL) [0x8228A748]:
+// void D3D::SynchronizeToPresentationInterval(CDevice*, BOOL) [0x8228DB30]:
 // its swap callback (SwapCallback) and the waits around it go into the ring;
 // the swap is then pending.
 void D3D_SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/) {
@@ -1059,7 +1059,7 @@ void D3D_SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/
   d.SetB(native::off::Flags1, d.B(native::off::Flags1) | d3d::kSwapFlagPending);
 }
 
-// void D3DResource_GetDevice(D3DResource*, D3DDevice**) [0x82654D50]: the
+// void D3DResource_GetDevice(D3DResource*, D3DDevice**) [0x826842F8]: the
 // device D3D finds through VdGlobalDevice, referenced.
 void D3DResource_GetDevice_hook(u32 /*resource*/, mapped_u32 out_device) {
   const u32 device = native::GlobalDevice();
@@ -1069,15 +1069,15 @@ void D3DResource_GetDevice_hook(u32 /*resource*/, mapped_u32 out_device) {
     *out_device = device;
 }
 
-// BOOL D3D::IsFusion() [0x82B6BF60]
+// BOOL D3D::IsFusion() [0x82B9B728]
 u32 D3D_IsFusion_hook() {
   return LoadGuestU32(kFusionVa) != 0 ? 1 : 0;
 }
 
-// D3D's gamma tables (sub_82659140, _Gamma_sRGB 0x82659090): 1024 entries
+// D3D's gamma tables (sub_826887B8, _Gamma_sRGB 0x82688708): 1024 entries
 // taking a 10-bit value through the display's gamma (VdGetCurrentDisplayGamma).
 // Inverse goes from the display's curve to linear. D3D caches the table per
-// display gamma (unk_82FB2558); it is computed per call here.
+// display gamma (unk_82FE7300); it is computed per call here.
 float Fmsubs(float a, float b, float c) {
   return std::fmaf(a, b, -c);
 }
@@ -1161,7 +1161,7 @@ void StoreGamma(native::Device d, const be_u16 (&corrected)[768]) {
 }
 
 // D3DDevice_SetGammaRamp's work: the ramp (D3DGAMMARAMP, 3 x 256 words)
-// through the gamma table (GammaRampCorrected 0x826593F8).
+// through the gamma table (GammaRampCorrected 0x82688AA8).
 void SetGammaRamp(native::Device d, const u16 *ramp) {
   const std::array<u16, 1024> table = GammaTable(false);
   be_u16 corrected[768];
@@ -1171,7 +1171,7 @@ void SetGammaRamp(native::Device d, const u16 *ramp) {
 }
 
 // D3DDevice_SetPWLGamma's: D3DPWLGAMMA (3 x 128 {base, delta}) through the
-// table (sub_82659490), each segment's end clamped to 0x3FF.
+// table (sub_82688B40), each segment's end clamped to 0x3FF.
 void SetPWLGamma(native::Device d, const u16 *pwl) {
   const std::array<u16, 1024> table = GammaTable(false);
   be_u16 corrected[768];
@@ -1194,7 +1194,7 @@ void ReadRamp(u32 ramp_va, u16 (&ramp)[768]) {
 }
 
 // void D3DDevice_SetGammaRamp(D3DDevice*, DWORD Flags, const D3DGAMMARAMP*)
-// [0x8264D948]
+// [0x8267CE18]
 void D3DDevice_SetGammaRamp_hook(u32 device_va, u32 /*flags*/, u32 ramp_va) {
   native::Device d = native::DeviceAt(device_va);
   if (!d || !ramp_va)
@@ -1205,7 +1205,7 @@ void D3DDevice_SetGammaRamp_hook(u32 device_va, u32 /*flags*/, u32 ramp_va) {
 }
 
 // void D3DDevice_SetPWLGamma(D3DDevice*, DWORD Flags, const D3DPWLGAMMA*)
-// [0x8264DA18]
+// [0x8267CEE8]
 void D3DDevice_SetPWLGamma_hook(u32 device_va, u32 /*flags*/, u32 pwl_va) {
   native::Device d = native::DeviceAt(device_va);
   if (!d || !pwl_va)
@@ -1259,7 +1259,7 @@ void Swap(u32 device_va, u32 front_buffer, u32 parameters) {
   D3DDevice_Swap_hook(device_va, front_buffer, parameters);
 }
 
-// CDevice::SetFence (0x82278528): with immediate fences the device writes the
+// CDevice::SetFence (0x8227B4D0): with immediate fences the device writes the
 // completion itself (unless +0x541C is set); otherwise the fence completes on
 // the render thread, as a KickOff's. A device recording a command buffer
 // would put it into the buffer, which runs on the host.
@@ -1292,23 +1292,23 @@ void SetFence(u32 device_va) {
 // SA2's addresses (each read from SA2's code; N&B's in brackets). What differs:
 //   - Creation: SA2's own Direct3D_CreateDevice builds a device without hardware (its type-2 path: the device block,
 //     XenonGpu_Initialize and InitializeApiState, natively in N&B's hook), then the title device gets what the
-//     hardware path (sub_829C20B0) gives it apart from the GPU: critical sections, VdGlobalDevice, a fence word, the
-//     timer frequency, and DS2's own InitializePresentationParameters (sub_829C1E30: the automatic back buffer and
+//     hardware path (sub_829F2278) gives it apart from the GPU: critical sections, VdGlobalDevice, a fence word, the
+//     timer frequency, and DS2's own InitializePresentationParameters (sub_829F1FF8: the automatic back buffer and
 //     SA2's automatic front buffer, a texture the Present resolves into) and InitializeApiState again, the hardware
 //     path's order.
 //   - The state setters, Clear's and Resolve's device work and the Present stay SA2's code: they write the device's
 //     shadows, which the draws read, and their packets go into the ring sink. Clear and Resolve queue the host work
 //     first (ds2_renut_hooks.cpp).
-//   - DS2's ring segment allocator (sub_829A8538) rewinds the sink like the others.
+//   - DS2's ring segment allocator (sub_829D8708) rewinds the sink like the others.
 
-REX_EXTERN(__imp__sub_829BA480);  // Direct3D_CreateDevice, the original
-REX_EXTERN(__imp__sub_829C1E30);  // D3D::InitializePresentationParameters (CDevice*, D3DPRESENT_PARAMETERS*)
-REX_EXTERN(__imp__sub_829C1460);  // D3D::InitializeApiState (CDevice*)
+REX_EXTERN(__imp__sub_829EA648);  // Direct3D_CreateDevice, the original
+REX_EXTERN(__imp__sub_829F1FF8);  // D3D::InitializePresentationParameters (CDevice*, D3DPRESENT_PARAMETERS*)
+REX_EXTERN(__imp__sub_829F1628);  // D3D::InitializeApiState (CDevice*)
 
 namespace {
 
 // HRESULT Direct3D_CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, void*, DWORD BehaviorFlags,
-//     D3DPRESENT_PARAMETERS*, IDirect3DDevice9 **ppReturnedDeviceInterface) [sub_829BA480; N&B 0x8264DF28]
+//     D3DPRESENT_PARAMETERS*, IDirect3DDevice9 **ppReturnedDeviceInterface) [sub_829EA648; N&B 0x8264DF28]
 void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
   const u32 device_type = ctx.r4.u32;
   u32 behavior_flags = ctx.r6.u32;
@@ -1334,7 +1334,7 @@ void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
 
   // SA2's own no-hardware device.
   ctx.r4.u64 = kDeviceTypeNoHardware;
-  __imp__sub_829BA480(ctx, base);
+  __imp__sub_829EA648(ctx, base);
   if (ctx.r3.u32 != 0)
     return;
   const u32 device_va = LoadGuestU32(out_va);
@@ -1344,7 +1344,7 @@ void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
     return;
   }
   u8 *bytes = d.bytes;
-  // Its ring was the side buffer, marked out of memory (sub_8254D040): from here the sink. Fences complete as they
+  // Its ring was the side buffer, marked out of memory (sub_825724F8): from here the sink. Fences complete as they
   // are written until the title device is set up.
   bytes[kDeviceOffsetFlags2] &= u8(~0x20);
   bytes[kDeviceOffsetFlags2] |= kDeviceFlagImmediateFences;
@@ -1368,7 +1368,7 @@ void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
     if (present_parameters) {
       ctx.r3.u64 = device_va;
       ctx.r4.u64 = present_parameters;
-      __imp__sub_829C1E30(ctx, base);
+      __imp__sub_829F1FF8(ctx, base);
       if (!ctx.r3.u32) {
         RGPU_ERROR("Direct3D_CreateDevice: InitializePresentationParameters failed");
         ctx.r3.u64 = kE_OUTOFMEMORY;
@@ -1376,7 +1376,7 @@ void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
       }
     }
     ctx.r3.u64 = device_va;
-    __imp__sub_829C1460(ctx, base);
+    __imp__sub_829F1628(ctx, base);
     native::RewindRing(d);
     // From here the title device's fences complete on the render thread (KickFence).
     bytes[kDeviceOffsetFlags2] &= u8(~kDeviceFlagImmediateFences);
@@ -1386,7 +1386,7 @@ void Ds2CreateDevice(PPCContext &ctx, uint8_t *base) {
   ctx.r3.u64 = 0;  // S_OK
 }
 
-// DS2's ring segment allocator (sub_829A8538 (CDevice*, DWORD Dwords): KickOffSegment, BeginRingBig and Swap call it
+// DS2's ring segment allocator (sub_829D8708 (CDevice*, DWORD Dwords): KickOffSegment, BeginRingBig and Swap call it
 // for a new segment): the sink again. Non-zero: the callers retry the ring, which has the room.
 u32 Ds2NewSegment_hook(u32 device_va, u32 /*dwords*/) {
   native::Device d = native::DeviceAt(device_va);
@@ -1397,7 +1397,7 @@ u32 Ds2NewSegment_hook(u32 device_va, u32 /*dwords*/) {
   return d.W(native::off::Ring) + 4;
 }
 
-// D3D::SynchronizeToPresentationInterval(CDevice*, BOOL) [sub_829BB060; N&B 0x8228A748]: its packets (the swap
+// D3D::SynchronizeToPresentationInterval(CDevice*, BOOL) [sub_829EB228; N&B 0x8228A748]: its packets (the swap
 // callback and the waits) are the GPU's; the swap is pending.
 void Ds2SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/) {
   native::Device d = native::DeviceAt(device_va);
@@ -1407,19 +1407,19 @@ void Ds2SynchronizeToPresentationInterval_hook(u32 device_va, u32 /*immediate*/)
 
 }  // namespace
 
-BANJO_RENUT_HOOK_RAW(sub_829BA480) {  // Direct3D_CreateDevice [0x8264DF28]
+BANJO_RENUT_HOOK_RAW(sub_829EA648) {  // Direct3D_CreateDevice [0x8267D3F8]
   Ds2CreateDevice(ctx, base);
 }
-BANJO_RENUT_HOOK(sub_829A9940, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback [0x821FB688]
-BANJO_RENUT_HOOK(sub_829BB060, Ds2SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval [0x8228A748]
-BANJO_RENUT_HOOK(sub_829A9618, KickOff_hook);  // D3D_CDevice_KickOff [0x82210AB0]
-BANJO_RENUT_HOOK(sub_829A92D8, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment [0x822106C8]
-BANJO_RENUT_HOOK(sub_829A9850, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig [0x821F7C18]
-BANJO_RENUT_HOOK(sub_829A8008, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate [0x8222D3E0]
-BANJO_RENUT_HOOK_SHARED(sub_829A8450, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData [0x8222D240]
-BANJO_RENUT_HOOK(sub_829A8538, Ds2NewSegment_hook);  // DS2's ring segment allocator
-BANJO_RENUT_HOOK(sub_829A9998, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters [0x82657508]
-BANJO_RENUT_HOOK(sub_829BB520, D3DDevice_Swap_hook);  // D3DDevice_Swap [0x82287590]
-BANJO_RENUT_HOOK(sub_829A8238, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence [0x8228F558]
-BANJO_RENUT_HOOK_SHARED(sub_829B9C60, CBlocker_Check_hook);  // D3D_CBlocker_Check [0x8264DCD0]
-BANJO_RENUT_HOOK(sub_829A9758, IsFencePending_hook);  // D3DDevice_IsFencePending [0x8228F650]
+BANJO_RENUT_HOOK(sub_829D9B10, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback [0x821FB688]
+BANJO_RENUT_HOOK(sub_829EB228, Ds2SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval [0x8228DB30]
+BANJO_RENUT_HOOK(sub_829D97E8, KickOff_hook);  // D3D_CDevice_KickOff [0x82210AB0]
+BANJO_RENUT_HOOK(sub_829D94A8, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment [0x822106C8]
+BANJO_RENUT_HOOK(sub_829D9A20, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig [0x821F7C18]
+BANJO_RENUT_HOOK(sub_829D81D8, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate [0x8222D3E0]
+BANJO_RENUT_HOOK_SHARED(sub_829D8620, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData [0x8222D240]
+BANJO_RENUT_HOOK(sub_829D8708, Ds2NewSegment_hook);  // DS2's ring segment allocator
+BANJO_RENUT_HOOK(sub_829D9B68, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters [0x82686AB8]
+BANJO_RENUT_HOOK(sub_829EB6E8, D3DDevice_Swap_hook);  // D3DDevice_Swap [0x8228A840]
+BANJO_RENUT_HOOK(sub_829D8408, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence [0x8228F558]
+BANJO_RENUT_HOOK_SHARED(sub_829E9E28, CBlocker_Check_hook);  // D3D_CBlocker_Check [0x8267D1A0]
+BANJO_RENUT_HOOK(sub_829D9928, IsFencePending_hook);  // D3DDevice_IsFencePending [0x82293340]

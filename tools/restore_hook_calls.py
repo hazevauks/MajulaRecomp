@@ -6,7 +6,7 @@
 # reverts only the given addresses, so only the files that really call them are touched (and rebuilt); a later full
 # run of direct_calls.py (tools/codegen.sh) keeps them as hooks because the addresses are in the sources.
 #
-#   usage: restore_hook_calls.py [--gen <generated dir>] 82AA53C0 82B4D580 ...
+#   usage: restore_hook_calls.py [--gen <generated dir>] 82AD4B78 82B7CE58 ...
 import os
 import re
 import sys

@@ -42,7 +42,7 @@ namespace {
 // D3DFORMAT low bits of D3DFMT_D24S8 (the shadow maps; the scene's depth is
 // D24FS8).
 constexpr u32 kFormatD24S8 = 22;
-// The SSAO targets' EDRAM base (sub_8235FA90).
+// The SSAO targets' EDRAM base (sub_82370560).
 constexpr u32 kAmbientOcclusionEdramBase = 1864;
 // The game's screen height (widescreen.h).
 constexpr u32 kGuestScreenHeight = 720;

@@ -2,7 +2,7 @@
 
 // sa2-nx (2026-10-07): vertex shaders whose declared fetches Direct3D moved to each other's slots.
 //
-// Direct3D's vertex fetch patcher (sub_82555E18) rewrites a vertex shader's fetches for the vertex declaration it is
+// Direct3D's vertex fetch patcher (sub_8257AF70) rewrites a vertex shader's fetches for the vertex declaration it is
 // drawn with, and for some declarations it also moves them: the fetch that writes r10 sits in the slot the library
 // container has r1's fetch in, and so on, inside one run of fetch-only slots; every ALU and control-flow word stays the
 // same. VertexShaderIdentityMatches holds every fetch at its own slot, so such a load was not identified and its draws

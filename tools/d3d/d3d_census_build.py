@@ -15,7 +15,7 @@ funcs = set()
 for f in glob.glob(GEN + '/ds2_recomp.*.cpp'):
     for ln in open(f, encoding='utf-8', errors='ignore'):
         m = DEF.match(ln)
-        if m and 0x82540000 <= int(m.group(1), 16) < 0x82570000: funcs.add(m.group(1))
+        if m and 0x825648C0 <= int(m.group(1), 16) < 0x82595F60: funcs.add(m.group(1))
 # hooks really defined in the sources (not mere mentions)
 HOOK = re.compile(r'(?:REX_HOOK_RAW\(sub_|DS2_HOT_HOOK_COPY\(|DS2_COPY_FOR_HOOK\(|DS2_HOT_HOOK_UNGUARDED\(|DS2_HOT_HOOK\(|DS2_TRACE_HOOK\(\d+, )([0-9A-F]{8})')
 defined = set()
@@ -24,7 +24,7 @@ for d in (ROOT + '/app/src', ROOT + '/sdk/src'):
         for f in fs:
             if f.endswith(('.cpp', '.h', '.inc')):
                 defined |= set(HOOK.findall(open(os.path.join(dp, f), encoding='utf-8', errors='ignore').read()))
-SEGMENT = '8254EBB8'
+SEGMENT = '82574014'
 census = sorted(funcs - defined)
 os.makedirs(OUT, exist_ok=True)
 with open(OUT + '/ds2_d3d_census_all.cpp', 'w', newline='\n') as o:

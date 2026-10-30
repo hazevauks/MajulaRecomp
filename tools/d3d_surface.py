@@ -5,7 +5,7 @@ docs/api-renderer-assessment.md).
 The Xbox 360 XDK links Direct3D statically as one block of functions. Calls from game code (outside the block) into
 it are the entry points the game uses; inline XDK functions do not appear as calls (they touch the device directly).
 
-  python tools/d3d_surface.py [--lo 0x82540000 --hi 0x82570000] [--edges]
+  python tools/d3d_surface.py [--lo 0x825648C0 --hi 0x82595F60] [--edges]
 
   --edges   prints, around both ends of the range, each function with how many callers it has inside and outside the
             range, to place the library's boundaries.
@@ -26,16 +26,16 @@ INDIRECT = re.compile(r'REX_CALL_INDIRECT_FUNC')
 MMIO = re.compile(r'REX_MM_(?:STORE|LOAD)')
 
 KNOWN = {  # docs/sa2-notes.md, "Named D3D functions" (tools/d3d_match.py against Banjo's named XDK functions)
-    0x82558E98: 'D3DDevice_Swap', 0x82565C60: 'D3DDevice_DrawVertices', 0x82566078: 'D3DDevice_DrawIndexedVertices',
-    0x82565C18: 'D3DDevice_DrawVerticesUP', 0x82556A60: 'draw-time shader load (FlushState part)',
-    0x8255E750: 'D3DDevice_CreateVertexShader', 0x8255E568: 'D3DDevice_CreatePixelShader',
-    0x8255E198: 'D3DDevice_CreateVertexDeclaration', 0x82563AB0: 'D3DDevice_Clear', 0x825645A0: 'D3DDevice_Resolve?',
-    0x825576D0: 'D3DDevice_BeginTiling?', 0x82557A40: 'D3DDevice_EndTiling?', 0x82548DF8: 'D3DDevice_CreateTexture',
-    0x82548F18: 'D3DDevice_CreateSurface', 0x82549730: 'D3DDevice_CreateVertexBuffer',
-    0x82549808: 'D3DDevice_CreateIndexBuffer', 0x825527D8: 'D3DDevice_SetGammaRamp?', 0x82552708: 'D3DDevice_SetGammaRamp?',
-    0x82549650: 'D3DResource_AddRef', 0x8254A4A8: 'D3DResource_Release', 0x82549358: 'D3DResource_GetType',
-    0x82557FC0: 'present (flip)', 0x8254F400: 'GPU wait loop', 0x8255D990: 'shader constants setter (VS 376+?)',
-    0x8255D8B8: 'shader constants setter (120+?)',
+    0x82558E98: 'D3DDevice_Swap', 0x8258B908: 'D3DDevice_DrawVertices', 0x8258BD20: 'D3DDevice_DrawIndexedVertices',
+    0x8258B8C0: 'D3DDevice_DrawVerticesUP', 0x8257B930: 'draw-time shader load (FlushState part)',
+    0x825842D0: 'D3DDevice_CreateVertexShader', 0x825840E8: 'D3DDevice_CreatePixelShader',
+    0x82583C40: 'D3DDevice_CreateVertexDeclaration', 0x825896D0: 'D3DDevice_Clear', 0x8258A238: 'D3DDevice_Resolve?',
+    0x8257C790: 'D3DDevice_BeginTiling?', 0x8257CC80: 'D3DDevice_EndTiling?', 0x8256D7E8: 'D3DDevice_CreateTexture',
+    0x8256D908: 'D3DDevice_CreateSurface', 0x8256E120: 'D3DDevice_CreateVertexBuffer',
+    0x8256E1F8: 'D3DDevice_CreateIndexBuffer', 0x82577970: 'D3DDevice_SetGammaRamp?', 0x825778A0: 'D3DDevice_SetGammaRamp?',
+    0x8256E040: 'D3DResource_AddRef', 0x8256EE98: 'D3DResource_Release', 0x8256DD48: 'D3DResource_GetType',
+    0x8257D820: 'present (flip)', 0x82574860: 'GPU wait loop', 0x82583440: 'shader constants setter (VS 376+?)',
+    0x82583368: 'shader constants setter (120+?)',
 }
 
 
@@ -64,8 +64,8 @@ def parse():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--lo', default='0x82540000')
-    ap.add_argument('--hi', default='0x82570000')
+    ap.add_argument('--lo', default='0x825648C0')
+    ap.add_argument('--hi', default='0x82595F60')
     ap.add_argument('--edges', action='store_true')
     a = ap.parse_args()
     lo, hi = int(a.lo, 16), int(a.hi, 16)

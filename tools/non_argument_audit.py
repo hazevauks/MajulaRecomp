@@ -16,18 +16,18 @@ generated code hands it over.
    keep the other bytes; runs of element writes that cover a whole vector register (vlogefp128, vupkd3d128) count as
    one full write. Unknown callees (indirect calls, imports, other modules) may write everything; the bug check and
    the --noreturn functions never return (their fallthrough is dead).
-     python tools/non_argument_audit.py app/generated/default --noreturn=827F2E48
+     python tools/non_argument_audit.py app/generated/default --noreturn=82822B00
 
    Expected for SA2 (2026-10-07): ENTRY = the SDK's __save*/__rest* helpers (r12), the MSVC EH funclets (r12, all
-   share_registers), sub_827F5144 (the stack probe, r12) and the three audio resamplers sub_828A0DB0 / sub_828A2A60 /
-   sub_828A3220 (v57-v63, shifted out: tools/vec_shiftout.py proves it); RET = sub_82805400 (r11 from its __finally
-   funclet, taken back by the generated copy-back) and sub_8275B300 (`subfe r10,r11,r11`, independent of r11).
+   share_registers), sub_82824DFC (the stack probe, r12) and the three audio resamplers sub_828D1110 / sub_828D2CB0 /
+   sub_828D3470 (v57-v63, shifted out: tools/vec_shiftout.py proves it); RET = sub_828350F0 (r11 from its __finally
+   funclet, taken back by the generated copy-back) and sub_8278B2E8 (`subfe r10,r11,r11`, independent of r11).
 
 2. Code generated WITH the option (--with-option): every call from a function that localizes these registers to one
    that keeps them in ctx (share_registers, non_argument_as_local_keep, the helpers) must copy in what the callee reads
    on entry and copy back what the caller reads afterwards that the callee may write; and no localized register may be
    read before it is written (except the resamplers above).
-     python tools/non_argument_audit.py app/generated/default --with-option --noreturn=827F2E48
+     python tools/non_argument_audit.py app/generated/default --with-option --noreturn=82822B00
 """
 import glob
 import os

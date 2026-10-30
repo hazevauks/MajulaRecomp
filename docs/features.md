@@ -1,5 +1,10 @@
 # Port features: plan (2026-10-24)
 
+> **Out of the build since 2026-10-29** (the user): while the port moves to Scholar of the First Sin and the work is on
+> performance, `src/ds2_features.cpp` (Early Dull Ember, Better fog walls) is not compiled (app/CMakeLists.txt). Its
+> item lots are the 2014 regulation's and its hooks were moved by tools/xex_addr_remap.py untested: both are checked
+> against Scholar's before it returns.
+
 Features the user wants beyond the straight port, from a brainstorm (no code yet). Every change is made at run time
 on the player's own files: nothing of the game is shipped modified.
 

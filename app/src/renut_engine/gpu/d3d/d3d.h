@@ -225,7 +225,7 @@ static_assert(sizeof(ControlPacket) == 48);
 
 // Public D3DDevice (0x2B00 bytes in N&B's XDK) followed by the CDevice-private
 // tail of the allocation Direct3D_CreateDevice makes: 0x6080 bytes in SA2's
-// (sub_829BA480 allocates 24704, aligned 128; N&B 0x5E00).
+// (sub_829EA648 allocates 24704, aligned 128; N&B 0x5E00).
 constexpr u32 kDeviceAllocSize = 0x6080;
 constexpr u32 kDeviceAlignment = 0x80;
 
@@ -277,7 +277,7 @@ static_assert(offsetof(Device, m_MaxAnisotropy) == 0x2A70);
 static_assert(offsetof(Device, m_ZFilter) == 0x2A8A);
 
 // CDevice-private fields Direct3D_CreateDevice initialises (byte offsets into
-// the allocation, from its decompilation at 0x8264DF28).
+// the allocation, from its decompilation at 0x8267D3F8).
 // sa2-nx: DS2's sub_8255C808 and sub_829BA480 (N&B 10888, 10892, 23980).
 constexpr u32 kDeviceOffsetCreationThreadId = 11016;  // GetCurrentThreadId()
 constexpr u32 kDeviceOffsetIsTitleProcess = 11020;    // KeGetCurrentProcessType() == 2
@@ -285,7 +285,7 @@ constexpr u32 kDeviceOffsetBehaviorFlags = 24392;     // Direct3D_CreateDevice a
 
 // Bound objects the Set* calls store in the CDevice-private area (guest VAs).
 // sa2-nx: SA2's "is the resource bound" test (sub_825498C8) reads every one of
-// these but the strides (sub_829C2340, BeginVertices). N&B's in brackets.
+// these but the strides (sub_829F2508, BeginVertices). N&B's in brackets.
 constexpr u32 kDeviceOffsetVertexDeclaration = 12240;  // SetVertexDeclaration [0x2E2C]
 constexpr u32 kDeviceOffsetIndexBuffer = 12812;        // SetIndices [0x3094]
 constexpr u32 kDeviceOffsetRenderTargets = 12816;      // SetRenderTarget, [4] [0x3098]
@@ -303,7 +303,7 @@ constexpr u32 kDeviceOffsetMaxTessellationLevel = 0x297C;
 constexpr u32 kDeviceOffsetMinTessellationLevel = 0x2980;
 // Tile predication mask of the draws that follow, ~0 for none
 // (D3DDevice_SetPredication 0x8222AA18 and SetCommandBufferPredication
-// 0x82658678). Bits 2i and 2i+1 run the commands in tile i's pass of
+// 0x82687C78). Bits 2i and 2i+1 run the commands in tile i's pass of
 // predicated tiling (Z and render).
 // sa2-nx: 13084 by the +376 of the fields around it (N&B 0x31A4); SA2 never
 // tiles, and the renderer reads it only while tiling (PredicatedTile).
@@ -321,8 +321,8 @@ static_assert(kDeviceOffsetPredication + 4 <= kDeviceSnapshotSize);
 // sa2-nx: DS2's BeginVertices (sub_829C2340) stores it, and the game's 11
 // inline ends load it (N&B 0x3484).
 constexpr u32 kDeviceOffsetVerticesRingEnd = 13844;
-// Swap bookkeeping (D3DDevice_Swap 0x82287590; DS2's sub_829BB520, which
-// also sets the pending flag in SynchronizeToPresentationInterval sub_829BB060).
+// Swap bookkeeping (D3DDevice_Swap 0x8228A840; DS2's sub_829EB6E8, which
+// also sets the pending flag in SynchronizeToPresentationInterval sub_829EB228).
 constexpr u32 kDeviceOffsetSwapCount = 16968;        // [0x40B0]
 constexpr u32 kDeviceOffsetFenceTag = 11036;         // current fence tag [0x2A9C]
 constexpr u32 kDeviceOffsetSwapFenceTag = 11056;     // fence tag at the last Swap [0x2AB0]
@@ -344,7 +344,7 @@ constexpr u32 IndexBufferEndian(u32 common) {
   return (common >> 29) & 3;
 }
 
-// D3DSURFACE after its Resource header (SetSurfaceHeader 0x82655A40).
+// D3DSURFACE after its Resource header (SetSurfaceHeader 0x82684FE8).
 struct SurfaceDesc {
   be_u32 SurfaceInfo;  // +0x18 RB_SURFACE_INFO: pitch 0-13, msaa 16-17
   be_u32 ColorInfo;    // +0x1C RB_COLOR_INFO / RB_DEPTH_INFO: EDRAM base, format at 16

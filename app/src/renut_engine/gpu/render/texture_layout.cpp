@@ -58,7 +58,7 @@ u32 AlignTextureDimensions(u32 &width, u32 &height, u32 &depth, u32 bpp, GpuText
   return dimension == TextureDimension::Tex3D ? Align4K(depth * plane) : Align4K(plane) * depth;
 }
 
-// GetMipTailLevelOffsetCoords (0x826555E0): where level 'level' of a packed
+// GetMipTailLevelOffsetCoords (0x82684B88): where level 'level' of a packed
 // tail starts in the tail level (w x h x d, powers of two). The first three
 // levels line up along the tail's shorter side, 16 >> level texels in; the
 // rest along the other side, at its size >> (level - 2), and once that is
@@ -233,7 +233,7 @@ TextureLevelLayout GetTextureLevelLayout(const TextureFetch &fetch, u32 level) {
   return out;
 }
 
-// FindTextureSize (0x82287E60): the base level with all its slices, and the
+// FindTextureSize (0x8228B110): the base level with all its slices, and the
 // mip levels up to (and with) the packed tail.
 void GetTextureDataSizes(const TextureFetch &fetch, u32 &base_bytes, u32 &mip_bytes) {
   const u32 bpp = FormatBitsPerPixel(fetch.Format());
@@ -257,7 +257,7 @@ void GetTextureDataSizes(const TextureFetch &fetch, u32 &base_bytes, u32 &mip_by
   }
 }
 
-// XGRAPHICS::UntileSurface (0x8280A050): tiles of 32 x 32 blocks, 'pitch'
+// XGRAPHICS::UntileSurface (0x82839D40): tiles of 32 x 32 blocks, 'pitch'
 // rounded up to whole tiles, the blocks inside a tile interleaved.
 u32 TiledOffset2D(u32 x, u32 y, u32 pitch_blocks, u32 log2_block_bytes) {
   const u32 tiles_per_row = AlignMask(pitch_blocks, 32) >> 5;
@@ -271,7 +271,7 @@ u32 TiledOffset2D(u32 x, u32 y, u32 pitch_blocks, u32 log2_block_bytes) {
          (a & 0x3F);
 }
 
-// XGAddress3DTiledOffset (0x8280D318), in bytes rather than elements.
+// XGAddress3DTiledOffset (0x8283D008), in bytes rather than elements.
 u32 TiledOffset3D(u32 x, u32 y, u32 z, u32 width_blocks, u32 height_blocks,
                   u32 log2_block_bytes) {
   const uint64_t shift = log2_block_bytes;

@@ -26,7 +26,7 @@ breaking the game at run time.
 Usage:
     python3 tools/find_gaps.py
     python3 tools/find_gaps.py --min 8
-    python3 tools/find_gaps.py --check 0x8215FEA8 0x826BE258
+    python3 tools/find_gaps.py --check 0x8215FEA8 0x826EE298
 
 Output: a text report (default out/gaps/report.txt) and a TOML block of candidate declarations (default
 out/gaps/candidates.toml) in the format of app/overrides.toml. Do not include the TOML as it is.

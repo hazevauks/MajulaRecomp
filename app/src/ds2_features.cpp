@@ -58,7 +58,7 @@ constexpr uint32_t kLotIronKeep = 10196160;  // the Dull Ember's pickup in the I
 constexpr uint32_t kDullEmber = 50990000, kTitaniteSlab = 60990000, kNoItem = 10;
 // A row of ItemLotParam2 (124 bytes): amounts at 4, slot bytes at 34, items at 44, chances at 84 (ten each).
 
-uint32_t g_item_params = 0;  // the item params' manager (823A4860): +36 ItemLotParam2_Other, +28 ..._Chr
+uint32_t g_item_params = 0;  // the item params' manager (823B8068): +36 ItemLotParam2_Other, +28 ..._Chr
 uint32_t g_lot_data = 0;
 std::mutex g_lots_mutex;
 
@@ -143,22 +143,22 @@ void TraceLot(const uint8_t* base, uint32_t handle, uint32_t id) {
 using namespace ds2::features;
 
 // The item params' manager is filled (the regulation loaded): find the two lots and apply the change.
-REX_EXTERN(__imp__sub_823A4860);
-REX_HOOK_RAW(sub_823A4860) {
+REX_EXTERN(__imp__sub_823B8068);
+REX_HOOK_RAW(sub_823B8068) {
   const uint32_t manager = ctx.r3.u32;
-  __imp__sub_823A4860(ctx, base);
+  __imp__sub_823B8068(ctx, base);
   g_item_params = manager;
   SyncLots(base);
 }
 
 // Diagnostics: a param row looked up by id (handle, id) -> row; the item lots are logged.
-REX_EXTERN(__imp__sub_82271CC8);
-REX_HOOK_RAW(sub_82271CC8) {
+REX_EXTERN(__imp__sub_82274C08);
+REX_HOOK_RAW(sub_82274C08) {
   TraceLot(base, ctx.r3.u32, ctx.r4.u32);
-  __imp__sub_82271CC8(ctx, base);
+  __imp__sub_82274C08(ctx, base);
 }
 
-// Diagnostics: the fog wall's component (MapObjWhiteDoorComponent, its vtable at 8200BF4C): which of its functions run
+// Diagnostics: the fog wall's component (MapObjWhiteDoorComponent, its vtable at 8200CC24): which of its functions run
 // when the player crosses.
 #define DS2_TRACE_FOG(address)                \
   REX_EXTERN(__imp__sub_##address);           \
@@ -166,13 +166,13 @@ REX_HOOK_RAW(sub_82271CC8) {
     TraceCall(0x##address##u, ctx);           \
     __imp__sub_##address(ctx, base);          \
   }
-DS2_TRACE_FOG(823BA908)
-DS2_TRACE_FOG(823BAB68)
-DS2_TRACE_FOG(823BB620)
-DS2_TRACE_FOG(823BB638)
-DS2_TRACE_FOG(823BB780)
-DS2_TRACE_FOG(823BBC70)
-DS2_TRACE_FOG(823BBCE8)
-DS2_TRACE_FOG(823BC130)
-DS2_TRACE_FOG(823BA1C0)
-DS2_TRACE_FOG(823BA120)
+DS2_TRACE_FOG(823CEAB8)
+DS2_TRACE_FOG(823CED18)
+DS2_TRACE_FOG(823CF810)
+DS2_TRACE_FOG(823CF828)
+DS2_TRACE_FOG(823CF970)
+DS2_TRACE_FOG(823CFE60)
+DS2_TRACE_FOG(823CFED8)
+DS2_TRACE_FOG(823D0320)
+DS2_TRACE_FOG(823CE3D0)
+DS2_TRACE_FOG(823CE330)

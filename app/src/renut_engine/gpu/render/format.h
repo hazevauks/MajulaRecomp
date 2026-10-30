@@ -16,7 +16,7 @@ namespace renut::gpu {
 // D3DDevice_SetRenderState_* setters write them into the control registers
 // unchanged: SrcBlend / DestBlend (0x82230090 / 0x822307B8, RB_BLENDCONTROL
 // bits 0-4 / 8-12), BlendOp (0x82226380, bits 5-7), ZFunc (0x821FB7B0,
-// RB_DEPTHCONTROL bits 4-6), StencilFail (0x8264C268, bits 11-13).
+// RB_DEPTHCONTROL bits 4-6), StencilFail (0x8267B540, bits 11-13).
 enum class D3DBlend : u32 {
   Zero = 0,
   One = 1,
@@ -119,7 +119,7 @@ enum class GpuTextureFormat : u32 {
 };
 
 // The render target format in a surface's color info (bits 16-19), as the
-// game's SetSurfaceHeader (0x82655A50) picks it: the high nibble's low bits
+// game's SetSurfaceHeader (0x82684FF8) picks it: the high nibble's low bits
 // of its per-format table entry, 1 for an 8_8_8_8 format whose X, Y and Z
 // are gamma.
 enum class GpuColorFormat : u32 {

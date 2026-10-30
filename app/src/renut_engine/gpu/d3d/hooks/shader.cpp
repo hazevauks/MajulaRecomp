@@ -37,7 +37,7 @@ using namespace renut::gpu;
 namespace {
 
 // Where D3DDevice_CreateVertexShader / CreatePixelShader (0x8264E8B0 /
-// 0x8264E6A8) lay out a shader object: the container's virtual part copied
+// 0x8267DB90) lay out a shader object: the container's virtual part copied
 // after the D3D header, and a pointer to its physical part (literal constants
 // and microcode). Objects in bundles have the same layout.
 constexpr u32 kVertexShaderContainer = 0x368;
@@ -363,7 +363,7 @@ void XGRegisterVertexShader_hook(u32 shader, u32 physical) {
   RegisterGuestShader(shader, physical, false);
 }
 
-// void XGRegisterPixelShader(D3DPixelShader *pShader, void *pPhysicalPart) [0x8264E670]
+// void XGRegisterPixelShader(D3DPixelShader *pShader, void *pPhysicalPart) [0x8267DB58]
 void XGRegisterPixelShader_hook(u32 shader, u32 physical) {
   auto *bytes = GuestPtr<u8>(shader);
   if (!bytes)
@@ -382,13 +382,13 @@ u32 D3DDevice_CreateVertexShader_hook(mapped_u32 function) {
   return CreateShaderRecord(static_cast<const be_u32 *>(function), false);
 }
 
-// D3DPixelShader *D3DDevice_CreatePixelShader(const DWORD *pFunction) [0x8264E6A8]
+// D3DPixelShader *D3DDevice_CreatePixelShader(const DWORD *pFunction) [0x8267DB90]
 u32 D3DDevice_CreatePixelShader_hook(mapped_u32 function) {
   return CreateShaderRecord(static_cast<const be_u32 *>(function), true);
 }
 
 // D3DVertexDeclaration *D3DDevice_CreateVertexDeclaration(
-//     const D3DVERTEXELEMENT9 *pVertexElements) [0x8264EA90]
+//     const D3DVERTEXELEMENT9 *pVertexElements) [0x8267E020]
 u32 D3DDevice_CreateVertexDeclaration_hook(rex::MappedPtr<GuestVertexElement> elements) {
   if (!elements)
     return 0;
@@ -407,7 +407,7 @@ u32 D3DDevice_CreateVertexDeclaration_hook(rex::MappedPtr<GuestVertexElement> el
 }
 
 // void D3DVertexShader_Bind(D3DVertexShader *pShader, DWORD Flags,
-//     D3DVertexDeclaration *pDecl, const DWORD *pStreamStrides, DWORD Index) [0x82657048]
+//     D3DVertexDeclaration *pDecl, const DWORD *pStreamStrides, DWORD Index) [0x826865F8]
 // Patches a CVertexShader's vertex fetches to a declaration and the strides of
 // streams 0..(highest stream in the declaration). Draws take their input layout
 // from a declaration record instead, so nothing is patched; the declaration and
@@ -448,7 +448,7 @@ void D3DVertexShader_Bind_hook(u32 shader_va, u32 /*flags*/, u32 declaration_va,
 // sa2-nx (2026-10-20): SA2's hooks (N&B's addresses in brackets)
 // ---------------------------------------------------------------------------
 // SA2's shader objects stay the game's: its D3DDevice_CreateVertexShader / CreatePixelShader (sub_8255E750 /
-// sub_8255E568) copy the container into the object and call XGRegisterVertexShader / XGRegisterPixelShader on it
+// sub_825840E8) copy the container into the object and call XGRegisterVertexShader / XGRegisterPixelShader on it
 // (the same object layout as N&B's: the container at +0x368 / +0x28, the physical part's pointer at +0x20 / +0x18).
 // So the two XGRegister functions are the hooks: SA2's own code first, then the host side keyed by the container's
 // hash (RegisterGuestShader). The vertex declarations stay the game's too: the host side is kept per object.
@@ -472,28 +472,28 @@ void RegisterGuestDeclaration(u32 declaration_va, const GuestVertexElement *elem
 
 }  // namespace
 
-// void XGRegisterVertexShader(D3DVertexShader*, void *pPhysicalPart) [sub_829B10E0; N&B 0x8264E7B8]
-BANJO_RENUT_HOOK_RAW(sub_829B10E0) {
+// void XGRegisterVertexShader(D3DVertexShader*, void *pPhysicalPart) [sub_829E12A8; N&B 0x8264E7B8]
+BANJO_RENUT_HOOK_RAW(sub_829E12A8) {
   const u32 shader = ctx.r3.u32, physical = ctx.r4.u32;
-  __imp__sub_829B10E0(ctx, base);
+  __imp__sub_829E12A8(ctx, base);
   RegisterGuestShader(shader, physical, false);
 }
 
-// void XGRegisterPixelShader(D3DPixelShader*, void *pPhysicalPart) [sub_829AF490; N&B 0x8264E670]
-BANJO_RENUT_HOOK_RAW(sub_829AF490) {
+// void XGRegisterPixelShader(D3DPixelShader*, void *pPhysicalPart) [sub_829DF660; N&B 0x8264E670]
+BANJO_RENUT_HOOK_RAW(sub_829DF660) {
   const u32 shader = ctx.r3.u32, physical = ctx.r4.u32;
-  __imp__sub_829AF490(ctx, base);
+  __imp__sub_829DF660(ctx, base);
   RegisterGuestShader(shader, physical, true);
 }
 
-// ds2-nx (2026-10-22): the declaration's initialisation, not D3DDevice_CreateVertexDeclaration [sub_829AFA30; N&B
-// 0x8264EA90]. DS2's Create counts the elements, allocates the object and calls this (elements r3, object r4); the game
-// also calls it directly on declarations in its own memory (from 0x826A8F08), and with the hook on Create those never
+// ds2-nx (2026-10-22): the declaration's initialisation, not D3DDevice_CreateVertexDeclaration [sub_829DFC00; N&B
+// 0x8267E020]. DS2's Create counts the elements, allocates the object and calls this (elements r3, object r4); the game
+// also calls it directly on declarations in its own memory (from 0x826D92A0), and with the hook on Create those never
 // reached the renderer ("Draw dropped: vertex declaration ... is not one the renderer knows", every frame from boot).
-// void D3DVertexDeclaration_Initialize(const D3DVERTEXELEMENT9*, D3DVertexDeclaration*) [sub_829AF940]
-BANJO_RENUT_HOOK_RAW(sub_829AF940) {
+// void D3DVertexDeclaration_Initialize(const D3DVERTEXELEMENT9*, D3DVertexDeclaration*) [sub_829DFB10]
+BANJO_RENUT_HOOK_RAW(sub_829DFB10) {
   const u32 elements_va = ctx.r3.u32, declaration = ctx.r4.u32;
-  __imp__sub_829AF940(ctx, base);
+  __imp__sub_829DFB10(ctx, base);
   if (const auto *elements = declaration ? GuestPtr<const GuestVertexElement>(elements_va) : nullptr)
     RegisterGuestDeclaration(declaration, elements);
 }

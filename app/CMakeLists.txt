@@ -79,8 +79,9 @@ set(DS2_SOURCES
     src/ds2_trophies.cpp
     src/ds2_trophy_art.cpp
     src/ds2_profiler.cpp
-    # The port's gameplay changes, on by default in ds2.toml: Early Dull Ember, Better fog walls (docs/features.md).
-    src/ds2_features.cpp
+    # The port's gameplay changes (Early Dull Ember, Better fog walls; src/ds2_features.cpp, docs/features.md): out of
+    # the build since 2026-10-29, while the port moves to Scholar of the First Sin and the work is on performance
+    # (the user). Their item lots are the 2014 regulation's; they come back checked against Scholar's.
     # Render resolution per console mode (docked / handheld, live) and MSAA: ds2_render_height_*, ds2_msaa.
     src/me/ds2_render_mode.cpp
     # Switchable enhancements: masters ds2_cpu_enhancements / ds2_noncpu_enhancements, one key each, a startup line
