@@ -95,8 +95,18 @@ regulation kept beside the new one. Moving to it keeps the game as it is, with t
    Scholar function, and it is one of a whole class: `gpu/d3d/hooks/state.cpp`'s 255 hooks are N&B's Direct3D census,
    none of them Dark Souls II's Direct3D, and the 8 of them that were live in the 2014 build had replaced ordinary
    game functions (a constructor among them). Out of the build (`DS2_NB_STATE_HOOKS`, 0).
-8. The game shaders: Scholar's disc has the same 1,481 shaders, byte for byte (only the 72 in `Default.xex` moved), so
-   the deko3d package, the PC shader cache and the players' `deko3d_shaders.bin` / `pipeline_list.bin` stay valid.
+8. The game shaders. First taken to be the same 1,481 as the 2014 disc's (wrong: the first build kept the 2014 dump);
+   the console's first 3D session (2026-10-30) drew the characters and many models as flat light-blue silhouettes and
+   captured 39 shaders its package lacked. `shader/FlverShader.bnd` and `shader/Decal.bnd` differ from the 2014 disc's
+   (`Filter`, `FeShader`, `SfxShader` and `Simple/` do not): 789 containers are new and 786 of the 2014 ones are gone.
+   The dump is made again from Scholar (`tools/extract_shaders.py --out out/sotfs/shaders_game`, then
+   `tools/ds2_dump_shaders.py --image out/sotfs/image.bin --game-shaders out/sotfs/shaders_game`): 1,484 shaders, the
+   39 captures among them; then the PC tree's translation alone (`cmake --build out/pc --target
+   renut_shader_cache_gen`) and `tools/ds2_deko3d_shaders.sh` (the package in `app/out/renut_switch`, which the Switch
+   build embeds: building the NRO alone keeps the old package). The 2014 dump is kept in
+   `out/gen_2014/renut_shader_dump`, its deko3d chain in `out/deko3d_shaders_2014`. The players'
+   `pipeline_list.bin` / `deko3d_shaders.bin` still hold the shaders both games share; the console compiles the new
+   ones the first time they are drawn, until a new pipeline list comes back from it.
 9. The gameplay changes (`src/ds2_features.cpp`) are out of the build meanwhile (docs/features.md).
 10. The first console boots (2026-10-30) stopped right after the main thread started, "Call to invalid or unregistered
     function at guest address 0x827AB150": a 3-instruction getter only a data pointer reaches, in a stretch of code
