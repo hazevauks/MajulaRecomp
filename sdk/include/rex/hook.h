@@ -26,9 +26,17 @@
 #include <rex/types.h>
 
 // PC builds count the calls of every export (rex/sys_counters.h, ExportCensus: which host functions a game calls
-// most). Nothing on the Switch.
+// most). ds2-nx (2026-10-30): the Switch logs the first call of each one instead, a timeline of the system calls the
+// game starts using; a screen that never moves on shows the last thing it asked for (one relaxed load a call).
 #if defined(__SWITCH__)
-#define REX_EXPORT_CENSUS(name) ((void)0)
+#define REX_EXPORT_CENSUS(name)                                                    \
+  do {                                                                             \
+    static std::atomic<bool> rex_export_seen_{false};                              \
+    if (!rex_export_seen_.load(std::memory_order_relaxed) &&                       \
+        !rex_export_seen_.exchange(true, std::memory_order_relaxed)) {             \
+      REXKRNL_INFO("[export] first call: {}", name);                               \
+    }                                                                              \
+  } while (0)
 #else
 #define REX_EXPORT_CENSUS(name)                                                                     \
   do {                                                                                              \
