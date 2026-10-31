@@ -160,3 +160,21 @@ Different:
 Made for 2014 and not yet made again: the PGO profile (Scholar builds with `-Pgo none`), the indirect-call census
 (61 of 460 promotions dropped), the runtime gaps of areas not yet visited (code only data pointers reach, and the
 DLC areas'). The 2014 saves sit in the same title folder; loading one in Scholar is untested.
+
+## The naming screen's soft-lock (2026-10-31)
+
+After the Fire Keepers' cutscene the screen stayed black and the "Try to recall your name" dialog never came; the
+keyboard was never asked for. Reproduced on the PC (native renderer, classic code: neither Renut nor the optimised
+codegen) and followed there with the live pad, the user's console save, per-function call counts
+(`tools/pch_first_exec.py --counts`, `tools/func_counts_report.py`) and logging wrappers of the event-script
+evaluators:
+
+- The game's step machine stays in its in-game state (30); the naming step (31) is asked only by the character
+  creation menu, which is never opened.
+- The creation room's event script (`event_m10_02_00_00.esd`, changed in Scholar) waits for flag 102000010 and then
+  for a menu to open. Its commands at the cutscene's end (130101 set flag, 130452, 132121) did nothing.
+- Scholar's command dispatcher (`sub_825EFDF0`) dispatches that id range through a jump table of 16-bit entries
+  shifted by 2 (`lhzx`; `rlwinm 2`; `add`). The code generator took it for a byte table (the shift is met first on
+  the backward walk), so every case went to the wrong handler. The 2014 dispatcher, smaller, used byte tables.
+  Fixed in `sdk/src/codegen/function_scanner.cpp` (861f854): only two tables of the image have this form, both in
+  that dispatcher.

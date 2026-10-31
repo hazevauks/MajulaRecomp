@@ -9,9 +9,9 @@ game thread 39 ms. Both the GPU (~27 %) and the CPU (~15 %) have to shrink, and 
 
 ## The order
 
-1. **The naming screen's softlock.** The screen stays black and the system keyboard never opens. The thirty-seventh
-   build logs the first call of each export to find what the game waits on. The same build round makes the three
-   `REX_EXPORT_STUB`s Scholar added to the imports return a proper value (`XamShowMarketplaceDownloadItemsUI`,
+1. **The naming screen's softlock.** Fixed on 2026-10-31 (docs/dlc.md, "The naming screen's soft-lock": the code
+   generator misread a jump table of Scholar's event command dispatcher). Still to do in this step: the three
+   `REX_EXPORT_STUB`s Scholar added to the imports should return a proper value (`XamShowMarketplaceDownloadItemsUI`,
    `XamUserGetMembershipTierFromXUID`, `XamUserGetOnlineCountryFromXUID`).
 2. **The areas after Things Betwixt.** Bugs, crashes and runtime gaps (code that only data pointers reach), the DLC
    areas included, since they hold the most new code. The shadow glitch near fires belongs here.
