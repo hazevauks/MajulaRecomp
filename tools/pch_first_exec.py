@@ -2,6 +2,7 @@
 
     python tools/pch_first_exec.py app/generated/default/ds2_pch.h          patch
     python tools/pch_first_exec.py --undo app/generated/default/ds2_pch.h   restore
+    python tools/pch_first_exec.py --counts app/generated/default/ds2_pch.h  call counts instead (func_counts.bin)
 
 Appends a redefinition of REX_FUNC_PROLOGUE to the generated precompiled header: the original check, then a static
 flag per function and, the first time, RexFirstExec(__func__). One byte load and a branch a call. Every generated
@@ -25,19 +26,32 @@ extern "C" void RexFirstExec(const char* func);
   }} while (0)
 {END}
 '''
+# --counts: every call counted in the function's own slot (RexFuncCounter); the slot is found once (a static).
+COUNTS = f'''{BEGIN}
+extern "C" unsigned* RexFuncCounter(const char* func);
+#undef REX_FUNC_PROLOGUE
+#define REX_FUNC_PROLOGUE()                                                \
+  do {{                                                                     \
+    if (((size_t)base & 0x1F) != 0) __builtin_unreachable();               \
+    static unsigned* const rex_func_count_ = RexFuncCounter(__func__);     \
+    ++*rex_func_count_;                                                    \
+  }} while (0)
+{END}
+'''
 
 
 def main():
     args = sys.argv[1:]
     undo = '--undo' in args
-    for path in (a for a in args if a != '--undo'):
+    block = COUNTS if '--counts' in args else BLOCK
+    for path in (a for a in args if not a.startswith('--')):
         text = open(path, encoding='utf-8').read()
         if BEGIN in text:
             start = text.index(BEGIN)
             text = text[:start] + text[text.index(END, start) + len(END) + 1:]
         if not undo:
             # At the very end, after the original definitions (the header is #pragma once, no include guard).
-            text = text.rstrip('\n') + '\n\n' + BLOCK
+            text = text.rstrip('\n') + '\n\n' + block
         open(path, 'w', encoding='utf-8', newline='\n').write(text)
         print(('restored ' if undo else 'patched ') + path)
 

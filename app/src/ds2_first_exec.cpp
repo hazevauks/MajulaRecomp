@@ -64,6 +64,68 @@ void Writer() {
 
 }  // namespace
 
+// --- Call counts (tools/pch_first_exec.py --counts): every generated function counts its calls in a slot of its own;
+// a thread appends, every five seconds, the slots that changed to <log folder>/func_counts.bin as a record
+// {0xFFFFFFFF, milliseconds} followed by {guest address, calls so far} pairs (tools/first_exec_report.py --counts).
+namespace {
+constexpr uint32_t kMaxCounters = 1u << 17;
+uint32_t g_counter_address[kMaxCounters];
+uint32_t g_counters[kMaxCounters];  // plain increments: a lost count between threads does not matter here
+std::atomic<uint32_t> g_counter_count{0};
+std::atomic<bool> g_counts_started{false};
+uint32_t g_counter_overflow = 0;
+
+void CountsWriter() {
+  const std::string path =
+#if defined(__SWITCH__)
+      std::string(RexSwitchLogDir()) + "func_counts.bin";
+#else
+      "func_counts.bin";
+#endif
+  if (FILE* f = std::fopen(path.c_str(), "wb")) std::fclose(f);
+  static uint32_t last[kMaxCounters];
+  for (;;) {
+#if defined(__SWITCH__)
+    svcSleepThread(5'000'000'000);
+#else
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+#endif
+    const uint32_t n = std::min(g_counter_count.load(std::memory_order_acquire), kMaxCounters);
+    FILE* f = std::fopen(path.c_str(), "ab");
+    if (!f) continue;
+    const uint32_t head[2] = {
+        0xFFFFFFFFu, uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now() - g_start).count())};
+    std::fwrite(head, sizeof(head), 1, f);
+    for (uint32_t i = 0; i < n; ++i) {
+      const uint32_t c = g_counters[i];
+      if (c == last[i] || !g_counter_address[i]) continue;
+      last[i] = c;
+      const uint32_t pair[2] = {g_counter_address[i], c};
+      std::fwrite(pair, sizeof(pair), 1, f);
+    }
+    std::fclose(f);
+  }
+}
+}  // namespace
+
+extern "C" uint32_t* RexFuncCounter(const char* func) {
+  if (!g_counts_started.exchange(true, std::memory_order_acq_rel)) {
+#if defined(__SWITCH__)
+    static Thread thread;
+    if (R_SUCCEEDED(threadCreate(&thread, [](void*) { CountsWriter(); }, nullptr, nullptr, 0x10000, 0x3B, -2)))
+      threadStart(&thread);
+#else
+    std::thread(CountsWriter).detach();
+#endif
+  }
+  const uint32_t i = g_counter_count.fetch_add(1, std::memory_order_acq_rel);
+  if (i >= kMaxCounters) return &g_counter_overflow;
+  const size_t n = std::strlen(func);
+  g_counter_address[i] = n >= 8 ? uint32_t(std::strtoul(func + n - 8, nullptr, 16)) : 1;
+  return &g_counters[i];
+}
+
 extern "C" void RexFirstExec(const char* func) {
   if (!g_writer_started.exchange(true, std::memory_order_acq_rel)) {
 #if defined(__SWITCH__)
