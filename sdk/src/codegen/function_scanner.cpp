@@ -530,6 +530,7 @@ struct JumpTableMatch {
   bool found_add = false;    // For offset-based types
   bool found_load = false;   // lwzx/lbzx/lhzx
   bool found_shift = false;  // rlwinm for shift
+  bool found_index_scale = false;  // rlwinm scaling the index (ds2-nx: apart from the offset shift)
   bool found_table_lis = false;
   bool found_table_addi = false;
   bool found_base_lis = false;
@@ -624,7 +625,8 @@ std::vector<guest_addr_t> read_table_entries(const FunctionScanner& scanner,
         if (!entry_ptr)
           goto done;
         u16 offset = load_and_swap<u16>(entry_ptr);
-        target = match.base_address() + offset;
+        // ds2-nx (2026-10-31): shifted 16-bit tables (lhzx + slwi + add) too; shift_amount is 0 without a shift.
+        target = match.base_address() + (static_cast<u32>(offset) << match.shift_amount);
         break;
       }
     }
@@ -832,12 +834,14 @@ std::optional<JumpTable> FunctionScanner::detect_jump_table(guest_addr_t bctr_ad
     }
 
     // Step 3: Find rlwinm for shift (COMPUTED type or index scaling)
-    if (!match.found_shift && instr.opcode == Opcode::rlwinm) {
+    if (instr.opcode == Opcode::rlwinm) {
       // Check if this is scaling the index (for ABSOLUTE, SHORT, or offset-based types)
       // Must check BEFORE offset shift to handle SHORTOFFSET with scaled index
-      if (match.found_load && instr.M.RA == match.index_reg) {
+      // ds2-nx (2026-10-31): its own flag: a shifted 16-bit table has both rlwinms (the offset's, met first).
+      if (match.found_load && !match.found_index_scale && instr.M.RA == match.index_reg) {
         match.index_reg = instr.M.RS;
-        match.found_shift = true;
+        match.found_index_scale = true;
+        match.found_shift = true;  // no offset shift after this (shift_amount keeps the one found before)
         REXCODEGEN_TRACE("  [0x{:08X}] Found rlwinm (index scale) r{}, r{}, {}", addr,
                          static_cast<u32>(instr.M.RA), static_cast<u32>(instr.M.RS),
                          static_cast<u32>(instr.M.SH));
@@ -846,7 +850,7 @@ std::optional<JumpTable> FunctionScanner::detect_jump_table(guest_addr_t bctr_ad
       // Check if this is shifting the offset (COMPUTED type)
       // Only set COMPUTED type if we haven't already identified as SHORTOFFSET
       // (SHORTOFFSET uses rlwinm for index scaling, not offset shifting)
-      if (match.found_add && instr.M.RA == match.offset_reg &&
+      if (!match.found_shift && match.found_add && instr.M.RA == match.offset_reg &&
           match.type != JumpTableType::kShortOffset) {
         match.shift_amount = instr.M.SH;
         match.type = JumpTableType::kComputed;
@@ -1620,10 +1624,11 @@ std::optional<JumpTable> detectJumpTable(DecodedBinary& decoded, uint32_t bctrAd
 
       // lhzx rD, rA, rB - indexed halfword load (SHORTOFFSET table)
       if (insn->opcode == Opcode::lhzx && insn->X.RT == ctrSourceReg) {
-        // Don't overwrite kComputed
-        if (tableType != JumpTableType::kComputed) {
-          tableType = JumpTableType::kShortOffset;
-        }
+        // ds2-nx (2026-10-31): always a table of 16-bit entries, even after an rlwinm shift (which the backward walk
+        // meets first). Keeping kComputed read it as bytes: Scholar of the First Sin's event command switch
+        // (lhzx + slwi 2 + add, sub_825EFDF0) sent every command of its range to the wrong case, and the character
+        // creation menu never opened. kShortOffset applies shiftAmount (0 without a shift).
+        tableType = JumpTableType::kShortOffset;
         indexReg = insn->X.RB;
         finalIndexReg = indexReg;
         foundLoad = true;
@@ -1896,7 +1901,7 @@ std::optional<JumpTable> detectJumpTable(DecodedBinary& decoded, uint32_t bctrAd
         auto val = decoded.read<uint16_t>(tableAddr + i * 2);
         if (!val)
           break;
-        target = baseAddr + *val;
+        target = baseAddr + (static_cast<uint32_t>(*val) << shiftAmount);
         break;
       }
     }
