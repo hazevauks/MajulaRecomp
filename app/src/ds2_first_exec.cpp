@@ -2,7 +2,7 @@
 //
 // The patched REX_FUNC_PROLOGUE of the generated code calls RexFirstExec once per function (a static flag of its
 // own; two threads may both report one, which the reader tolerates). The records (guest address, milliseconds since
-// the first one) go to an array and a thread appends the new ones to <log folder>/first_exec.bin every two seconds:
+// the program started) go to an array and a thread appends the new ones to <log folder>/first_exec.bin every two seconds:
 // the timeline of the code the game reaches. A screen that never comes shows where that timeline stops
 // (tools/first_exec_report.py). Without the patched prologue nothing calls this and the thread never starts.
 #include <atomic>
@@ -11,11 +11,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <mutex>
 #include <string>
 #include <thread>
 
 #if defined(__SWITCH__)
+#include <switch.h>
 extern "C" const char* RexSwitchLogDir(void);  // sdk/src/ui/switch_crash_hooks.c, ends in '/'
 #endif
 
@@ -25,8 +25,9 @@ constexpr uint32_t kMaxRecords = 1u << 18;  // the image has ~84,000 functions
 // A record is published whole: address in the high half, milliseconds in the low one; 0 = not written yet.
 std::atomic<uint64_t> g_records[kMaxRecords];
 std::atomic<uint32_t> g_count{0};
-std::once_flag g_writer_once;
-std::chrono::steady_clock::time_point g_start;
+std::atomic<bool> g_writer_started{false};
+// Milliseconds from the program's start (static initialisation, before any guest code).
+const std::chrono::steady_clock::time_point g_start = std::chrono::steady_clock::now();
 
 std::string OutputPath() {
 #if defined(__SWITCH__)
@@ -41,7 +42,11 @@ void Writer() {
   if (FILE* f = std::fopen(path.c_str(), "wb")) std::fclose(f);  // a fresh file each run
   uint32_t written = 0;
   for (;;) {
+#if defined(__SWITCH__)
+    svcSleepThread(2'000'000'000);
+#else
     std::this_thread::sleep_for(std::chrono::seconds(2));
+#endif
     const uint32_t count = std::min(g_count.load(std::memory_order_acquire), kMaxRecords);
     if (count == written) continue;
     FILE* f = std::fopen(path.c_str(), "ab");
@@ -60,10 +65,17 @@ void Writer() {
 }  // namespace
 
 extern "C" void RexFirstExec(const char* func) {
-  std::call_once(g_writer_once, [] {
-    g_start = std::chrono::steady_clock::now();
+  if (!g_writer_started.exchange(true, std::memory_order_acq_rel)) {
+#if defined(__SWITCH__)
+    // std::thread and std::call_once end in "Function not implemented" under libnx (the thirty-eighth build's
+    // crash at start).
+    static Thread thread;
+    if (R_SUCCEEDED(threadCreate(&thread, [](void*) { Writer(); }, nullptr, nullptr, 0x10000, 0x3B, -2)))
+      threadStart(&thread);
+#else
     std::thread(Writer).detach();
-  });
+#endif
+  }
   // __func__ of a generated function: "__imp__sub_XXXXXXXX".
   const size_t n = std::strlen(func);
   // A name without an address (a helper the generator named) is recorded as 1.
