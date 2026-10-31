@@ -27,10 +27,13 @@ inline bool Active() {
 
 }  // namespace banjo::renut_gpu
 
-// Renut's hook at an address banjo-nx does not hook.
+// Renut's hook at an address banjo-nx does not hook. ds2-nx (2026-10-31): counted like the SDK's exports
+// (REX_EXPORT_CENSUS; on the Switch the log line of its first call), so a stuck screen shows the Direct3D calls it
+// started making.
 #define BANJO_RENUT_HOOK(subroutine, function)                                         \
   REX_EXTERN(__imp__##subroutine);                                                     \
   extern "C" REX_FUNC(subroutine) {                                                    \
+    REX_EXPORT_CENSUS(#subroutine);                                                    \
     if (::banjo::renut_gpu::Active()) {                                                \
       ::rex::ppc::HostToGuestFunction<function>(ctx, base);                            \
       return;                                                                          \
@@ -49,6 +52,7 @@ inline bool Active() {
   REX_EXTERN(__imp__##subroutine);                                                     \
   static void banjo_renut_raw_##subroutine(PPCContext& ctx, uint8_t* base);            \
   extern "C" REX_FUNC(subroutine) {                                                    \
+    REX_EXPORT_CENSUS(#subroutine);                                                    \
     if (::banjo::renut_gpu::Active()) {                                                \
       banjo_renut_raw_##subroutine(ctx, base);                                         \
       return;                                                                          \

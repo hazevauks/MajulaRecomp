@@ -697,6 +697,9 @@ bool Memory::AccessViolationCallback(std::unique_lock<std::recursive_mutex> glob
         rex::thread::current_thread_id());
 #if REX_PLATFORM_SWITCH
     DumpGuestCrashContext(virtual_membase_);
+    // ds2-nx (2026-10-31): the fatal path aborts right after this, and the file writer (log_file_writer) kept the
+    // context's lines in memory: a console crash in Things Betwixt left only the first two in the log.
+    rex::FlushLogging();
 #endif
     return false;
   }

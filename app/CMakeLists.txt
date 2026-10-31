@@ -51,6 +51,8 @@ set(DS2_SOURCES
     src/ds2_crash_log.cpp
     # Recordings of the game image for testing (cvar ds2_video_s; tools/frames_to_png.py makes a contact sheet).
     src/ds2_capture.cpp
+    # The first run of each guest function, when tools/pch_first_exec.py patched the generated prologue.
+    src/ds2_first_exec.cpp
     # Profile collection of the PGO-instrumented Switch build (DS2_PGO=generate); empty otherwise.
     src/ds2_pgo.cpp
     # Scripted pad for unattended test runs (cvar ds2_input_script; tools/win/boot_test.ps1 -Pad).
