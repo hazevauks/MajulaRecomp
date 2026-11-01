@@ -844,3 +844,8 @@ longjmp_address = 0x82FEC680
 "0x82FE7768" = { }  # 2 instructions, pointer at 0x82116908 (+1 more)
 "0x830BCDA8" = { }  # 6 instructions, pointer at 0x821250B0 (+1 more)
 "0x830BF040" = { }  # 2 instructions, pointer at 0x82125114
+# Scholar (2026-11-01): the first console session past character creation stopped on the way to Majula, "Unresolved
+# branch from 0x82FADEE8 to 0x82FADF00". 0x82FADE98 starts a function reached only by the tail branch of the thunk
+# 0x82FADDF8 (it swaps r3/r4 and jumps there); without an entry the generator copied its body into the thunk without
+# its labels. The 2014 generator found the same function on its own (0x82F79960). The image's only unresolved branches.
+"0x82FADE98" = { }
